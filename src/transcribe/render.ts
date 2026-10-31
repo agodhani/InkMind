@@ -1,0 +1,41 @@
+import type { BoundingBox } from '../types';
+import type { InkStroke } from '../model/page';
+import { renderStrokes } from '../ink/StrokeRenderer';
+
+export const RENDER_PAD = 24;
+export const MAX_RENDER_EDGE = 1600;
+
+export interface RenderedRegion {
+  dataUrl: string;
+  bounds: BoundingBox;
+  size: { width: number; height: number };
+  scale: number;
+}
+
+/** Render strokes on white to a PNG data URL, 2x where possible for legibility. */
+export function renderStrokesToPng(strokes: InkStroke[], bounds: BoundingBox, options: { ink?: string; maxEdge?: number } = {}): RenderedRegion | null {
+  const padded: BoundingBox = {
+    left: bounds.left - RENDER_PAD,
+    top: bounds.top - RENDER_PAD,
+    right: bounds.right + RENDER_PAD,
+    bottom: bounds.bottom + RENDER_PAD,
+  };
+  const width = Math.max(1, Math.ceil(padded.right - padded.left));
+  const height = Math.max(1, Math.ceil(padded.bottom - padded.top));
+  const maxEdge = options.maxEdge ?? MAX_RENDER_EDGE;
+  const scale = Math.min(2, maxEdge / Math.max(width, height));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(scale, scale);
+  ctx.translate(-padded.left, -padded.top);
+  renderStrokes(ctx, strokes, options.ink ? { colorOverride: options.ink } : {});
+
+  return { dataUrl: canvas.toDataURL('image/png'), bounds: padded, size: { width: canvas.width, height: canvas.height }, scale };
+}
