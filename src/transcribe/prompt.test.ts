@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractJson } from './prompt';
-import { normaliseBlocks } from './openrouter';
+import { normaliseBlocks } from './openaiCompat';
 
 describe('extractJson', () => {
   it('parses plain, fenced, and prose-wrapped JSON', () => {

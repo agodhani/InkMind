@@ -7,6 +7,7 @@ import { db, isIndexedDbAvailable } from './store/db';
 import { DigitalView } from './views/DigitalView';
 import { useTranscription } from './transcribe/useTranscription';
 import { OpenRouterTranscriber } from './transcribe/openrouter';
+import { OLLAMA_VISION_MODELS, OllamaTranscriber, probeOllama, type OllamaStatus } from './transcribe/ollama';
 import { MockTranscriber } from './transcribe/mock';
 import type { Transcriber } from './transcribe/types';
 import { renderStrokesToPng } from './transcribe/render';
@@ -72,10 +73,13 @@ export default function App() {
     });
   }, []);
 
-  const transcriber: Transcriber = useMemo(
-    () => (settings.openRouterApiKey ? new OpenRouterTranscriber({ apiKey: settings.openRouterApiKey, model: settings.visionModel, siteName: 'InkMind' }) : new MockTranscriber()),
-    [settings.openRouterApiKey, settings.visionModel],
-  );
+  const transcriber: Transcriber = useMemo(() => {
+    if (settings.provider === 'openrouter' && settings.openRouterApiKey) {
+      return new OpenRouterTranscriber({ apiKey: settings.openRouterApiKey, model: settings.visionModel, siteName: 'InkMind' });
+    }
+    if (settings.provider === 'ollama') return new OllamaTranscriber({ url: settings.ollamaUrl, model: settings.ollamaModel });
+    return new MockTranscriber();
+  }, [settings.provider, settings.openRouterApiKey, settings.visionModel, settings.ollamaUrl, settings.ollamaModel]);
   const profile = useMemo(() => buildProfile(corrections, { habits: settings.habits, glossary: settings.glossary }), [corrections, settings.habits, settings.glossary]);
 
   const onBlocks = useCallback(
@@ -290,10 +294,10 @@ export default function App() {
         </button>
       </header>
 
-      {!settings.openRouterApiKey && (
+      {transcriber.name === 'mock' && (
         <div className="banner">
-          No OpenRouter key set: running the <strong>mock</strong> transcriber (placeholder text, so you can try the ink ↔ digital flow).{' '}
-          <button onClick={() => setShowSettings(true)}>Add key</button>
+          Running the <strong>mock</strong> transcriber (placeholder text, so you can try the ink ↔ digital flow). Pick a local Ollama model or add an OpenRouter key to get real transcription.{' '}
+          <button onClick={() => setShowSettings(true)}>Choose transcriber</button>
         </div>
       )}
 
@@ -384,6 +388,18 @@ function SettingsPanel({
 }) {
   const [habits, setHabits] = useState(settings.habits.join('\n'));
   const [glossary, setGlossary] = useState(settings.glossary.join(', '));
+  const [probed, setProbed] = useState<{ url: string; status: OllamaStatus } | null>(null);
+  useEffect(() => {
+    if (settings.provider !== 'ollama') return;
+    const ctrl = new AbortController();
+    const url = settings.ollamaUrl;
+    const t = window.setTimeout(() => void probeOllama(url, ctrl.signal).then((status) => !ctrl.signal.aborted && setProbed({ url, status })), 300);
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [settings.provider, settings.ollamaUrl]);
+  const ollama = probed?.url === settings.ollamaUrl ? probed.status : undefined;
   const commitText = () =>
     onChange({
       ...settings,
@@ -399,24 +415,75 @@ function SettingsPanel({
           <button onClick={onClose}>Close</button>
         </div>
 
-        <label>
-          OpenRouter API key
-          <input type="password" value={settings.openRouterApiKey} onChange={(e) => onChange({ ...settings, openRouterApiKey: e.target.value.trim() })} placeholder="sk-or-…" autoComplete="off" />
-          <small>
-            Stored only in this browser. Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a>.
-          </small>
-        </label>
+        <h4>Transcriber</h4>
+        <div className="segmented">
+          {(['mock', 'ollama', 'openrouter'] as const).map((p) => (
+            <button key={p} className={settings.provider === p ? 'active' : ''} onClick={() => onChange({ ...settings, provider: p })}>
+              {p === 'mock' ? 'Mock' : p === 'ollama' ? 'Ollama (local)' : 'OpenRouter'}
+            </button>
+          ))}
+        </div>
 
-        <label>
-          Vision model
-          <input list="models" value={settings.visionModel} onChange={(e) => onChange({ ...settings, visionModel: e.target.value.trim() })} />
-          <datalist id="models">
-            <option value="google/gemini-2.5-flash" />
-            <option value="google/gemini-2.5-pro" />
-            <option value="openai/gpt-4o" />
-            <option value="anthropic/claude-sonnet-4" />
-          </datalist>
-        </label>
+        {settings.provider === 'ollama' && (
+          <>
+            <label>
+              Ollama URL
+              <input value={settings.ollamaUrl} onChange={(e) => onChange({ ...settings, ollamaUrl: e.target.value.trim() })} placeholder="http://localhost:11434" />
+            </label>
+            <label>
+              Vision model
+              <input list="ollama-models" value={settings.ollamaModel} onChange={(e) => onChange({ ...settings, ollamaModel: e.target.value.trim() })} />
+              <datalist id="ollama-models">
+                {[...new Set([...(ollama?.models ?? []), ...OLLAMA_VISION_MODELS])].map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+            <p className="probe">
+              {ollama === undefined ? (
+                'Checking Ollama…'
+              ) : ollama.reachable ? (
+                ollama.models.includes(settings.ollamaModel) ? (
+                  <>Connected · {ollama.models.length} model{ollama.models.length === 1 ? '' : 's'} available.</>
+                ) : (
+                  <>
+                    Connected, but <code>{settings.ollamaModel}</code> is not pulled. Run <code>ollama pull {settings.ollamaModel}</code>
+                    {ollama.models.length ? <> or pick one of: {ollama.models.join(', ')}</> : null}.
+                  </>
+                )
+              ) : (
+                <>
+                  Can't reach Ollama at <code>{settings.ollamaUrl}</code> ({ollama.error}). Install from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com</a>, then <code>ollama pull {settings.ollamaModel}</code>.
+                  If the app is not on localhost, start Ollama with <code>OLLAMA_ORIGINS="{window.location.origin}"</code>.
+                </>
+              )}
+            </p>
+          </>
+        )}
+
+        {settings.provider === 'openrouter' && (
+          <>
+            <label>
+              OpenRouter API key
+              <input type="password" value={settings.openRouterApiKey} onChange={(e) => onChange({ ...settings, openRouterApiKey: e.target.value.trim() })} placeholder="sk-or-…" autoComplete="off" />
+              <small>
+                Stored only in this browser. Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a>; models ending in <code>:free</code> cost nothing.
+              </small>
+            </label>
+            <label>
+              Vision model
+              <input list="models" value={settings.visionModel} onChange={(e) => onChange({ ...settings, visionModel: e.target.value.trim() })} />
+              <datalist id="models">
+                <option value="qwen/qwen2.5-vl-72b-instruct:free" />
+                <option value="google/gemini-2.0-flash-exp:free" />
+                <option value="google/gemini-2.5-flash" />
+                <option value="google/gemini-2.5-pro" />
+                <option value="openai/gpt-4o" />
+                <option value="anthropic/claude-sonnet-4" />
+              </datalist>
+            </label>
+          </>
+        )}
 
         <label className="row">
           <input type="checkbox" checked={settings.liveTranscription} onChange={(e) => onChange({ ...settings, liveTranscription: e.target.checked })} />

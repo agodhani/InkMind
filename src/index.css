@@ -106,3 +106,10 @@ a.wikilink { color: var(--accent); text-decoration: none; border-bottom: 1px dot
   .ink-pane { border-right: 0; border-bottom: 1px solid var(--line); }
   .digital-view { padding: 16px; font-size: 16px; }
 }
+
+.segmented { display: flex; border: 1px solid var(--border, #ccc); border-radius: 8px; overflow: hidden; }
+.segmented button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 7px 8px; font-size: 13px; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--border, #ccc); }
+.segmented button.active { background: var(--accent, #2563eb); color: #fff; }
+.drawer-body .probe { font-size: 13px; margin: 0; color: var(--muted, #555); }
+.drawer-body .probe code { font-size: 12px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; }

@@ -1,6 +1,13 @@
+import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL } from './transcribe/ollama';
+
+export type TranscriberProvider = 'mock' | 'ollama' | 'openrouter';
+
 export interface AppSettings {
+  provider: TranscriberProvider;
   openRouterApiKey: string;
   visionModel: string;
+  ollamaUrl: string;
+  ollamaModel: string;
   habits: string[];
   glossary: string[];
   liveTranscription: boolean;
@@ -9,18 +16,31 @@ export interface AppSettings {
 const KEY = 'inkmind.settings.v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  provider: 'mock',
   openRouterApiKey: '',
-  visionModel: 'google/gemini-2.5-flash',
+  visionModel: 'qwen/qwen2.5-vl-72b-instruct:free',
+  ollamaUrl: DEFAULT_OLLAMA_URL,
+  ollamaModel: DEFAULT_OLLAMA_MODEL,
   habits: [],
   glossary: [],
   liveTranscription: true,
 };
 
+/** Fill defaults and pick a provider for settings saved before `provider` existed. */
+export function migrateSettings(raw: Partial<AppSettings>): AppSettings {
+  const s = { ...DEFAULT_SETTINGS, ...raw };
+  if (!raw.provider) s.provider = s.openRouterApiKey ? 'openrouter' : 'mock';
+  return s;
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, openRouterApiKey: import.meta.env.VITE_OPENROUTER_API_KEY ?? '' };
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+    if (!raw) {
+      const envKey = import.meta.env.VITE_OPENROUTER_API_KEY ?? '';
+      return migrateSettings(envKey ? { openRouterApiKey: envKey } : {});
+    }
+    return migrateSettings(JSON.parse(raw) as Partial<AppSettings>);
   } catch {
     return DEFAULT_SETTINGS;
   }
