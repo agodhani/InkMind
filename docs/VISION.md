@@ -237,8 +237,9 @@ first-class input; Part 2 makes it count for something.
   Local-first: pages, blocks, corrections in IndexedDB; works offline for ink,
   queues transcription until online.
 - **Model access:** a thin `Transcriber` interface. First implementation:
-  OpenRouter (Gemini 2.5 Flash default, Pro for low-confidence re-runs). Later:
-  direct Gemini/OpenAI/Anthropic, Ollama/LM Studio local VLM, fine-tuned model
+  any OpenAI-compatible vision endpoint. Free first: local Ollama
+  (`qwen2.5vl`, `gemma3`) or OpenRouter `:free` models; paid Gemini/GPT/Claude
+  are optional upgrades for low-confidence re-runs. Later: fine-tuned model
   (§3.5 C).
 - **Sync/server (Part 2):** small Node API + Postgres/pgvector for graph,
   embeddings, resource catalog, assignments. Reuse ObsidianInk's server shape
