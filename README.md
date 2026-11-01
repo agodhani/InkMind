@@ -54,9 +54,20 @@ ollama pull qwen2.5vl:7b
 
 Then Settings → Transcriber → **Ollama (local)**. The app talks to
 `http://localhost:11434` straight from the browser; Ollama allows localhost
-origins by default. If you open the app from another device (tablet on your
-LAN), start Ollama with `OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS="*"` and point the
-URL in Settings at your computer.
+origins by default. Settings only offers models whose `ollama show` lists the
+`vision` capability.
+
+To draw on a tablet while the model runs on your computer, Ollama has to accept
+requests from the tablet's browser. Its API has no authentication, so keep the
+exposure narrow: do this only on a network you trust, bind to your LAN address
+rather than every interface, and allow just the app's origin:
+
+```bash
+OLLAMA_HOST=192.168.1.20 OLLAMA_ORIGINS="http://192.168.1.20:5173" ollama serve
+```
+
+(replace with your computer's LAN IP), then set the Ollama URL in Settings to
+`http://192.168.1.20:11434`. Stop that server when you're done.
 
 ### OpenRouter
 
