@@ -80,8 +80,11 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     const kind = (BLOCK_KINDS as string[]).includes(String(item.kind)) ? (item.kind as BlockKind) : 'unknown';
     const text = typeof item.text === 'string' ? item.text : '';
     if (!text.trim() && kind !== 'diagram') continue;
-    const b = (item.bbox ?? {}) as Record<string, unknown>;
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+    const rawBox = item.bbox;
+    const b = Array.isArray(rawBox)
+      ? { left: rawBox[0], top: rawBox[1], right: rawBox[2], bottom: rawBox[3] }
+      : ((rawBox ?? {}) as Record<string, unknown>);
     out.push({
       kind,
       text,
