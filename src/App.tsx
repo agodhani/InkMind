@@ -7,7 +7,9 @@ import { db, isIndexedDbAvailable } from './store/db';
 import { DigitalView } from './views/DigitalView';
 import { useTranscription } from './transcribe/useTranscription';
 import { OpenRouterTranscriber } from './transcribe/openrouter';
-import { OLLAMA_VISION_MODELS, OllamaTranscriber, probeOllama, type OllamaStatus } from './transcribe/ollama';
+import { DEFAULT_OLLAMA_MODEL, OLLAMA_VISION_MODELS, OllamaTranscriber, probeOllama, type OllamaStatus } from './transcribe/ollama';
+
+const OLLAMA_REPROBE_MS = 5000;
 import { MockTranscriber } from './transcribe/mock';
 import type { Transcriber } from './transcribe/types';
 import { renderStrokesToPng } from './transcribe/render';
@@ -389,16 +391,20 @@ function SettingsPanel({
   const [habits, setHabits] = useState(settings.habits.join('\n'));
   const [glossary, setGlossary] = useState(settings.glossary.join(', '));
   const [probed, setProbed] = useState<{ url: string; status: OllamaStatus } | null>(null);
+  const [probeTick, setProbeTick] = useState(0);
   useEffect(() => {
     if (settings.provider !== 'ollama') return;
     const ctrl = new AbortController();
     const url = settings.ollamaUrl;
-    const t = window.setTimeout(() => void probeOllama(url, ctrl.signal).then((status) => !ctrl.signal.aborted && setProbed({ url, status })), 300);
+    const run = () => void probeOllama(url, ctrl.signal).then((status) => !ctrl.signal.aborted && setProbed({ url, status }));
+    const t = window.setTimeout(run, 300);
+    const every = window.setInterval(run, OLLAMA_REPROBE_MS);
     return () => {
       window.clearTimeout(t);
+      window.clearInterval(every);
       ctrl.abort();
     };
-  }, [settings.provider, settings.ollamaUrl]);
+  }, [settings.provider, settings.ollamaUrl, probeTick]);
   const ollama = probed?.url === settings.ollamaUrl ? probed.status : undefined;
   const commitText = () =>
     onChange({
@@ -444,7 +450,11 @@ function SettingsPanel({
                 'Checking Ollama…'
               ) : ollama.reachable ? (
                 ollama.models.includes(settings.ollamaModel) ? (
-                  <>Connected · {ollama.models.length} model{ollama.models.length === 1 ? '' : 's'} available.</>
+                  <>Connected · {ollama.models.length} vision model{ollama.models.length === 1 ? '' : 's'} available.</>
+                ) : ollama.textOnly.includes(settings.ollamaModel) ? (
+                  <>
+                    <code>{settings.ollamaModel}</code> is text-only and can't read ink. Pick a vision model{ollama.models.length ? <> ({ollama.models.join(', ')})</> : null} or run <code>ollama pull {DEFAULT_OLLAMA_MODEL}</code>.
+                  </>
                 ) : (
                   <>
                     Connected, but <code>{settings.ollamaModel}</code> is not pulled. Run <code>ollama pull {settings.ollamaModel}</code>
@@ -456,7 +466,10 @@ function SettingsPanel({
                   Can't reach Ollama at <code>{settings.ollamaUrl}</code> ({ollama.error}). Install from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com</a>, then <code>ollama pull {settings.ollamaModel}</code>.
                   If the app is not on localhost, start Ollama with <code>OLLAMA_ORIGINS="{window.location.origin}"</code>.
                 </>
-              )}
+              )}{' '}
+              <button className="link" onClick={() => setProbeTick((n) => n + 1)}>
+                Re-check
+              </button>
             </p>
           </>
         )}

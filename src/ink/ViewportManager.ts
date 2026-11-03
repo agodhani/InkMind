@@ -49,7 +49,8 @@ export function applyViewportToContext(
   ctx: CanvasRenderingContext2D,
   viewport: Viewport
 ): void {
-  ctx.setTransform(viewport.zoom, 0, 0, viewport.zoom, viewport.panX, viewport.panY);
+  // Multiply onto the current transform so a preceding ctx.scale(dpr, dpr) survives.
+  ctx.transform(viewport.zoom, 0, 0, viewport.zoom, viewport.panX, viewport.panY);
 }
 
 // Reset canvas context transform
