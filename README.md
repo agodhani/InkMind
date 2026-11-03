@@ -54,8 +54,9 @@ ollama pull qwen2.5vl:7b
 
 Then Settings → Transcriber → **Ollama (local)**. The app talks to
 `http://localhost:11434` straight from the browser; Ollama allows localhost
-origins by default. Settings only offers models whose `ollama show` lists the
-`vision` capability.
+origins by default. Settings suggests a few known vision models plus any pulled
+models whose `ollama show` lists the `vision` capability (models on older Ollama
+versions that don't report capabilities are listed too).
 
 To draw on a tablet while the model runs on your computer, Ollama has to accept
 requests from the tablet's browser. Its API has no authentication, so keep the
