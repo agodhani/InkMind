@@ -1,4 +1,5 @@
 import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL } from './transcribe/ollama';
+import type { TranscriptionScope } from './transcribe/useTranscription';
 
 export type TranscriberProvider = 'mock' | 'ollama' | 'openrouter';
 
@@ -11,6 +12,7 @@ export interface AppSettings {
   habits: string[];
   glossary: string[];
   liveTranscription: boolean;
+  scope: TranscriptionScope;
 }
 
 const KEY = 'inkmind.settings.v1';
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   habits: [],
   glossary: [],
   liveTranscription: true,
+  scope: 'page',
 };
 
 /** Fill defaults and pick a provider for settings saved before `provider` existed. */

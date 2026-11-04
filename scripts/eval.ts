@@ -20,9 +20,13 @@ import { buildStrokeGroups, rawToDigitalBlock } from '../src/transcribe/regions'
 import { OpenAICompatTranscriber } from '../src/transcribe/openaiCompat';
 import { OllamaTranscriber } from '../src/transcribe/ollama';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
-import { renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
+import { MODEL_RENDER, renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
 import { unionBounds } from '../src/model/page';
 import { createCanvas } from '@napi-rs/canvas';
+import { Agent, setGlobalDispatcher } from 'undici';
+
+// CPU inference can take >5 min per page; lift Node's default 300 s headers timeout.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const nodeCanvas: CanvasFactory = (w, h) => createCanvas(w, h) as unknown as ReturnType<CanvasFactory>;
 import { ModelOutputError } from '../src/transcribe/prompt';
@@ -36,6 +40,10 @@ interface Args {
   image: 'pdf' | 'strokes';
   /** 0 = whole page in one request; N = horizontal bands of N line-groups rendered from strokes (how the app works). */
   band: number;
+  /** Extra neighbouring line-groups rendered around each band for context; only blocks on the band's strokes are kept. */
+  context: number;
+  /** Stroke width multiplier for stroke renders (black ink); 0 = user's own ink and width. */
+  thin: number;
   run?: string;
   url: string;
 }
@@ -51,6 +59,8 @@ function parseArgs(): Args {
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),
+    context: Number(a.context ?? 0),
+    thin: Number(a.thin ?? 0),
     run: a.run,
     url: a.url ?? 'http://localhost:11434',
   };
@@ -109,7 +119,7 @@ async function main() {
   const args = parseArgs();
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}` : args.image}`;
+  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.thin ? `-black${args.thin}` : ''}`;
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
@@ -119,6 +129,7 @@ async function main() {
       : new OpenAICompatTranscriber({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: args.model, apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY, headers: { 'X-Title': 'InkMind eval' } });
 
   const rows: string[] = [];
+  const rawLog = new Map<number, string>();
   let totWer = 0, totCer = 0, n = 0;
   for (const page of data.pages) {
     if (args.pages && !args.pages.includes(page.index)) continue;
@@ -131,9 +142,12 @@ async function main() {
 
     // One request per band (or one for the whole page). Each band is rendered from strokes
     // exactly like the app renders a dirty region, and gets the previous band's text as context.
-    const bands: StrokeGroupMeta[][] = [];
-    if (args.band > 0) for (let i = 0; i < pageGroups.length; i += args.band) bands.push(pageGroups.slice(i, i + args.band));
-    else bands.push(pageGroups);
+    const bands: { target: StrokeGroupMeta[]; all: StrokeGroupMeta[] }[] = [];
+    if (args.band > 0) {
+      for (let i = 0; i < pageGroups.length; i += args.band) {
+        bands.push({ target: pageGroups.slice(i, i + args.band), all: pageGroups.slice(Math.max(0, i - args.context), i + args.band + args.context) });
+      }
+    } else bands.push({ target: pageGroups, all: pageGroups });
 
     process.stderr.write(`page ${page.index}: ${page.strokes.length} strokes, ${pageGroups.length} groups, ${bands.length} request(s) → ${transcriber.name} … `);
     const started = Date.now();
@@ -141,7 +155,9 @@ async function main() {
     let context = '';
     let failed = false;
     for (const band of bands) {
-      const strokes = band.flatMap((g) => g.strokeIds.map((id) => byId.get(id)!));
+      const strokes = band.all.flatMap((g) => g.strokeIds.map((id) => byId.get(id)!));
+      const targetIds = new Set(band.target.flatMap((g) => g.strokeIds));
+      const targetBounds = band.target.map((g) => g.bbox).reduce(unionBounds);
       let req: TranscribeRequest;
       if (args.band === 0 && args.image === 'pdf') {
         const png = readFileSync(join(args.dataset, 'pages', `page-${page.index}.png`));
@@ -156,7 +172,7 @@ async function main() {
           profile,
         };
       } else {
-        const rendered = renderStrokesToPng(strokes, band.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas });
+        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.thin ? { ...MODEL_RENDER, sizeMultiplier: args.thin } : {}) });
         if (!rendered) continue;
         req = {
           imageDataUrl: rendered.dataUrl,
@@ -172,11 +188,23 @@ async function main() {
       try {
         const r = await transcriber.transcribe(req);
         result.durationMs += r.durationMs;
-        const mapped = r.blocks.map((b) => rawToDigitalBlock(b, req.groups, req.imageBounds, req.imageSize, req.strokes));
+        if (r.raw) {
+          rawLog.set(page.index, (rawLog.get(page.index) ?? '') + r.raw + '\n---\n');
+          writeFileSync(join(outDir, `page-${page.index}.raw.txt`), rawLog.get(page.index)!);
+        }
+        const mapped = r.blocks
+          .map((b) => rawToDigitalBlock(b, req.groups, req.imageBounds, req.imageSize, req.strokes))
+          .filter((b) => {
+            if (args.band === 0) return true;
+            if (b.strokeIds.length) return b.strokeIds.some((id) => targetIds.has(id));
+            const cy = (b.bbox.top + b.bbox.bottom) / 2;
+            return cy >= targetBounds.top - 10 && cy <= targetBounds.bottom + 10;
+          });
         result.blocks.push(...mapped);
         context = mapped.map((b) => b.text).join('\n').slice(-600);
       } catch (e) {
-        process.stderr.write(`ERROR ${(e as Error).message}\n`);
+        const cause = (e as { cause?: { message?: string; code?: string } }).cause;
+        process.stderr.write(`ERROR ${(e as Error).message}${cause ? ` (${cause.code ?? ''} ${cause.message ?? ''})` : ''}\n`);
         if (e instanceof ModelOutputError) writeFileSync(join(outDir, `page-${page.index}.raw.txt`), e.raw);
         failed = true;
         break;

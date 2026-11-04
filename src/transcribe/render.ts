@@ -30,9 +30,17 @@ const domCanvas: CanvasFactory = (width, height) => {
 
 export interface RenderOptions {
   ink?: string;
+  /** Scale stroke widths (e.g. thin them for the model). */
+  sizeMultiplier?: number;
   maxEdge?: number;
   createCanvas?: CanvasFactory;
 }
+
+/**
+ * Rendering used for transcription requests: black ink and a thin, even nib. Vision models
+ * read thin strokes better — bold pressure-rendered ink merges adjacent letters.
+ */
+export const MODEL_RENDER: Pick<RenderOptions, 'ink' | 'sizeMultiplier'> = { ink: '#000000', sizeMultiplier: 0.45 };
 
 /** Render strokes on white to a PNG data URL, 2x where possible for legibility. */
 export function renderStrokesToPng(strokes: InkStroke[], bounds: BoundingBox, options: RenderOptions = {}): RenderedRegion | null {
@@ -55,7 +63,7 @@ export function renderStrokesToPng(strokes: InkStroke[], bounds: BoundingBox, op
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.scale(scale, scale);
   ctx.translate(-padded.left, -padded.top);
-  renderStrokes(ctx, strokes, options.ink ? { colorOverride: options.ink } : {});
+  renderStrokes(ctx, strokes, { colorOverride: options.ink, sizeMultiplier: options.sizeMultiplier });
 
   return { dataUrl: canvas.toDataURL('image/png'), bounds: padded, size: { width: canvas.width, height: canvas.height }, scale };
 }

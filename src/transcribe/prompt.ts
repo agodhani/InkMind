@@ -11,7 +11,9 @@ The writer's handwriting may be messy. Use the page topic, the glossary, the wri
 
 Rules:
 - Output ONLY a JSON object: {"blocks": [...]}. No prose, no markdown fences.
-- Each block: {"kind","text","bbox":{"left","top","right","bottom"},"groupIndices":[...],"confidence":0-1,"marker"?,"level"?}
+- Each block has exactly this shape (numbers are examples):
+  {"kind": "list", "text": "- SFT on demos", "bbox": {"left": 120, "top": 80, "right": 640, "bottom": 130}, "groupIndices": [2], "confidence": 0.8, "marker": null, "level": null}
+  bbox holds four numbers and nothing else; groupIndices and confidence are top-level fields of the block.
 - kind is one of: ${BLOCK_KINDS.join(', ')}.
 - bbox is in IMAGE PIXEL coordinates of the image you were given.
 - groupIndices lists the stroke-group indices (from the metadata) that form the block. Every group should belong to exactly one block. Use [] only if you cannot tell.

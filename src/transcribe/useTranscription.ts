@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke, Page } from '../model/page';
 import type { HandwritingProfile, Transcriber } from './types';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, rawToDigitalBlock } from './regions';
-import { renderStrokesToPng } from './render';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, rawToDigitalBlock, strokesBounds, type DirtyRegion } from './regions';
+import { MODEL_RENDER, renderStrokesToPng } from './render';
+
+/**
+ * region: re-transcribe only the lines you changed (cheap, but small crops starve the model of context).
+ * page: re-transcribe the whole page on every idle (what vision models do best; one request, more tokens).
+ */
+export type TranscriptionScope = 'region' | 'page';
 
 export const IDLE_DEBOUNCE_MS = 1200;
 
@@ -19,6 +25,7 @@ interface Params {
   transcriber: Transcriber;
   profile: HandwritingProfile;
   enabled: boolean;
+  scope?: TranscriptionScope;
   onBlocks: (pageId: string, update: (blocks: DigitalBlock[]) => DigitalBlock[]) => void;
 }
 
@@ -27,7 +34,7 @@ interface Params {
  * for IDLE_DEBOUNCE_MS, re-transcribes only the dirty regions and merges the
  * resulting blocks into the page.
  */
-export function useTranscription({ page, transcriber, profile, enabled, onBlocks }: Params) {
+export function useTranscription({ page, transcriber, profile, enabled, scope = 'page', onBlocks }: Params) {
   const dirty = useRef<Set<string>>(new Set());
   const deleted = useRef<Set<string>>(new Set());
   const timer = useRef<number | null>(null);
@@ -49,7 +56,7 @@ export function useTranscription({ page, transcriber, profile, enabled, onBlocks
     dirty.current.clear();
     deleted.current.clear();
 
-    const regions = computeDirtyRegions(current, dirtyIds, deletedIds);
+    const regions: DirtyRegion[] = scope === 'page' ? wholePageRegion(current) : computeDirtyRegions(current, dirtyIds, deletedIds);
     if (regions.length === 0) {
       setStatus((s) => ({ ...s, state: 'idle', pendingRegions: 0 }));
       return;
@@ -64,7 +71,7 @@ export function useTranscription({ page, transcriber, profile, enabled, onBlocks
           onBlocks(current.id, (blocks) => mergeBlocks(blocks, region.replacedBlockIds, []));
           continue;
         }
-        const rendered = renderStrokesToPng(region.strokes, region.bounds);
+        const rendered = renderStrokesToPng(region.strokes, region.bounds, MODEL_RENDER);
         if (!rendered) continue;
         const groups = buildStrokeGroups(region.strokes);
         const contextText = current.blocks
@@ -106,7 +113,7 @@ export function useTranscription({ page, transcriber, profile, enabled, onBlocks
       if (dirty.current.size || deleted.current.size) schedule();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, transcriber, onBlocks]);
+  }, [enabled, scope, transcriber, onBlocks]);
 
   const schedule = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
@@ -155,4 +162,11 @@ export function useTranscription({ page, transcriber, profile, enabled, onBlocks
   }, [page?.id]);
 
   return { status, markStrokesDirty, markStrokesDeleted, retranscribeAll, flushNow: run };
+}
+
+function wholePageRegion(page: Page): DirtyRegion[] {
+  const bounds = strokesBounds(page.strokes);
+  const replacedBlockIds = page.blocks.map((b) => b.id);
+  if (!bounds) return replacedBlockIds.length ? [{ bounds: { left: 0, top: 0, right: 0, bottom: 0 }, strokes: [], replacedBlockIds }] : [];
+  return [{ bounds, strokes: page.strokes, replacedBlockIds }];
 }

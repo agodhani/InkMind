@@ -94,6 +94,7 @@ export default function App() {
     transcriber,
     profile,
     enabled: settings.liveTranscription,
+    scope: settings.scope,
     onBlocks,
   });
 
@@ -526,6 +527,13 @@ function SettingsPanel({
         <label className="row">
           <input type="checkbox" checked={settings.liveTranscription} onChange={(e) => onChange({ ...settings, liveTranscription: e.target.checked })} />
           Transcribe live while I write
+        </label>
+        <label>
+          What gets sent after a pause
+          <select value={settings.scope} onChange={(e) => onChange({ ...settings, scope: e.target.value as AppSettings['scope'] })}>
+            <option value="page">Whole page (best accuracy — models need the context)</option>
+            <option value="region">Only the lines I changed (cheaper, worse on messy writing)</option>
+          </select>
         </label>
 
         <h4>Your handwriting profile</h4>

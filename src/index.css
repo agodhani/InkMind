@@ -89,7 +89,7 @@ a.wikilink { color: var(--accent); text-decoration: none; border-bottom: 1px dot
 .drawer-body button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; }
 .drawer-body label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .drawer-body label.row { flex-direction: row; align-items: center; gap: 8px; }
-.drawer-body input, .drawer-body textarea { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.drawer-body input, .drawer-body textarea, .drawer-body select { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 .drawer-body small { color: var(--muted); }
 .drawer-body h4 { margin: 8px 0 0; }
 .drawer-body p { font-size: 13px; color: #444; margin: 0; }

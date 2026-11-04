@@ -38,6 +38,19 @@ export class OllamaTranscriber implements Transcriber {
 
   async transcribe(req: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult> {
     const started = performance.now();
+    try {
+      return await this.request(req, 0.1, signal);
+    } catch (e) {
+      // Small models sometimes degenerate into a repeating token loop on short crops;
+      // Ollama aborts with "token repeat limit reached". One retry with more sampling noise usually escapes it.
+      if (!/repeat/i.test((e as Error).message)) throw e;
+      const r = await this.request(req, 0.5, signal);
+      return { ...r, durationMs: performance.now() - started };
+    }
+  }
+
+  private async request(req: TranscribeRequest, temperature: number, signal?: AbortSignal): Promise<TranscribeResult> {
+    const started = performance.now();
     const examples = req.profile.examples.slice(0, MAX_EXAMPLES);
     const images = [...examples.map((e) => stripDataUrl(e.imageDataUrl)), stripDataUrl(req.imageDataUrl)];
     const exampleText = examples.length
@@ -54,7 +67,7 @@ export class OllamaTranscriber implements Transcriber {
         model: this.model,
         stream: false,
         format: 'json',
-        options: { temperature: 0.1, num_ctx: this.numCtx, num_predict: 2500 },
+        options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: 2500 },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: exampleText + buildUserPrompt(req), images },
@@ -66,8 +79,9 @@ export class OllamaTranscriber implements Transcriber {
       throw new Error(`ollama ${response.status}: ${body.slice(0, 300)}`);
     }
     const data = (await response.json()) as { message?: { content?: string } };
-    const blocks = normaliseBlocks(extractJson(data.message?.content ?? ''));
-    return { blocks, model: this.model, durationMs: performance.now() - started };
+    const raw = data.message?.content ?? '';
+    const blocks = normaliseBlocks(extractJson(raw));
+    return { blocks, model: this.model, durationMs: performance.now() - started, raw };
   }
 }
 

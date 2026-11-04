@@ -67,7 +67,7 @@ export class OpenAICompatTranscriber implements Transcriber {
     const content = data.choices?.[0]?.message?.content;
     const text = typeof content === 'string' ? content : (content ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
     const blocks = normaliseBlocks(extractJson(text));
-    return { blocks, model, durationMs: performance.now() - started };
+    return { blocks, model, durationMs: performance.now() - started, raw: text };
   }
 }
 
@@ -82,9 +82,12 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     if (!text.trim() && kind !== 'diagram') continue;
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     const rawBox = item.bbox;
-    const b = Array.isArray(rawBox)
+    let b: Record<string, unknown> = Array.isArray(rawBox)
       ? { left: rawBox[0], top: rawBox[1], right: rawBox[2], bottom: rawBox[3] }
       : ((rawBox ?? {}) as Record<string, unknown>);
+    // Some models nest the other fields inside bbox, or put the whole [l,t,r,b] box in each bbox field.
+    for (const key of ['groupIndices', 'confidence', 'marker', 'level'] as const) if (item[key] === undefined && b[key] !== undefined) item[key] = b[key];
+    if (Array.isArray(b.left) && b.left.length === 4) b = { left: b.left[0], top: b.left[1], right: b.left[2], bottom: b.left[3] };
     out.push({
       kind,
       text,

@@ -40,6 +40,16 @@ describe('normaliseBlocks', () => {
     expect(blocks[1]).toMatchObject({ kind: 'diagram', bbox: { left: 0, top: 0, right: 0, bottom: 0 }, confidence: 0.5 });
   });
 
+  it('lifts fields nested inside bbox and reads [l,t,r,b] packed into bbox.left', () => {
+    const [b] = normaliseBlocks({
+      blocks: [{ kind: 'paragraph', text: 'x', bbox: { left: [787, 53, 1082, 148], top: [787, 53, 1082, 148], groupIndices: [0, 1], confidence: 0.8, marker: '', level: 0 } }],
+    });
+    expect(b.bbox).toEqual({ left: 787, top: 53, right: 1082, bottom: 148 });
+    expect(b.groupIndices).toEqual([0, 1]);
+    expect(b.confidence).toBe(0.8);
+    expect(b.marker).toBeUndefined();
+  });
+
   it('accepts bbox given as an [l,t,r,b] array (small local models do this)', () => {
     const [b] = normaliseBlocks({ blocks: [{ kind: 'paragraph', text: 'x', bbox: [38, 378, 1000, 511], confidence: 0.9, marker: '*' }] });
     expect(b.bbox).toEqual({ left: 38, top: 378, right: 1000, bottom: 511 });
