@@ -1,0 +1,7 @@
+# Datasets hold personal handwriting; only scripts and score summaries are committed.
+*/*.pdf
+*/strokes.json
+*/pages/
+*/reference.md
+*/results/*/page-*.json
+*/results/*/page-*.raw.txt

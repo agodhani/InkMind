@@ -18,7 +18,7 @@ const KEY = 'inkmind.settings.v1';
 export const DEFAULT_SETTINGS: AppSettings = {
   provider: 'mock',
   openRouterApiKey: '',
-  visionModel: 'qwen/qwen2.5-vl-72b-instruct:free',
+  visionModel: 'google/gemma-4-31b-it:free',
   ollamaUrl: DEFAULT_OLLAMA_URL,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
   habits: [],

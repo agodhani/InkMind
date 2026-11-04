@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractJson } from './prompt';
+import { ModelOutputError, extractJson } from './prompt';
 import { normaliseBlocks } from './openaiCompat';
 
 describe('extractJson', () => {
@@ -7,6 +7,21 @@ describe('extractJson', () => {
     expect(extractJson('{"blocks":[]}')).toEqual({ blocks: [] });
     expect(extractJson('```json\n{"blocks":[]}\n```')).toEqual({ blocks: [] });
     expect(extractJson('Sure! {"blocks":[{"kind":"paragraph"}]} hope that helps')).toEqual({ blocks: [{ kind: 'paragraph' }] });
+  });
+});
+
+describe('extractJson salvage', () => {
+  it('recovers complete blocks from a truncated reply', () => {
+    const truncated = '{"blocks": [{"kind":"paragraph","text":"a } b","bbox":{"left":1,"top":2,"right":3,"bottom":4}}, {"kind":"list","text":"- x"}, {"kind":"para';
+    expect(extractJson(truncated)).toEqual({
+      blocks: [
+        { kind: 'paragraph', text: 'a } b', bbox: { left: 1, top: 2, right: 3, bottom: 4 } },
+        { kind: 'list', text: '- x' },
+      ],
+    });
+  });
+  it('throws a ModelOutputError carrying the raw text when nothing is salvageable', () => {
+    expect(() => extractJson('nope')).toThrow(ModelOutputError);
   });
 });
 

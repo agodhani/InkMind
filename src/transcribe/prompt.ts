@@ -54,7 +54,20 @@ export function toImagePx(b: { left: number; top: number; right: number; bottom:
   };
 }
 
-/** Pull a JSON object out of a model reply that may contain fences or prose. */
+export class ModelOutputError extends Error {
+  readonly raw: string;
+  constructor(message: string, raw: string) {
+    super(message);
+    this.name = 'ModelOutputError';
+    this.raw = raw;
+  }
+}
+
+/**
+ * Pull a JSON object out of a model reply that may contain fences or prose.
+ * Small models often truncate or corrupt the tail; in that case salvage every
+ * complete block object we can find rather than losing the whole region.
+ */
 export function extractJson(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -64,7 +77,46 @@ export function extractJson(text: string): unknown {
   } catch {
     const start = candidate.indexOf('{');
     const end = candidate.lastIndexOf('}');
-    if (start >= 0 && end > start) return JSON.parse(candidate.slice(start, end + 1));
-    throw new Error('Model reply did not contain JSON');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(candidate.slice(start, end + 1));
+      } catch {
+        const blocks = salvageObjects(candidate.slice(start + 1));
+        if (blocks.length) return { blocks };
+      }
+    }
+    throw new ModelOutputError('Model reply did not contain usable JSON', text);
   }
+}
+
+/** Parse every complete top-level `{...}` object in `text` (string-aware brace matching). */
+export function salvageObjects(text: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try {
+          const obj = JSON.parse(text.slice(start, i + 1)) as Record<string, unknown>;
+          if (obj && typeof obj === 'object' && 'kind' in obj) out.push(obj);
+        } catch {
+          /* skip corrupt object */
+        }
+        start = -1;
+      } else if (depth < 0) depth = 0;
+    }
+  }
+  return out;
 }
