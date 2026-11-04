@@ -194,12 +194,15 @@ export function protectEditedBlocks(
   return { replacedIds: existing.filter((b) => !protectedIds.has(b.id)).map((b) => b.id), incoming: reconciled };
 }
 
+/** Remove `needle` from `haystack` only as a whole word/phrase (so "cat" never eats into "catalog"). */
 function stripText(haystack: string, needle: string): string {
   const n = needle.trim();
   if (!n) return haystack;
-  const i = haystack.toLowerCase().indexOf(n.toLowerCase());
-  if (i < 0) return haystack;
-  return (haystack.slice(0, i) + haystack.slice(i + n.length)).replace(/\s{2,}/g, ' ').trim();
+  const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  const m = re.exec(haystack);
+  if (!m) return haystack;
+  return (haystack.slice(0, m.index) + m[1] + haystack.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
 }
 
 export function overlapRatio(a: BoundingBox, b: BoundingBox): number {

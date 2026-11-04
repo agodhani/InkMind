@@ -108,6 +108,13 @@ describe('protectEditedBlocks', () => {
     const r = protectEditedBlocks([edited], [mostlyOld, mostlyNew], new Set(['c', 'd', 'e']));
     expect(r.incoming.map((b) => [b.id, b.strokeIds, b.text])).toEqual([['n2', ['c', 'd', 'e'], 'and more words']]);
   });
+  it('only strips the corrected text as a whole word, never inside a new word', () => {
+    const edited = block('h', ['a'], { left: 0, top: 0, right: 40, bottom: 20 }, { text: 'cat', userEdited: true });
+    const mixed = block('n', ['a', 'b', 'c', 'd'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: 'catalog' });
+    const repeated = block('m', ['a', 'e', 'f', 'g'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: 'Cat, dog' });
+    const r = protectEditedBlocks([edited], [mixed, repeated], new Set(['b', 'c', 'd', 'e', 'f', 'g']));
+    expect(r.incoming.map((b) => b.text)).toEqual(['catalog', ', dog']);
+  });
   it('lets a corrected block be re-read once its own strokes change', () => {
     const edited = block('h', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'fixed', userEdited: true });
     const r = protectEditedBlocks([edited], [block('n', ['a'], { left: 0, top: 0, right: 100, bottom: 20 })], new Set(['a']));
