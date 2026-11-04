@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke, Page } from '../model/page';
 import type { HandwritingProfile, Transcriber } from './types';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, rawToDigitalBlock, strokesBounds, type DirtyRegion } from './regions';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, strokesBounds, type DirtyRegion } from './regions';
 import { MODEL_RENDER, renderStrokesToPng } from './render';
 
 /**
@@ -91,14 +91,20 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
           },
           abort.current.signal,
         );
-        const incoming = result.blocks.map((raw) => rawToDigitalBlock(raw, groups, rendered.bounds, rendered.size, region.strokes));
+        let incoming = result.blocks.map((raw) => rawToDigitalBlock(raw, groups, rendered.bounds, rendered.size, region.strokes));
+        let replacedBlockIds = region.replacedBlockIds;
+        if (scope === 'page') {
+          const protectedResult = protectEditedBlocks(current.blocks, incoming, new Set([...dirtyIds, ...deletedIds]));
+          incoming = protectedResult.incoming;
+          replacedBlockIds = protectedResult.replacedIds;
+        }
         // Any region stroke the model didn't claim is still "covered" so it is not re-sent forever.
         const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
         const unclaimed = region.strokes.filter((s) => !claimed.has(s.id)).map((s) => s.id);
         if (unclaimed.length && incoming.length) {
           incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
         }
-        onBlocks(current.id, (blocks) => mergeBlocks(blocks, region.replacedBlockIds, incoming));
+        onBlocks(current.id, (blocks) => mergeBlocks(blocks, replacedBlockIds, incoming));
         setStatus((s) => ({ ...s, pendingRegions: Math.max(0, s.pendingRegions - 1), lastModel: result.model, lastDurationMs: result.durationMs }));
       }
       setStatus((s) => ({ ...s, state: 'idle', pendingRegions: 0, lastError: undefined }));

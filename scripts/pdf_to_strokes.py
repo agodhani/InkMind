@@ -9,7 +9,7 @@ pair distance as the pen width → pressure.
 Usage: pdf_to_strokes.py input.pdf out.json [--scale 2] [--png-dir DIR]
 Output: {"pages": [{"index", "width", "height", "strokes": InkStroke[]}]}
 """
-import argparse, json, math, sys
+import argparse, json, math, os, sys
 import pymupdf
 
 def outline_points(drawing):
@@ -52,6 +52,9 @@ def main():
     ap.add_argument("--png-dir", help="also write a centerline rendering per page for sanity checks")
     a = ap.parse_args()
     doc = pymupdf.open(a.pdf)
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    if a.png_dir:
+        os.makedirs(a.png_dir, exist_ok=True)
     pages = []
     t = 0
     for pi, page in enumerate(doc):

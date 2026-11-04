@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock } from '../model/page';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, rawToDigitalBlock } from './regions';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock } from './regions';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
   id,
@@ -85,6 +85,29 @@ describe('rawToDigitalBlock', () => {
     );
     expect(blk.bbox).toEqual({ left: 0, top: 0, right: 50, bottom: 25 });
     expect(blk.strokeIds).toEqual(['a']);
+  });
+});
+
+describe('protectEditedBlocks', () => {
+  it('keeps a corrected block whose strokes did not change and strips its strokes from incoming', () => {
+    const edited = block('h', ['a', 'b'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'Backpropagation', userEdited: true });
+    const other = block('p', ['c'], { left: 0, top: 40, right: 100, bottom: 60 });
+    const reread = block('n1', ['a', 'b', 'c'], { left: 0, top: 0, right: 120, bottom: 60 }, { text: 'Back propagation and more' });
+    const fresh = block('n2', ['d'], { left: 0, top: 80, right: 100, bottom: 100 });
+    const r = protectEditedBlocks([edited, other], [reread, fresh], new Set(['d']));
+    expect(r.replacedIds).toEqual(['p']);
+    expect(r.incoming.map((b) => [b.id, b.strokeIds])).toEqual([
+      ['n1', ['c']],
+      ['n2', ['d']],
+    ]);
+    const merged = mergeBlocks([edited, other], r.replacedIds, r.incoming);
+    expect(merged.find((b) => b.id === 'h')?.text).toBe('Backpropagation');
+  });
+  it('lets a corrected block be re-read once its own strokes change', () => {
+    const edited = block('h', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'fixed', userEdited: true });
+    const r = protectEditedBlocks([edited], [block('n', ['a'], { left: 0, top: 0, right: 100, bottom: 20 })], new Set(['a']));
+    expect(r.replacedIds).toEqual(['h']);
+    expect(r.incoming).toHaveLength(1);
   });
 });
 

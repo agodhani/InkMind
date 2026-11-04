@@ -12,7 +12,8 @@ pdftoppm -r 150 -png notes.pdf eval/<name>/pages/page      # raster of the origi
 
 # 3. run (Ollama must be up; OpenRouter needs OPENROUTER_API_KEY)
 npm run eval -- --dataset eval/<name> --provider ollama --model qwen2.5vl:7b             # whole page, PDF raster
-npm run eval -- --dataset eval/<name> --provider ollama --model qwen2.5vl:7b --band 6    # 6 line-groups per request, rendered from strokes (how the app works)
+npm run eval -- --dataset eval/<name> --provider ollama --model qwen2.5vl:7b --image strokes   # the app's own rendering of the ink (MODEL_RENDER; --render original for the user's ink)
+npm run eval -- --dataset eval/<name> --provider ollama --model qwen2.5vl:7b --band 6 --context 2   # N line-groups per request (+context groups), like scope=region
 npm run eval -- --dataset eval/<name> --provider openrouter --model google/gemma-4-31b-it:free
 ```
 

@@ -159,6 +159,29 @@ export function mergeBlocks(existing: DigitalBlock[], replacedIds: string[], inc
   return sortBlocksForReading([...kept, ...matched]);
 }
 
+/**
+ * Whole-page runs re-transcribe everything, including lines the user already
+ * corrected. Keep a user-edited block verbatim when none of its strokes changed,
+ * and drop incoming blocks that claim those strokes so the correction is not
+ * overwritten by a re-read.
+ */
+export function protectEditedBlocks(
+  existing: DigitalBlock[],
+  incoming: DigitalBlock[],
+  changedStrokeIds: Set<string>,
+): { replacedIds: string[]; incoming: DigitalBlock[] } {
+  const protectedBlocks = existing.filter((b) => b.userEdited && b.strokeIds.length > 0 && !b.strokeIds.some((id) => changedStrokeIds.has(id)));
+  if (protectedBlocks.length === 0) return { replacedIds: existing.map((b) => b.id), incoming };
+  const protectedStrokes = new Set(protectedBlocks.flatMap((b) => b.strokeIds));
+  const protectedIds = new Set(protectedBlocks.map((b) => b.id));
+  return {
+    replacedIds: existing.filter((b) => !protectedIds.has(b.id)).map((b) => b.id),
+    incoming: incoming
+      .map((b) => ({ ...b, strokeIds: b.strokeIds.filter((id) => !protectedStrokes.has(id)) }))
+      .filter((b, i) => b.strokeIds.length > 0 || incoming[i].strokeIds.length === 0),
+  };
+}
+
 export function overlapRatio(a: BoundingBox, b: BoundingBox): number {
   const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
   const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);

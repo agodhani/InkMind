@@ -42,8 +42,8 @@ interface Args {
   band: number;
   /** Extra neighbouring line-groups rendered around each band for context; only blocks on the band's strokes are kept. */
   context: number;
-  /** Stroke width multiplier for stroke renders (black ink); 0 = user's own ink and width. */
-  thin: number;
+  /** Stroke rendering for stroke-based requests: model = MODEL_RENDER (what the app sends), original = user's ink. */
+  render: 'model' | 'original';
   run?: string;
   url: string;
 }
@@ -60,7 +60,7 @@ function parseArgs(): Args {
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),
     context: Number(a.context ?? 0),
-    thin: Number(a.thin ?? 0),
+    render: (a.render as Args['render']) ?? 'model',
     run: a.run,
     url: a.url ?? 'http://localhost:11434',
   };
@@ -119,7 +119,7 @@ async function main() {
   const args = parseArgs();
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.thin ? `-black${args.thin}` : ''}`;
+  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}`;
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
@@ -172,7 +172,7 @@ async function main() {
           profile,
         };
       } else {
-        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.thin ? { ...MODEL_RENDER, sizeMultiplier: args.thin } : {}) });
+        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.render === 'model' ? MODEL_RENDER : {}) });
         if (!rendered) continue;
         req = {
           imageDataUrl: rendered.dataUrl,
@@ -200,7 +200,14 @@ async function main() {
             const cy = (b.bbox.top + b.bbox.bottom) / 2;
             return cy >= targetBounds.top - 10 && cy <= targetBounds.bottom + 10;
           });
-        result.blocks.push(...mapped);
+        // With --context a block spanning a band boundary is returned by both bands; keep the first.
+        const seen = new Set(result.blocks.flatMap((b) => b.strokeIds));
+        for (const b of mapped) {
+          const shared = b.strokeIds.filter((id) => seen.has(id)).length;
+          if (b.strokeIds.length && shared / b.strokeIds.length > 0.5) continue;
+          b.strokeIds.forEach((id) => seen.add(id));
+          result.blocks.push(b);
+        }
         context = mapped.map((b) => b.text).join('\n').slice(-600);
       } catch (e) {
         const cause = (e as { cause?: { message?: string; code?: string } }).cause;
@@ -226,7 +233,7 @@ async function main() {
   const summary = [
     `# ${run}`,
     '',
-    `Transcriber: \`${transcriber.name}\` · image: ${args.image} · ${new Date().toISOString()}`,
+    `Transcriber: \`${transcriber.name}\` · image: ${args.band ? `band ${args.band} (+${args.context} ctx)` : args.image} · render: ${args.band || args.image === 'strokes' ? args.render : 'pdf raster'} · ${new Date().toISOString()}`,
     '',
     '| page | WER | CER | notes |',
     '|---|---|---|---|',
