@@ -23,6 +23,10 @@ Rules:
 - Labels that belong to a diagram are part of the diagram block, not separate paragraphs.
 - margin_note: short text written in a margin or rotated, clearly separate from the main flow.
 - Crossed-out text: omit it.
+- Never describe or summarise what the writing is about. Every text block must be a transcription of
+  words that are physically on the page. If a line is hard to read, give your best guess of the words
+  with a low confidence; do not write captions like "diagram showing…" for text, and do not invent
+  content for regions you cannot read.
 - confidence reflects how sure you are of the text, not the layout.`;
 
 export function buildUserPrompt(req: TranscribeRequest): string {
