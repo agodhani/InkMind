@@ -3,7 +3,8 @@ import type { InkStroke } from '../model/page';
 import { renderStrokes } from '../ink/StrokeRenderer';
 
 export const RENDER_PAD = 24;
-export const MAX_RENDER_EDGE = 1600;
+// Dense pages need resolution: at ~1600 px a full page lost half its words (eval p2 WER 0.9 → 0.35 at ~2400 px).
+export const MAX_RENDER_EDGE = 2400;
 
 export interface RenderedRegion {
   dataUrl: string;

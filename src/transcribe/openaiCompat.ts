@@ -87,11 +87,17 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
   const root = (json ?? {}) as { blocks?: unknown };
   const list = Array.isArray(root.blocks) ? root.blocks : Array.isArray(json) ? json : [];
   const out: RawBlock[] = [];
+  const seenText = new Set<string>();
   for (const item of list as Record<string, unknown>[]) {
     if (!item || typeof item !== 'object') continue;
     const kind = (BLOCK_KINDS as string[]).includes(String(item.kind)) ? (item.kind as BlockKind) : 'unknown';
     const text = typeof item.text === 'string' ? item.text : '';
     if (!text.trim() && kind !== 'diagram') continue;
+    // Vision models sometimes loop and emit the same line again (seen on dense pages); a page never
+    // genuinely repeats a multi-word line verbatim, so drop exact repeats of longer texts.
+    const key = `${kind}:${text.trim().toLowerCase()}`;
+    if (text.trim().split(/\s+/).length >= 3 && seenText.has(key)) continue;
+    seenText.add(key);
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     const rawBox = item.bbox;
     let b: Record<string, unknown> = Array.isArray(rawBox)

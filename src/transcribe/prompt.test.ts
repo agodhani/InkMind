@@ -50,6 +50,19 @@ describe('normaliseBlocks', () => {
     expect(b.marker).toBeUndefined();
   });
 
+  it('drops verbatim repeats of multi-word lines (model loops) but keeps short repeated labels', () => {
+    const blocks = normaliseBlocks({
+      blocks: [
+        { kind: 'list', text: '- uses worktrees to run agents in parallel' },
+        { kind: 'paragraph', text: 'now you have crewmates' },
+        { kind: 'list', text: '- uses worktrees to run agents in parallel' },
+        { kind: 'paragraph', text: 'yes' },
+        { kind: 'paragraph', text: 'yes' },
+      ],
+    });
+    expect(blocks.map((b) => b.text)).toEqual(['- uses worktrees to run agents in parallel', 'now you have crewmates', 'yes', 'yes']);
+  });
+
   it('accepts bbox given as an [l,t,r,b] array (small local models do this)', () => {
     const [b] = normaliseBlocks({ blocks: [{ kind: 'paragraph', text: 'x', bbox: [38, 378, 1000, 511], confidence: 0.9, marker: '*' }] });
     expect(b.bbox).toEqual({ left: 38, top: 378, right: 1000, bottom: 511 });
