@@ -16,6 +16,15 @@ export class OpenRouterTranscriber extends OpenAICompatTranscriber {
     const headers: Record<string, string> = {};
     if (opts.siteUrl) headers['HTTP-Referer'] = opts.siteUrl;
     if (opts.siteName) headers['X-Title'] = opts.siteName;
-    super({ provider: 'openrouter', baseUrl: BASE_URL, model: opts.model ?? DEFAULT_VISION_MODEL, apiKey: opts.apiKey, headers });
+    super({
+      provider: 'openrouter',
+      baseUrl: BASE_URL,
+      model: opts.model ?? DEFAULT_VISION_MODEL,
+      apiKey: opts.apiKey,
+      headers,
+      // Reasoning models (Nemotron, dots) otherwise think for 10k+ tokens and return empty content;
+      // some ignore a token cap, so turn reasoning off outright. Transcription doesn't benefit from it.
+      extraBody: { reasoning: { enabled: false } },
+    });
   }
 }

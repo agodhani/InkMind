@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
 import { buildStrokeGroups, rawToDigitalBlock } from '../src/transcribe/regions';
-import { OpenAICompatTranscriber } from '../src/transcribe/openaiCompat';
+import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
 import { OllamaTranscriber } from '../src/transcribe/ollama';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
 import { MODEL_RENDER, renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
@@ -44,6 +44,8 @@ interface Args {
   context: number;
   /** Stroke rendering for stroke-based requests: model = MODEL_RENDER (what the app sends), original = user's ink. */
   render: 'model' | 'original';
+  /** Directory (under the dataset) holding page-N.png rasters; e.g. pages220 for a 220 dpi render. */
+  raster: string;
   run?: string;
   url: string;
 }
@@ -61,6 +63,7 @@ function parseArgs(): Args {
     band: Number(a.band ?? 0),
     context: Number(a.context ?? 0),
     render: (a.render as Args['render']) ?? 'model',
+    raster: a.raster ?? 'pages',
     run: a.run,
     url: a.url ?? 'http://localhost:11434',
   };
@@ -119,14 +122,14 @@ async function main() {
   const args = parseArgs();
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}`;
+  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}`;
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
   const transcriber: Transcriber =
     args.provider === 'ollama'
       ? new OllamaTranscriber({ url: args.url, model: args.model })
-      : new OpenAICompatTranscriber({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: args.model, apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY, headers: { 'X-Title': 'InkMind eval' } });
+      : new OpenRouterTranscriber({ apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY ?? '', model: args.model, siteName: 'InkMind eval' });
 
   const rows: string[] = [];
   const rawLog = new Map<number, string>();
@@ -160,7 +163,7 @@ async function main() {
       const targetBounds = band.target.map((g) => g.bbox).reduce(unionBounds);
       let req: TranscribeRequest;
       if (args.band === 0 && args.image === 'pdf') {
-        const png = readFileSync(join(args.dataset, 'pages', `page-${page.index}.png`));
+        const png = readFileSync(join(args.dataset, args.raster, `page-${page.index}.png`));
         req = {
           imageDataUrl: `data:image/png;base64,${png.toString('base64')}`,
           imageBounds: { left: 0, top: 0, right: page.width, bottom: page.height },
