@@ -1,6 +1,6 @@
 import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
-import { normaliseBlocks } from './openaiCompat';
+import { looksDegenerate, normaliseBlocks, wordCount } from './openaiCompat';
 
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_OLLAMA_MODEL = 'qwen2.5vl:3b';
@@ -39,7 +39,11 @@ export class OllamaTranscriber implements Transcriber {
   async transcribe(req: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult> {
     const started = performance.now();
     try {
-      return await this.request(req, 0.1, signal);
+      const first = await this.request(req, 0.1, signal);
+      if (!looksDegenerate(first.blocks, req.groups.length)) return first;
+      const second = await this.request(req, 0.5, signal);
+      const pick = looksDegenerate(second.blocks, req.groups.length) && wordCount(second.blocks) > wordCount(first.blocks) ? first : second;
+      return { ...pick, durationMs: performance.now() - started };
     } catch (e) {
       // Small models sometimes degenerate into a repeating token loop on short crops;
       // Ollama aborts with "token repeat limit reached". One retry with more sampling noise usually escapes it.

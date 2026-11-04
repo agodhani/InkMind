@@ -3,7 +3,7 @@
  * pages of a dataset and scores the text against a human reference.
  *
  *   npx tsx scripts/eval.ts --dataset eval/l8-workflow --provider ollama --model qwen2.5vl:3b
- *   npx tsx scripts/eval.ts --dataset eval/l8-workflow --provider openrouter --model google/gemma-4-31b-it:free
+ *   npx tsx scripts/eval.ts --dataset eval/l8-workflow --provider openrouter --model dots-studio/dots-3-note-preview:free
  *
  * Dataset layout (see scripts/pdf_to_strokes.py):
  *   strokes.json          pages → InkStroke[] in canvas px
@@ -57,7 +57,7 @@ function parseArgs(): Args {
   return {
     dataset: a.dataset ?? 'eval/l8-workflow',
     provider,
-    model: a.model ?? (provider === 'ollama' ? 'qwen2.5vl:3b' : 'google/gemma-4-31b-it:free'),
+    model: a.model ?? (provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),

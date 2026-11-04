@@ -512,9 +512,10 @@ function SettingsPanel({
               Vision model
               <input list="models" value={settings.visionModel} onChange={(e) => onChange({ ...settings, visionModel: e.target.value.trim() })} />
               <datalist id="models">
+                <option value="dots-studio/dots-3-note-preview:free" />
+                <option value="nvidia/nemotron-3.5-super-vl:free" />
                 <option value="google/gemma-4-31b-it:free" />
                 <option value="google/gemma-4-26b-a4b-it:free" />
-                <option value="nvidia/nemotron-3.5-super-vl:free" />
                 <option value="google/gemini-2.5-flash" />
                 <option value="google/gemini-2.5-pro" />
                 <option value="openai/gpt-4o" />

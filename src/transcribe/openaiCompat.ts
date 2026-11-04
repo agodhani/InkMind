@@ -34,6 +34,16 @@ export class OpenAICompatTranscriber implements Transcriber {
 
   async transcribe(req: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult> {
     const started = performance.now();
+    const first = await this.request(req, 0.1, signal);
+    if (!looksDegenerate(first.blocks, req.groups.length)) return first;
+    // The model ran away (invented paragraphs / looped). One hotter retry usually lands; keep the shorter result.
+    const second = await this.request(req, 0.5, signal);
+    const pick = looksDegenerate(second.blocks, req.groups.length) && wordCount(second.blocks) > wordCount(first.blocks) ? first : second;
+    return { ...pick, durationMs: performance.now() - started };
+  }
+
+  private async request(req: TranscribeRequest, temperature: number, signal?: AbortSignal): Promise<TranscribeResult> {
+    const started = performance.now();
     const { baseUrl, model, apiKey, maxExamples = 6 } = this.opts;
 
     const userContent: ContentPart[] = [];
@@ -49,7 +59,7 @@ export class OpenAICompatTranscriber implements Transcriber {
 
     const body = JSON.stringify({
         model,
-        temperature: 0.1,
+        temperature,
         // Reasoning models spend tokens thinking before the JSON; too small a cap returns empty content.
         max_tokens: 8000,
         response_format: { type: 'json_object' },
@@ -81,6 +91,23 @@ export class OpenAICompatTranscriber implements Transcriber {
     const blocks = normaliseBlocks(extractJson(text));
     return { blocks, model, durationMs: performance.now() - started, raw: text };
   }
+}
+
+/** Words per line-group a page of notes realistically holds; above this the model is inventing text. */
+export const MAX_WORDS_PER_GROUP = 6;
+
+export function wordCount(blocks: RawBlock[]): number {
+  return blocks.reduce((n, b) => n + (b.kind === 'diagram' ? 0 : b.text.trim().split(/\s+/).filter(Boolean).length), 0);
+}
+
+/**
+ * Hallucination guard: free/small vision models sometimes keep generating plausible "notes"
+ * long after the real ink ran out (one run produced 4x the page's words). Stroke groups are
+ * roughly lines, so words ≫ groups means the reply is not a transcription.
+ */
+export function looksDegenerate(blocks: RawBlock[], groupCount: number): boolean {
+  if (groupCount === 0 || blocks.length === 0) return false;
+  return wordCount(blocks) > MAX_WORDS_PER_GROUP * Math.max(groupCount, 4);
 }
 
 export function normaliseBlocks(json: unknown): RawBlock[] {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelOutputError, extractJson } from './prompt';
-import { normaliseBlocks } from './openaiCompat';
+import { looksDegenerate, normaliseBlocks } from './openaiCompat';
 
 describe('extractJson', () => {
   it('parses plain, fenced, and prose-wrapped JSON', () => {
@@ -22,6 +22,16 @@ describe('extractJson salvage', () => {
   });
   it('throws a ModelOutputError carrying the raw text when nothing is salvageable', () => {
     expect(() => extractJson('nope')).toThrow(ModelOutputError);
+  });
+});
+
+describe('looksDegenerate', () => {
+  const para = (n: number) => ({ kind: 'paragraph' as const, text: Array.from({ length: n }, (_, i) => `w${i}`).join(' '), bbox: { left: 0, top: 0, right: 1, bottom: 1 }, groupIndices: [], confidence: 1 });
+  it('flags replies with far more words than the ink could hold', () => {
+    expect(looksDegenerate([para(140)], 60)).toBe(false); // ~2.3 words per line-group: normal
+    expect(looksDegenerate([para(545)], 60)).toBe(true); // the runaway dots-3 reply
+    expect(looksDegenerate([para(20)], 1)).toBe(false); // tiny regions get a floor of 4 groups
+    expect(looksDegenerate([], 10)).toBe(false);
   });
 });
 
