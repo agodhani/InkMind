@@ -35,11 +35,9 @@ export class OpenAICompatTranscriber implements Transcriber {
   async transcribe(req: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult> {
     const started = performance.now();
     const first = await this.request(req, 0.1, signal);
-    if (!looksDegenerate(first.blocks, req.groups.length)) return first;
-    // The model ran away (invented paragraphs / looped). One hotter retry usually lands; keep the shorter result.
+    if (!looksDegenerate(first.blocks, req)) return first;
     const second = await this.request(req, 0.5, signal);
-    const pick = looksDegenerate(second.blocks, req.groups.length) && wordCount(second.blocks) > wordCount(first.blocks) ? first : second;
-    return { ...pick, durationMs: performance.now() - started };
+    return { ...pickSaner(first, second, req), durationMs: performance.now() - started };
   }
 
   private async request(req: TranscribeRequest, temperature: number, signal?: AbortSignal): Promise<TranscribeResult> {
@@ -95,6 +93,8 @@ export class OpenAICompatTranscriber implements Transcriber {
 
 /** Words per line-group a page of notes realistically holds; above this the model is inventing text. */
 export const MAX_WORDS_PER_GROUP = 6;
+/** Even cursive rarely writes a whole word in one stroke; more words than ~0.8 × strokes is invention. */
+export const MAX_WORDS_PER_STROKE = 0.8;
 
 export function wordCount(blocks: RawBlock[]): number {
   return blocks.reduce((n, b) => n + (b.kind === 'diagram' ? 0 : b.text.trim().split(/\s+/).filter(Boolean).length), 0);
@@ -102,12 +102,25 @@ export function wordCount(blocks: RawBlock[]): number {
 
 /**
  * Hallucination guard: free/small vision models sometimes keep generating plausible "notes"
- * long after the real ink ran out (one run produced 4x the page's words). Stroke groups are
- * roughly lines, so words ≫ groups means the reply is not a transcription.
+ * long after the real ink ran out (one run produced 4x the page's words). Flag a reply only
+ * when it has far more words than both the line-groups and the strokes could hold — groups
+ * alone can merge adjacent lines, so the stroke bound keeps a dense multi-line group from
+ * tripping it.
  */
-export function looksDegenerate(blocks: RawBlock[], groupCount: number): boolean {
-  if (groupCount === 0 || blocks.length === 0) return false;
-  return wordCount(blocks) > MAX_WORDS_PER_GROUP * Math.max(groupCount, 4);
+export function looksDegenerate(blocks: RawBlock[], region: Pick<TranscribeRequest, 'groups' | 'strokes'>): boolean {
+  if (region.groups.length === 0 || blocks.length === 0) return false;
+  const words = wordCount(blocks);
+  return words > MAX_WORDS_PER_GROUP * Math.max(region.groups.length, 4) && words > MAX_WORDS_PER_STROKE * region.strokes.length;
+}
+
+/**
+ * After a degenerate first reply and a hotter retry: never trade content for an empty reply;
+ * prefer a sane retry; if both ran away keep the shorter one.
+ */
+export function pickSaner(first: TranscribeResult, second: TranscribeResult, region: Pick<TranscribeRequest, 'groups' | 'strokes'>): TranscribeResult {
+  if (second.blocks.length === 0 && first.blocks.length > 0) return first;
+  if (!looksDegenerate(second.blocks, region)) return second;
+  return wordCount(second.blocks) < wordCount(first.blocks) ? second : first;
 }
 
 export function normaliseBlocks(json: unknown): RawBlock[] {

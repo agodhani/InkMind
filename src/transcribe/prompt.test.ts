@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelOutputError, extractJson } from './prompt';
-import { looksDegenerate, normaliseBlocks } from './openaiCompat';
+import { looksDegenerate, normaliseBlocks, pickSaner } from './openaiCompat';
 
 describe('extractJson', () => {
   it('parses plain, fenced, and prose-wrapped JSON', () => {
@@ -25,13 +25,25 @@ describe('extractJson salvage', () => {
   });
 });
 
-describe('looksDegenerate', () => {
+describe('looksDegenerate / pickSaner', () => {
   const para = (n: number) => ({ kind: 'paragraph' as const, text: Array.from({ length: n }, (_, i) => `w${i}`).join(' '), bbox: { left: 0, top: 0, right: 1, bottom: 1 }, groupIndices: [], confidence: 1 });
+  const region = (groups: number, strokes: number) => ({ groups: Array.from({ length: groups }, (_, index) => ({ index, strokeIds: [], bbox: { left: 0, top: 0, right: 1, bottom: 1 }, writtenOrder: index })), strokes: Array.from({ length: strokes }, () => ({}) as never) });
   it('flags replies with far more words than the ink could hold', () => {
-    expect(looksDegenerate([para(140)], 60)).toBe(false); // ~2.3 words per line-group: normal
-    expect(looksDegenerate([para(545)], 60)).toBe(true); // the runaway dots-3 reply
-    expect(looksDegenerate([para(20)], 1)).toBe(false); // tiny regions get a floor of 4 groups
-    expect(looksDegenerate([], 10)).toBe(false);
+    expect(looksDegenerate([para(140)], region(60, 631))).toBe(false); // page 1 for real: ~2.3 words per line-group
+    expect(looksDegenerate([para(545)], region(60, 631))).toBe(true); // the runaway dots-3 reply
+    expect(looksDegenerate([para(30)], region(1, 48))).toBe(false); // three lines merged into one group: stroke bound saves it
+    expect(looksDegenerate([para(20)], region(1, 6))).toBe(false); // tiny regions get a floor of 4 groups
+    expect(looksDegenerate([], region(10, 10))).toBe(false);
+  });
+  it('never replaces content with an empty retry and prefers the sane reply', () => {
+    const r = region(60, 631);
+    const bad = { blocks: [para(545)], model: 'm', durationMs: 1 };
+    const empty = { blocks: [], model: 'm', durationMs: 1 };
+    const good = { blocks: [para(140)], model: 'm', durationMs: 1 };
+    const worse = { blocks: [para(700)], model: 'm', durationMs: 1 };
+    expect(pickSaner(bad, empty, r)).toBe(bad);
+    expect(pickSaner(bad, good, r)).toBe(good);
+    expect(pickSaner(bad, worse, r)).toBe(bad);
   });
 });
 
