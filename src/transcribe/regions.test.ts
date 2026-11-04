@@ -114,6 +114,12 @@ describe('protectEditedBlocks', () => {
     const repeated = block('m', ['a', 'e', 'f', 'g'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: 'Cat, dog' });
     const r = protectEditedBlocks([edited], [mixed, repeated], new Set(['b', 'c', 'd', 'e', 'f', 'g']));
     expect(r.incoming.map((b) => b.text)).toEqual(['catalog', ', dog']);
+    const zh = protectEditedBlocks(
+      [block('z', ['a'], { left: 0, top: 0, right: 40, bottom: 20 }, { text: '你好', userEdited: true })],
+      [block('w', ['a', 'b', 'c', 'd'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: '你好世界' })],
+      new Set(['b', 'c', 'd']),
+    );
+    expect(zh.incoming.map((b) => b.text)).toEqual(['世界']);
   });
   it('lets a corrected block be re-read once its own strokes change', () => {
     const edited = block('h', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'fixed', userEdited: true });

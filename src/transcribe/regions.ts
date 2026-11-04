@@ -199,7 +199,11 @@ function stripText(haystack: string, needle: string): string {
   const n = needle.trim();
   if (!n) return haystack;
   const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  // Scripts without word spacing (CJK) get no boundary requirement on that side.
+  const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  const lead = cjk.test(n[0]) ? '()' : '(^|[^\\p{L}\\p{N}])';
+  const trail = cjk.test(n[n.length - 1]) ? '' : '(?=$|[^\\p{L}\\p{N}])';
+  const re = new RegExp(`${lead}${escaped}${trail}`, 'iu');
   const m = re.exec(haystack);
   if (!m) return haystack;
   return (haystack.slice(0, m.index) + m[1] + haystack.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
