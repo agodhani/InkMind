@@ -200,11 +200,13 @@ async function main() {
             const cy = (b.bbox.top + b.bbox.bottom) / 2;
             return cy >= targetBounds.top - 10 && cy <= targetBounds.bottom + 10;
           });
-        // With --context a block spanning a band boundary is returned by both bands; keep the first.
+        // With --context a block spanning a band boundary is returned by both bands; keep the first,
+        // unless the later one is the only transcription of some target strokes.
         const seen = new Set(result.blocks.flatMap((b) => b.strokeIds));
         for (const b of mapped) {
           const shared = b.strokeIds.filter((id) => seen.has(id)).length;
-          if (b.strokeIds.length && shared / b.strokeIds.length > 0.5) continue;
+          const bringsNewTarget = b.strokeIds.some((id) => targetIds.has(id) && !seen.has(id));
+          if (b.strokeIds.length && shared / b.strokeIds.length > 0.5 && !bringsNewTarget) continue;
           b.strokeIds.forEach((id) => seen.add(id));
           result.blocks.push(b);
         }

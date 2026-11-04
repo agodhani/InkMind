@@ -96,12 +96,17 @@ describe('protectEditedBlocks', () => {
     const fresh = block('n2', ['d'], { left: 0, top: 80, right: 100, bottom: 100 });
     const r = protectEditedBlocks([edited, other], [reread, fresh], new Set(['d']));
     expect(r.replacedIds).toEqual(['p']);
-    expect(r.incoming.map((b) => [b.id, b.strokeIds])).toEqual([
-      ['n1', ['c']],
-      ['n2', ['d']],
-    ]);
+    // n1 is mostly a re-read of the corrected strokes → dropped (its 'c' is re-grouped on the next pause)
+    expect(r.incoming.map((b) => [b.id, b.strokeIds])).toEqual([['n2', ['d']]]);
     const merged = mergeBlocks([edited, other], r.replacedIds, r.incoming);
     expect(merged.find((b) => b.id === 'h')?.text).toBe('Backpropagation');
+  });
+  it('drops a re-read that is mostly the corrected strokes, keeps and trims a mostly-new block', () => {
+    const edited = block('h', ['a', 'b'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'Backpropagation', userEdited: true });
+    const mostlyOld = block('n1', ['a', 'b', 'c'], { left: 0, top: 0, right: 120, bottom: 40 }, { text: 'Back propagation and' });
+    const mostlyNew = block('n2', ['a', 'c', 'd', 'e'], { left: 0, top: 0, right: 120, bottom: 60 }, { text: 'Backpropagation and more words' });
+    const r = protectEditedBlocks([edited], [mostlyOld, mostlyNew], new Set(['c', 'd', 'e']));
+    expect(r.incoming.map((b) => [b.id, b.strokeIds, b.text])).toEqual([['n2', ['c', 'd', 'e'], 'and more words']]);
   });
   it('lets a corrected block be re-read once its own strokes change', () => {
     const edited = block('h', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'fixed', userEdited: true });
