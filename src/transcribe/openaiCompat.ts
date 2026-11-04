@@ -87,17 +87,11 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
   const root = (json ?? {}) as { blocks?: unknown };
   const list = Array.isArray(root.blocks) ? root.blocks : Array.isArray(json) ? json : [];
   const out: RawBlock[] = [];
-  const seenText = new Set<string>();
   for (const item of list as Record<string, unknown>[]) {
     if (!item || typeof item !== 'object') continue;
     const kind = (BLOCK_KINDS as string[]).includes(String(item.kind)) ? (item.kind as BlockKind) : 'unknown';
     const text = typeof item.text === 'string' ? item.text : '';
     if (!text.trim() && kind !== 'diagram') continue;
-    // Vision models sometimes loop and emit the same line again (seen on dense pages); a page never
-    // genuinely repeats a multi-word line verbatim, so drop exact repeats of longer texts.
-    const key = `${kind}:${text.trim().toLowerCase()}`;
-    if (text.trim().split(/\s+/).length >= 3 && seenText.has(key)) continue;
-    seenText.add(key);
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     const rawBox = item.bbox;
     let b: Record<string, unknown> = Array.isArray(rawBox)
@@ -106,7 +100,7 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     // Some models nest the other fields inside bbox, or put the whole [l,t,r,b] box in each bbox field.
     for (const key of ['groupIndices', 'confidence', 'marker', 'level'] as const) if (item[key] === undefined && b[key] !== undefined) item[key] = b[key];
     if (Array.isArray(b.left) && b.left.length === 4) b = { left: b.left[0], top: b.left[1], right: b.left[2], bottom: b.left[3] };
-    out.push({
+    const block: RawBlock = {
       kind,
       text,
       bbox: { left: num(b.left), top: num(b.top), right: num(b.right), bottom: num(b.bottom) },
@@ -114,7 +108,37 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
       confidence: num(item.confidence, 0.5),
       marker: typeof item.marker === 'string' && item.marker ? item.marker : undefined,
       level: typeof item.level === 'number' ? item.level : undefined,
-    });
+    };
+    if (isLoopedRepeat(block, out)) continue;
+    out.push(block);
   }
   return out;
+}
+
+/**
+ * Vision models sometimes loop and emit a line again (seen on dense pages). A genuine repeat
+ * elsewhere on the page has its own groups/box, so only drop a repeat that points at the same
+ * region as an earlier identical block (shared group index, overlapping box, or no location at all).
+ */
+function isLoopedRepeat(block: RawBlock, earlier: RawBlock[]): boolean {
+  const text = block.text.trim().toLowerCase();
+  if (text.split(/\s+/).length < 3) return false;
+  const located = block.groupIndices.length > 0 || boxArea(block.bbox) > 0;
+  return earlier.some((e) => {
+    if (e.kind !== block.kind || e.text.trim().toLowerCase() !== text) return false;
+    if (!located) return true;
+    if (block.groupIndices.some((g) => e.groupIndices.includes(g))) return true;
+    return boxArea(block.bbox) > 0 && boxArea(e.bbox) > 0 && boxOverlap(block.bbox, e.bbox) > 0.5;
+  });
+}
+
+function boxArea(b: RawBlock['bbox']): number {
+  return Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top);
+}
+
+function boxOverlap(a: RawBlock['bbox'], b: RawBlock['bbox']): number {
+  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  if (w <= 0 || h <= 0) return 0;
+  return (w * h) / Math.min(boxArea(a), boxArea(b));
 }

@@ -50,17 +50,26 @@ describe('normaliseBlocks', () => {
     expect(b.marker).toBeUndefined();
   });
 
-  it('drops verbatim repeats of multi-word lines (model loops) but keeps short repeated labels', () => {
+  it('drops looped repeats of a line that point at the same region, keeps genuine repeats elsewhere', () => {
+    const line = '- uses worktrees to run agents in parallel';
     const blocks = normaliseBlocks({
       blocks: [
-        { kind: 'list', text: '- uses worktrees to run agents in parallel' },
-        { kind: 'paragraph', text: 'now you have crewmates' },
-        { kind: 'list', text: '- uses worktrees to run agents in parallel' },
-        { kind: 'paragraph', text: 'yes' },
-        { kind: 'paragraph', text: 'yes' },
+        { kind: 'list', text: line, bbox: { left: 0, top: 0, right: 300, bottom: 30 }, groupIndices: [2] },
+        { kind: 'paragraph', text: 'now you have crewmates', bbox: { left: 0, top: 40, right: 300, bottom: 70 }, groupIndices: [3] },
+        { kind: 'list', text: line, bbox: { left: 0, top: 0, right: 300, bottom: 30 }, groupIndices: [2] }, // same group → loop
+        { kind: 'list', text: line }, // no location at all → loop
+        { kind: 'list', text: line, bbox: { left: 0, top: 500, right: 300, bottom: 530 }, groupIndices: [9] }, // written again lower down → keep
+        { kind: 'paragraph', text: 'yes', bbox: { left: 0, top: 0, right: 30, bottom: 30 } },
+        { kind: 'paragraph', text: 'yes', bbox: { left: 0, top: 0, right: 30, bottom: 30 } }, // short labels are never deduped
       ],
     });
-    expect(blocks.map((b) => b.text)).toEqual(['- uses worktrees to run agents in parallel', 'now you have crewmates', 'yes', 'yes']);
+    expect(blocks.map((b) => [b.text, b.bbox.top])).toEqual([
+      [line, 0],
+      ['now you have crewmates', 40],
+      [line, 500],
+      ['yes', 0],
+      ['yes', 0],
+    ]);
   });
 
   it('accepts bbox given as an [l,t,r,b] array (small local models do this)', () => {
