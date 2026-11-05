@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock } from '../model/page';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, rawToDigitalBlock } from './regions';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock } from './regions';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
   id,
@@ -85,6 +85,47 @@ describe('rawToDigitalBlock', () => {
     );
     expect(blk.bbox).toEqual({ left: 0, top: 0, right: 50, bottom: 25 });
     expect(blk.strokeIds).toEqual(['a']);
+  });
+});
+
+describe('protectEditedBlocks', () => {
+  it('keeps a corrected block whose strokes did not change and strips its strokes from incoming', () => {
+    const edited = block('h', ['a', 'b'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'Backpropagation', userEdited: true });
+    const other = block('p', ['c'], { left: 0, top: 40, right: 100, bottom: 60 });
+    const reread = block('n1', ['a', 'b', 'c'], { left: 0, top: 0, right: 120, bottom: 60 }, { text: 'Back propagation and more' });
+    const fresh = block('n2', ['d'], { left: 0, top: 80, right: 100, bottom: 100 });
+    const r = protectEditedBlocks([edited, other], [reread, fresh], new Set(['d']));
+    expect(r.replacedIds).toEqual(['p']);
+    // n1 is mostly a re-read of the corrected strokes → dropped (its 'c' is re-grouped on the next pause)
+    expect(r.incoming.map((b) => [b.id, b.strokeIds])).toEqual([['n2', ['d']]]);
+    const merged = mergeBlocks([edited, other], r.replacedIds, r.incoming);
+    expect(merged.find((b) => b.id === 'h')?.text).toBe('Backpropagation');
+  });
+  it('drops a re-read that is mostly the corrected strokes, keeps and trims a mostly-new block', () => {
+    const edited = block('h', ['a', 'b'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'Backpropagation', userEdited: true });
+    const mostlyOld = block('n1', ['a', 'b', 'c'], { left: 0, top: 0, right: 120, bottom: 40 }, { text: 'Back propagation and' });
+    const mostlyNew = block('n2', ['a', 'c', 'd', 'e'], { left: 0, top: 0, right: 120, bottom: 60 }, { text: 'Backpropagation and more words' });
+    const r = protectEditedBlocks([edited], [mostlyOld, mostlyNew], new Set(['c', 'd', 'e']));
+    expect(r.incoming.map((b) => [b.id, b.strokeIds, b.text])).toEqual([['n2', ['c', 'd', 'e'], 'and more words']]);
+  });
+  it('only strips the corrected text as a whole word, never inside a new word', () => {
+    const edited = block('h', ['a'], { left: 0, top: 0, right: 40, bottom: 20 }, { text: 'cat', userEdited: true });
+    const mixed = block('n', ['a', 'b', 'c', 'd'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: 'catalog' });
+    const repeated = block('m', ['a', 'e', 'f', 'g'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: 'Cat, dog' });
+    const r = protectEditedBlocks([edited], [mixed, repeated], new Set(['b', 'c', 'd', 'e', 'f', 'g']));
+    expect(r.incoming.map((b) => b.text)).toEqual(['catalog', ', dog']);
+    const zh = protectEditedBlocks(
+      [block('z', ['a'], { left: 0, top: 0, right: 40, bottom: 20 }, { text: '你好', userEdited: true })],
+      [block('w', ['a', 'b', 'c', 'd'], { left: 0, top: 0, right: 120, bottom: 20 }, { text: '你好世界' })],
+      new Set(['b', 'c', 'd']),
+    );
+    expect(zh.incoming.map((b) => b.text)).toEqual(['世界']);
+  });
+  it('lets a corrected block be re-read once its own strokes change', () => {
+    const edited = block('h', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'fixed', userEdited: true });
+    const r = protectEditedBlocks([edited], [block('n', ['a'], { left: 0, top: 0, right: 100, bottom: 20 })], new Set(['a']));
+    expect(r.replacedIds).toEqual(['h']);
+    expect(r.incoming).toHaveLength(1);
   });
 });
 

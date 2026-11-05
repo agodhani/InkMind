@@ -55,6 +55,8 @@ export interface TranscribeResult {
   blocks: RawBlock[];
   model: string;
   durationMs: number;
+  /** Unparsed model reply, for debugging / eval. */
+  raw?: string;
 }
 
 export interface Transcriber {

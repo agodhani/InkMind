@@ -3,6 +3,7 @@ import { InkCanvas, type InkTool } from './ink/InkCanvas';
 import type { Viewport } from './ink/ViewportManager';
 import { useUndoRedoKeyboard } from './ink/useUndoRedo';
 import { createPage, newId, type DigitalBlock, type InkStroke, type Page } from './model/page';
+import { pagesFromStrokeExport, type StrokeExport } from './model/importStrokes';
 import { db, isIndexedDbAvailable } from './store/db';
 import { DigitalView } from './views/DigitalView';
 import { useTranscription } from './transcribe/useTranscription';
@@ -93,6 +94,7 @@ export default function App() {
     transcriber,
     profile,
     enabled: settings.liveTranscription,
+    scope: settings.scope,
     onBlocks,
   });
 
@@ -204,6 +206,23 @@ export default function App() {
     undoStack.current = [];
     redoStack.current = [];
     setShowPages(false);
+  };
+
+  const importStrokes = async (file: File) => {
+    let imported: Page[];
+    try {
+      imported = pagesFromStrokeExport(JSON.parse(await file.text()) as StrokeExport, file.name);
+    } catch (e) {
+      window.alert(`Could not read ${file.name}: ${(e as Error).message}`);
+      return;
+    }
+    if (!imported.length) {
+      window.alert('No strokes found in that file.');
+      return;
+    }
+    for (const p of imported) await db.putPage(p);
+    setPages((l) => [...imported, ...l]);
+    openPage(imported[0]);
   };
 
   const openPage = (p: Page) => {
@@ -340,7 +359,13 @@ export default function App() {
           <div className="drawer-body" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-head">
               <strong>Pages</strong>
-              <button onClick={() => void newPage()}>+ New page</button>
+              <span className="row-actions">
+                <label className="button" title="Import strokes exported with scripts/pdf_to_strokes.py">
+                  Import…
+                  <input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && void importStrokes(e.target.files[0])} />
+                </label>
+                <button onClick={() => void newPage()}>+ New page</button>
+              </span>
             </div>
             {pages.map((p) => (
               <div key={p.id} className={`page-row ${p.id === page.id ? 'active' : ''}`}>
@@ -487,8 +512,10 @@ function SettingsPanel({
               Vision model
               <input list="models" value={settings.visionModel} onChange={(e) => onChange({ ...settings, visionModel: e.target.value.trim() })} />
               <datalist id="models">
-                <option value="qwen/qwen2.5-vl-72b-instruct:free" />
-                <option value="google/gemini-2.0-flash-exp:free" />
+                <option value="dots-studio/dots-3-note-preview:free" />
+                <option value="nvidia/nemotron-3.5-super-vl:free" />
+                <option value="google/gemma-4-31b-it:free" />
+                <option value="google/gemma-4-26b-a4b-it:free" />
                 <option value="google/gemini-2.5-flash" />
                 <option value="google/gemini-2.5-pro" />
                 <option value="openai/gpt-4o" />
@@ -501,6 +528,13 @@ function SettingsPanel({
         <label className="row">
           <input type="checkbox" checked={settings.liveTranscription} onChange={(e) => onChange({ ...settings, liveTranscription: e.target.checked })} />
           Transcribe live while I write
+        </label>
+        <label>
+          What gets sent after a pause
+          <select value={settings.scope} onChange={(e) => onChange({ ...settings, scope: e.target.value as AppSettings['scope'] })}>
+            <option value="page">Whole page (best accuracy — models need the context)</option>
+            <option value="region">Only the lines I changed (cheaper, worse on messy writing)</option>
+          </select>
         </label>
 
         <h4>Your handwriting profile</h4>

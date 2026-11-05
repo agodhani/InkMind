@@ -159,6 +159,56 @@ export function mergeBlocks(existing: DigitalBlock[], replacedIds: string[], inc
   return sortBlocksForReading([...kept, ...matched]);
 }
 
+/**
+ * Whole-page runs re-transcribe everything, including lines the user already
+ * corrected. Keep a user-edited block verbatim when none of its strokes changed,
+ * and reconcile incoming blocks that claim those strokes so the correction is not
+ * overwritten or duplicated by a re-read:
+ * - mostly protected strokes → the incoming block is the re-read of the correction; drop it;
+ * - mostly new strokes → keep it for the new ink, minus the protected strokes, and strip
+ *   the corrected text from it when the model repeated it verbatim (a mixed block whose
+ *   wording differs can still echo a few corrected words; the next pause re-groups them).
+ */
+export function protectEditedBlocks(
+  existing: DigitalBlock[],
+  incoming: DigitalBlock[],
+  changedStrokeIds: Set<string>,
+): { replacedIds: string[]; incoming: DigitalBlock[] } {
+  const protectedBlocks = existing.filter((b) => b.userEdited && b.strokeIds.length > 0 && !b.strokeIds.some((id) => changedStrokeIds.has(id)));
+  if (protectedBlocks.length === 0) return { replacedIds: existing.map((b) => b.id), incoming };
+  const strokeOwner = new Map(protectedBlocks.flatMap((b) => b.strokeIds.map((id) => [id, b] as const)));
+  const protectedIds = new Set(protectedBlocks.map((b) => b.id));
+  const reconciled: DigitalBlock[] = [];
+  for (const b of incoming) {
+    const owners = new Set(b.strokeIds.map((id) => strokeOwner.get(id)).filter((o): o is DigitalBlock => !!o));
+    if (owners.size === 0) {
+      reconciled.push(b);
+      continue;
+    }
+    const own = b.strokeIds.filter((id) => !strokeOwner.has(id));
+    if (own.length === 0 || own.length / b.strokeIds.length < 0.5) continue;
+    let text = b.text;
+    for (const o of owners) text = stripText(text, o.text);
+    if (text.trim()) reconciled.push({ ...b, strokeIds: own, text });
+  }
+  return { replacedIds: existing.filter((b) => !protectedIds.has(b.id)).map((b) => b.id), incoming: reconciled };
+}
+
+/** Remove `needle` from `haystack` only as a whole word/phrase (so "cat" never eats into "catalog"). */
+function stripText(haystack: string, needle: string): string {
+  const n = needle.trim();
+  if (!n) return haystack;
+  const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  // Scripts without word spacing (CJK) get no boundary requirement on that side.
+  const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  const lead = cjk.test(n[0]) ? '()' : '(^|[^\\p{L}\\p{N}])';
+  const trail = cjk.test(n[n.length - 1]) ? '' : '(?=$|[^\\p{L}\\p{N}])';
+  const re = new RegExp(`${lead}${escaped}${trail}`, 'iu');
+  const m = re.exec(haystack);
+  if (!m) return haystack;
+  return (haystack.slice(0, m.index) + m[1] + haystack.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
+}
+
 export function overlapRatio(a: BoundingBox, b: BoundingBox): number {
   const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
   const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);

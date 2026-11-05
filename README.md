@@ -32,7 +32,7 @@ Transcriber providers (pick one in **⚙ Settings**):
 | Provider | Cost | Notes |
 |---|---|---|
 | **Ollama (local)** | free, offline | `ollama pull qwen2.5vl:7b` (or `qwen2.5vl:3b`, `gemma3:4b`). Slow on CPU, fine on a GPU. |
-| **OpenRouter** | free tier with a key | `:free` models such as `qwen/qwen2.5-vl-72b-instruct:free`; paid Gemini/GPT/Claude also work. |
+| **OpenRouter** | free tier with a key | `:free` models such as `dots-studio/dots-3-note-preview:free`; paid Gemini/GPT/Claude also work. |
 | **Mock** | — | placeholder text so the ink ↔ digital flow is usable with nothing installed. |
 
 ## Run

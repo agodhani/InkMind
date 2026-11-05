@@ -1,4 +1,5 @@
 import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL } from './transcribe/ollama';
+import type { TranscriptionScope } from './transcribe/useTranscription';
 
 export type TranscriberProvider = 'mock' | 'ollama' | 'openrouter';
 
@@ -11,6 +12,7 @@ export interface AppSettings {
   habits: string[];
   glossary: string[];
   liveTranscription: boolean;
+  scope: TranscriptionScope;
 }
 
 const KEY = 'inkmind.settings.v1';
@@ -18,12 +20,13 @@ const KEY = 'inkmind.settings.v1';
 export const DEFAULT_SETTINGS: AppSettings = {
   provider: 'mock',
   openRouterApiKey: '',
-  visionModel: 'qwen/qwen2.5-vl-72b-instruct:free',
+  visionModel: 'dots-studio/dots-3-note-preview:free',
   ollamaUrl: DEFAULT_OLLAMA_URL,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
   habits: [],
   glossary: [],
   liveTranscription: true,
+  scope: 'page',
 };
 
 /** Fill defaults and pick a provider for settings saved before `provider` existed. */
