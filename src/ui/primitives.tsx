@@ -85,11 +85,21 @@ export function Switch({ checked, onChange, label, description }: { checked: boo
   );
 }
 
+/** Latest-value ref so effects can call a callback prop without re-running when the parent recreates it. */
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref;
+}
+
 /* ---------- Popover: anchored below the trigger, closes on outside pointer / Escape ---------- */
 
 export function Popover({ open, onClose, anchorRef, children, label, align = 'start' }: { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLElement | null>; children: ReactNode; label: string; align?: 'start' | 'end' }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number; flip: boolean } | null>(null);
+  const onCloseRef = useLatest(onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -105,9 +115,9 @@ export function Popover({ open, onClose, anchorRef, children, label, align = 'st
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (ref.current?.contains(t) || anchorRef.current?.contains(t)) return;
-      onClose();
+      onCloseRef.current();
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', place);
@@ -116,7 +126,7 @@ export function Popover({ open, onClose, anchorRef, children, label, align = 'st
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', place);
     };
-  }, [open, onClose, anchorRef, align]);
+  }, [open, anchorRef, align, onCloseRef]);
 
   if (!open || !pos) return null;
   return (
@@ -132,6 +142,7 @@ export function Drawer({ open, side, title, onClose, children, actions, width }:
   const bodyRef = useRef<HTMLDivElement>(null);
   const previous = useRef<Element | null>(null);
   const titleId = useId();
+  const onCloseRef = useLatest(onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -141,7 +152,7 @@ export function Drawer({ open, side, title, onClose, children, actions, width }:
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', onKey);
@@ -149,7 +160,7 @@ export function Drawer({ open, side, title, onClose, children, actions, width }:
       document.removeEventListener('keydown', onKey);
       (previous.current as HTMLElement | null)?.focus?.({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open, onCloseRef]);
 
   if (!open) return null;
   return (
