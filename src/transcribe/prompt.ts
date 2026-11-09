@@ -25,8 +25,8 @@ Rules:
 - Diagram caption format (the block's text): "Shape: <what is drawn>. Labels: <every label you can read, comma-separated>. Relations: <a → b, c → d>." Describe shapes plainly:
   circles/ellipses ("a circle with 'A' written inside"), rectangles/squares ("two boxes side by side"), cubes/3D boxes ("an isometric cube, 3 visible faces"),
   graphs/plots ("x/y axes, an increasing curve labelled 'loss', ticks '0', '1'"; bar charts: list bar labels and relative heights), flowcharts/trees ("box 'start' → diamond 'ok?' → box 'end'"; children of a tree node),
-  arrows and connections ("arrow from 'A' to 'B' labelled 'f'"). Say "Relations: none" when nothing connects.
-- Diagram blocks also carry an optional "figure" object: {"kind": "flowchart|graph|plot|sketch|tree|cube|shape|table|other", "shapes": ["rectangle", "arrow"], "labels": ["start", "end"], "edges": [{"from": "start", "to": "end", "label": "ok"}]}. labels are the words written in the figure, verbatim; edges follow the arrows (from tail to head).
+  arrows and connections ("arrow from <label> to <label>"). Say "Relations: none" when nothing connects and "Labels: none" when nothing is written.
+- Diagram blocks also carry an optional "figure" object: {"kind": "flowchart|graph|plot|sketch|tree|cube|shape|table|other", "shapes": ["<shape drawn>", ...], "labels": ["<word written in the figure>", ...], "edges": [{"from": "<label>", "to": "<label>", "label": "<text on the arrow, optional>"}]}. labels are ONLY words physically written in the figure, verbatim (use [] when there are none); edges follow drawn arrows from tail to head (use [] when nothing connects). Never copy the placeholders or examples from these instructions.
 - margin_note: short text written in a margin or rotated, clearly separate from the main flow.
 - Crossed-out text: omit it.
 - Never describe or summarise what the writing is about. Every text block must be a transcription of

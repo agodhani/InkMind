@@ -179,6 +179,9 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     delete merged.level;
     blocks = [...rest, merged];
   }
+  // Small models sometimes return an empty "diagram" for a line of text beside a figure: it carries nothing, drop it.
+  const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
+  blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
   return sortBlocksForReading(blocks);
 }
 

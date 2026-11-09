@@ -256,6 +256,14 @@ describe('reconcileFigureBlocks', () => {
     expect(out.find((b) => b.kind === 'diagram')!.strokeIds).toContain(box2.id);
   });
 
+  it('drops an empty diagram block the model put on text beside the figure', () => {
+    const { strokes, groups, groupOf, block, box1, note } = scene();
+    const out = reconcileFigureBlocks([block('diagram', 'Shape: box.', [groupOf(box1)]), block('diagram', '', [groupOf(note[0])])], groups, strokes);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('diagram');
+    expect(out[0].strokeIds).not.toContain(note[0].id);
+  });
+
   it('is a no-op without figures', () => {
     const strokes = [stroke(0, 0, 50, 0, 0, 'a')];
     const groups = buildStrokeGroups(strokes);

@@ -497,7 +497,7 @@ export function chainSegments(pieces: { strokeId: string; segments: Segment[] }[
 }
 
 /** Lines + small marks at one end → arrow. `shafts` are candidate shaft strokes, `marks` are candidate heads. */
-const HEAD_KINDS = new Set<StrokeShapeKind>(['vee', 'polyline', 'curve', 'triangle', 'line', 'arrow']);
+const HEAD_KINDS = new Set<StrokeShapeKind>(['vee', 'polyline', 'curve', 'triangle', 'arrow']);
 
 function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupIndex: number, minShaft = 25): { arrows: Arrow[]; used: Set<string> } {
   const arrows: Arrow[] = [];
@@ -510,7 +510,7 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
       const heads = marks.filter((m) => {
         if (used.has(m.strokeId) || m.strokeId === shaft.strokeId) return false;
         if (!HEAD_KINDS.has(m.kind)) return false;
-        if (m.diag > (m.kind === 'line' ? 0.3 : 0.45) * shaft.length || m.diag < 3) return false;
+        if (m.diag > 0.45 * shaft.length || m.diag < 3) return false;
         // The shaft tip touches the head, and the head sits on the shaft's axis.
         if (!contains(m.bbox, tip, Math.max(4, 0.05 * shaft.length))) return false;
         if (perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.4 * m.diag + 2) return false;
@@ -629,13 +629,21 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   axes?.strokeIds.forEach((id) => usedIds.add(id));
 
   const rest = shapes.filter((s) => !usedIds.has(s.strokeId));
-  const looseSegments = cube ? straightSegments : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= Math.max(MIN_LINE_SIZE * 0.5, 2 * medH)).flatMap((s) => s.segments);
-  const curves = rest.filter((s) => (s.kind === 'curve' || s.kind === 'polyline' || s.kind === 'vee') && s.diag >= MIN_LINE_SIZE && (shapes.length <= 2 || height(s.bbox) >= 1.8 * medH));
+  const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= Math.max(MIN_LINE_SIZE * 0.5, 2 * medH));
+  const looseSegments = looseStrokes.flatMap((s) => s.segments);
+  // Big smooth curves are drawings; angular polylines/vees only when clearly larger than a letter (Λ, L, V are letters too).
+  const curves = rest.filter((s) => {
+    if (s.kind !== 'curve' && s.kind !== 'polyline' && s.kind !== 'vee') return false;
+    const min = s.kind === 'curve' ? MIN_LINE_SIZE : 1.5 * MIN_LINE_SIZE;
+    return s.diag >= min && (shapes.length <= 2 ? s.diag >= 1.5 * MIN_LINE_SIZE : height(s.bbox) >= 1.8 * medH);
+  });
   const graphicIds = new Set([...usedIds, ...curves.map((c) => c.strokeId)]);
   const textStrokes = shapes.filter((s) => !graphicIds.has(s.strokeId) && !(s.kind === 'line' && s.length >= MIN_LINE_SIZE));
   const textBox = textStrokes.length ? textStrokes.map((s) => s.bbox).reduce(unionBox) : null;
   const textLike = !!textBox && (textStrokes.length >= 3 ? width(textBox) >= 1.2 * height(textBox) || textStrokes.length >= 6 : textStrokes.every((s) => s.diag < MIN_SHAPE_SIZE * 1.5));
-  const graphic = cube || closed.length > 0 || arrows.length > 0 || !!axes || curves.length > 0 || looseSegments.length >= 5;
+  // Letter stems (l, i, t, k) are short straight lines: a text line is only a drawing if its lines are long or it has no text.
+  const longLines = looseSegments.filter((seg) => segLen(seg) >= MIN_LINE_SIZE).length;
+  const graphic = cube || closed.length > 0 || arrows.length > 0 || !!axes || curves.length > 0 || longLines >= 3 || (looseStrokes.length >= 5 && !textLike);
 
   const analysis: GroupAnalysis = { index: group.index, bbox: group.bbox, shapes, closed, arrows, axes, cube, looseSegments, curves, textStrokes, textLike, graphic, hint: '' };
   analysis.hint = describeGroup(analysis);
@@ -677,7 +685,7 @@ function describeGroup(g: GroupAnalysis): string {
   for (const a of g.arrows) parts.push(`arrow ${arrowDirection(a)}, ${px(dist(a.tail, a.head))}`);
   if (g.axes) parts.push(`${g.axes.crossing ? 'crossing axes' : 'axes (L-shaped corner)'}: x-axis ${px(dist(g.axes.origin, g.axes.xEnd))}, y-axis ${px(dist(g.axes.origin, g.axes.yEnd))}`);
   if (g.curves.length) parts.push(`${g.curves.length === 1 ? 'a curved line' : `${g.curves.length} curved lines`} ~${px(Math.max(...g.curves.map((c) => c.diag)))}`);
-  if (g.looseSegments.length && !g.cube) {
+  if (g.looseSegments.length && !g.cube && g.graphic) {
     const horiz = g.looseSegments.filter(isHorizontal).length, vert = g.looseSegments.filter(isVertical).length;
     parts.push(`${g.looseSegments.length} straight line${g.looseSegments.length > 1 ? 's' : ''}${g.looseSegments.length === 1 ? (horiz ? ' (horizontal)' : vert ? ' (vertical)' : '') : ''}`);
   }
@@ -805,7 +813,8 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     if (t.graphic || t.textStrokes.length === 0 || members.has(uf.find(t.index)) && members.get(uf.find(t.index))!.includes(t.index)) continue;
     for (const [r, box] of figureBoxes) {
       const fw = width(box), fh = height(box);
-      if (contains(expand(box, 24), center(t.bbox)) && width(t.bbox) <= 0.8 * fw && height(t.bbox) <= 0.5 * fh) {
+      const pad = Math.max(24, 0.15 * Math.max(fw, fh));
+      if (contains(expand(box, pad), center(t.bbox)) && width(t.bbox) <= 0.8 * fw && height(t.bbox) <= 0.5 * fh) {
         members.get(r)!.push(t.index);
         break;
       }
