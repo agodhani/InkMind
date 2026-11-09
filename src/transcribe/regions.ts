@@ -187,7 +187,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
 }
 
 function cleanLabel(s: string): string {
-  return s.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/^#+\s*/, '').trim();
+  return s.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, '').replace(/^#+\s*/, '').trim();
 }
 
 function dedupe<T>(xs: Iterable<T>): T[] {

@@ -285,8 +285,8 @@ describe('reconcileFigureBlocks', () => {
 
   it('keeps every digit of a numeric label', () => {
     const { strokes, groups, groupOf, block, label } = scene();
-    const out = reconcileFigureBlocks([block('paragraph', '0', [groupOf(label[0])]), block('list', '- 1', [groupOf(label[0])])], groups, strokes);
-    expect(out.find((b) => b.kind === 'diagram')?.figure?.labels).toEqual(['0', '1']);
+    const out = reconcileFigureBlocks([block('paragraph', '0', [groupOf(label[0])]), block('list', '- 1', [groupOf(label[0])]), block('heading', '  # Start', [groupOf(label[0])])], groups, strokes);
+    expect(out.find((b) => b.kind === 'diagram')?.figure?.labels).toEqual(['0', '1', 'Start']);
   });
 
   it('drops an empty diagram block the model put on text beside the figure', () => {
