@@ -8,9 +8,9 @@ export function describeStatus(status: TranscriptionStatus, live: boolean, provi
     const n = status.pendingRegions;
     return { tone: 'running', text: n > 1 ? `Transcribing ${n} regions…` : 'Transcribing…', detail: `${providerLabel} is reading your ink` };
   }
-  // The hook reschedules right after a failure (state flips error → waiting), so key the error UI off lastError,
-  // which only clears on a successful run. Keeps the Retry action visible until something actually succeeds.
-  if (status.state === 'error' || status.lastError) {
+  // The hook reschedules right after a failure (state flips error → waiting) so keep the error UI + Retry through
+  // that wait. Plain idle (e.g. ink erased, nothing left to send) is up to date even if an old lastError lingers.
+  if (status.state === 'error' || (status.state === 'waiting' && status.lastError)) {
     const retrying = status.state === 'waiting' ? ' · retrying shortly' : '';
     return { tone: 'error', text: 'Transcription failed', detail: `${status.lastError ?? 'Unknown error'}${retrying}` };
   }

@@ -42,6 +42,7 @@ describe('describeStatus', () => {
     const rescheduled = describeStatus({ state: 'waiting', pendingRegions: 0, lastError: 'boom' }, true, 'Ollama');
     expect(rescheduled.tone).toBe('error');
     expect(rescheduled.detail).toBe('boom · retrying shortly');
+    expect(describeStatus({ state: 'idle', pendingRegions: 0, lastError: 'boom' }, true, 'Ollama').tone).toBe('idle');
     expect(describeStatus({ state: 'idle', pendingRegions: 0 }, false, 'Ollama').tone).toBe('off');
     const idle = describeStatus({ state: 'idle', pendingRegions: 0, lastModel: 'qwen2.5vl:3b', lastDurationMs: 1234 }, true, 'Ollama');
     expect(idle.tone).toBe('idle');
