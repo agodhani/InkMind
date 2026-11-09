@@ -118,3 +118,30 @@ a.wikilink { color: var(--accent); text-decoration: none; border-bottom: 1px dot
 
 .row-actions { display: flex; gap: 6px; }
 .drawer-body label.button { flex-direction: row; align-items: center; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+
+/* Dev-only drawing simulator (?sim=1) */
+.sim-panel { border-top: 2px solid var(--accent); background: var(--panel, #fff); font-size: 13px; display: flex; flex-direction: column; max-height: 46vh; }
+.sim-panel.collapsed { max-height: none; }
+.sim-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.sim-head strong { color: var(--accent); }
+.sim-head label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.sim-head input[type='number'] { width: 70px; }
+.sim-head .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+.sim-head .warn { color: #b45309; }
+.sim-body { display: grid; grid-template-columns: 180px 1fr 1fr; gap: 0; min-height: 0; flex: 1; overflow: hidden; }
+.sim-col { padding: 8px 12px; overflow: auto; border-right: 1px solid var(--line); min-height: 0; }
+.sim-col:last-child { border-right: none; }
+.sim-col h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.sim-col pre { margin: 0; white-space: pre-wrap; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sim-preview { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; display: block; }
+.sim-figures { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.sim-figures li { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.sim-figures li.ok { border-color: #16a34a; background: rgba(22, 163, 74, 0.08); }
+.sim-figures li.miss { border-color: #dc2626; background: rgba(220, 38, 38, 0.06); }
+.sim-figures .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-right: 6px; }
+.sim-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.sim-metrics span b { font-size: 16px; display: block; }
+.sim-blocks { display: flex; flex-direction: column; gap: 4px; }
+.sim-blocks div { border-left: 3px solid var(--line); padding: 2px 8px; }
+.sim-blocks div.diagram { border-left-color: var(--accent); }
+.sim-blocks .kind { color: var(--muted); font-size: 11px; margin-right: 6px; }

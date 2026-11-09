@@ -23,3 +23,41 @@ can be loaded into the app via Pages → Import… to see and correct the transc
 
 WER/CER are computed on lower-cased text with punctuation, bullets, arrows and Markdown stripped,
 so they measure *reading* accuracy, not formatting.
+
+## Synthetic shape / diagram datasets
+
+`npm run gen:shapes` (scripts/gen_shapes.ts, generator in `src/sim/`) writes reproducible, seed-based
+datasets in the same layout — `strokes.json`, `pages/page-N.png` rendered with the app's own
+renderer, `reference.md` — so they can be scored with the commands above and imported into the app.
+They contain no personal data and are committed:
+
+| dataset | pages | content |
+|---|---|---|
+| `eval/shapes-basic` | 8 | single primitives: circle, ellipse, square, rectangle, triangle, line, arrow, curved arrow |
+| `eval/graphs` | 4 | x/y axes with a plotted curve and tick labels, bar charts |
+| `eval/cubes-3d` | 3 | isometric cubes / 3D boxes with edge labels |
+| `eval/flowcharts` | 3 | flowcharts (boxes + arrows + labels) and trees/graphs |
+| `eval/mixed-notes` | 3 | heading + bullets + one figure + `*` footnote marker and definition |
+
+Strokes are drawn the way a person would (several strokes per shape, jitter, pressure variation,
+realistic timestamps); text uses the public-domain Hershey single-line font with jitter.
+`npm run gen:shapes -- --dataset graphs` regenerates one dataset, `--out <dir>` writes elsewhere.
+The same scenes can be replayed live in the app with the dev simulator: open the app with `?sim=1`.
+
+Each page of `reference.md` ends with a machine-readable fence listing the expected figures:
+
+````md
+```json figures
+{ "figures": [
+  {"id":"fig1","type":"graph","labels":["x","y","sin x"],"bbox":{...},"strokeIds":["s0","s1",...]}
+] }
+```
+````
+
+`scripts/eval.ts` strips the fence from the text reference and adds diagram metrics to `summary.md`
+(see `src/sim/metrics.ts`):
+
+* **figures found** — a `diagram` block whose `strokeIds` cover ≥ 80 % of the figure's strokes with ≤ 20 % foreign strokes;
+* **text leak** — share of figure strokes that ended up in non-diagram blocks;
+* **labels found** — expected labels (axis names, node texts, …) present case-insensitively in the diagram caption;
+* WER/CER are unchanged and cover the text parts only (`diagram` blocks are excluded).
