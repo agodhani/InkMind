@@ -83,7 +83,7 @@ export function diagramMetrics(figures: FigureExpectation[], blocks: BlockLike[]
   const perFigure: FigureScore[] = figures.map((f) => {
     const own = new Set(f.strokeIds);
     type Candidate = { block: BlockLike; coverage: number; foreign: number; ok: boolean };
-    let best: Candidate | null = null;
+    let best = null as Candidate | null;
     for (const d of diagrams) {
       const ids = new Set(d.strokeIds);
       const inter = [...ids].filter((id) => own.has(id)).length;
