@@ -121,6 +121,8 @@ export interface FigureHint {
   labelGroups: number[];
   /** Group index → group index of the shape it is written inside. */
   labelInside: Record<number, number>;
+  /** Drawing groups that also contain the text strokes of their own label (shape and label in one group). */
+  labelHostGroups: number[];
   /** Connectivity between closed shapes, by group index. */
   edges: { from: number; to: number }[];
   summary: string;
@@ -869,7 +871,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const nearby = labelGroups.filter((i) => labelInside[i] === undefined);
     if (nearby.length) summaryParts.push(`nearby labels: group ${nearby.join(', ')}`);
 
-    figures.push({ id, groupIndices, kind, shapes, labelGroups, labelInside: Object.fromEntries(labelled.map((i) => [i, labelInside[i]])), edges: figEdges, summary: `${figureName(id)} (${kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}` });
+    figures.push({ id, groupIndices, kind, shapes, labelGroups, labelInside: Object.fromEntries(labelled.map((i) => [i, labelInside[i]])), labelHostGroups: selfLabelled, edges: figEdges, summary: `${figureName(id)} (${kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}` });
   });
 
   const hints = new Map<number, string>();

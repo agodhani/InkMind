@@ -140,15 +140,16 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   for (const fig of figures) {
     const figGroups = groups.filter((g) => g.figure?.id === fig.id);
     const figStrokeIds = new Set(figGroups.flatMap((g) => g.strokeIds));
-    const labelStrokeIds = new Set(figGroups.filter((g) => fig.labelGroups.includes(g.index)).flatMap((g) => g.strokeIds));
+    const labelStrokeIds = new Set(figGroups.filter((g) => fig.labelGroups.includes(g.index) || fig.labelHostGroups.includes(g.index)).flatMap((g) => g.strokeIds));
     const members: DigitalBlock[] = [];
     const rest: DigitalBlock[] = [];
     for (const b of blocks) {
       const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
       if (inside.length === 0) rest.push(b);
-      else if (b.kind === 'diagram' || inside.length === b.strokeIds.length || inside.length >= 0.5 * b.strokeIds.length) members.push(b);
+      else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
       else {
-        // A sentence beside the figure that the model lumped together with part of it: keep it as text.
+        // Text the model lumped together with part of the figure: its words must survive, so it
+        // stays a text block on the strokes outside the figure (the figure takes the rest).
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
         rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
@@ -186,7 +187,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
 }
 
 function cleanLabel(s: string): string {
-  return s.replace(/^[-*•\d.)\s]+/, '').replace(/^#+\s*/, '').trim();
+  return s.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/^#+\s*/, '').trim();
 }
 
 function dedupe<T>(xs: Iterable<T>): T[] {
@@ -237,10 +238,16 @@ export function rawToDigitalBlock(
 export function mergeBlocks(existing: DigitalBlock[], replacedIds: string[], incoming: DigitalBlock[]): DigitalBlock[] {
   const replaced = existing.filter((b) => replacedIds.includes(b.id));
   const kept = existing.filter((b) => !replacedIds.includes(b.id));
+  // Each replaced block hands its id to at most one incoming block: two byte-identical incoming
+  // blocks must not end up sharing an id (duplicate React keys, both selected).
+  const take = (pred: (ob: DigitalBlock) => boolean) => {
+    const i = replaced.findIndex(pred);
+    return i < 0 ? undefined : replaced.splice(i, 1)[0];
+  };
   const matched = incoming.map((nb) => {
-    const same = replaced.find((ob) => ob.text.trim() === nb.text.trim() && ob.kind === nb.kind);
+    const same = take((ob) => ob.text.trim() === nb.text.trim() && ob.kind === nb.kind);
     if (same) return { ...nb, id: same.id, userEdited: same.userEdited };
-    const edited = replaced.find((ob) => ob.userEdited && overlapRatio(ob.bbox, nb.bbox) > 0.6);
+    const edited = take((ob) => !!ob.userEdited && overlapRatio(ob.bbox, nb.bbox) > 0.6);
     if (edited) return { ...nb, id: edited.id, text: edited.text, userEdited: true };
     return nb;
   });

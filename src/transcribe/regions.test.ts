@@ -4,6 +4,7 @@ import type { DigitalBlock, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
 import { arrowTwoStrokes, rect, resetSynthetic, textLine } from '../__tests__/shapes';
 import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import type { StrokeGroupMeta } from './types';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
   id,
@@ -144,6 +145,14 @@ describe('mergeBlocks', () => {
     expect(merged[1].userEdited).toBe(true);
   });
 
+  it('gives each replaced id to at most one incoming block', () => {
+    const old1 = block('old1', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'same' });
+    const new1 = block('n1', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'same' });
+    const new2 = block('n2', ['b'], { left: 0, top: 40, right: 100, bottom: 60 }, { text: 'same' });
+    const ids = mergeBlocks([old1], ['old1'], [new1, new2]).map((b) => b.id);
+    expect(ids).toEqual(['old1', 'n2']);
+  });
+
   it('puts footnote definitions last', () => {
     const def = block('d', [], { left: 0, top: 0, right: 10, bottom: 10 }, { kind: 'footnote_def', marker: '*' });
     const para = block('p', [], { left: 0, top: 100, right: 10, bottom: 110 });
@@ -254,6 +263,30 @@ describe('reconcileFigureBlocks', () => {
     expect(text.text).toBe('some notes written beside it');
     expect(text.strokeIds).not.toContain(box2.id);
     expect(out.find((b) => b.kind === 'diagram')!.strokeIds).toContain(box2.id);
+  });
+
+  it('keeps a label the model read on the group that also holds its box', () => {
+    resetSynthetic();
+    const box1 = rect(0, 0, 120, 80, 0);
+    const l1 = textLine(25, 50, 5, 16, 1000);
+    const arrow = arrowTwoStrokes(125, 40, 235, 40, 9000);
+    const box2 = rect(240, 0, 360, 80, 12000);
+    const l2 = textLine(265, 50, 3, 16, 13000);
+    const strokes = [box1, ...l1, ...arrow, box2, ...l2];
+    const groups = buildStrokeGroups(strokes);
+    const groupOf = (s: InkStroke) => groups.find((g) => g.strokeIds.includes(s.id))!;
+    expect(groupOf(box1)).toBe(groupOf(l1[0]));
+    const block = (text: string, g: StrokeGroupMeta): DigitalBlock => ({ id: text, kind: 'paragraph', text, bbox: g.bbox, strokeIds: g.strokeIds, confidence: 0.9 });
+    const out = reconcileFigureBlocks([block('start', groupOf(box1)), block('end', groupOf(box2))], groups, strokes);
+    const diagram = out.find((b) => b.kind === 'diagram');
+    expect(diagram?.figure?.labels).toEqual(['start', 'end']);
+    expect(diagram?.figure?.edges).toEqual([{ from: 'start', to: 'end' }]);
+  });
+
+  it('keeps every digit of a numeric label', () => {
+    const { strokes, groups, groupOf, block, label } = scene();
+    const out = reconcileFigureBlocks([block('paragraph', '0', [groupOf(label[0])]), block('list', '- 1', [groupOf(label[0])])], groups, strokes);
+    expect(out.find((b) => b.kind === 'diagram')?.figure?.labels).toEqual(['0', '1']);
   });
 
   it('drops an empty diagram block the model put on text beside the figure', () => {
