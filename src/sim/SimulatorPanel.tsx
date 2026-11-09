@@ -3,7 +3,7 @@
 // strokes directly. The expected ground truth is shown next to the live digital blocks with the
 // same diagram metrics scripts/eval.ts uses.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { InkStroke, Page } from '../model/page';
+import { newId, type InkStroke, type Page } from '../model/page';
 import { canvasToScreen, fitToContent, type Viewport } from '../ink/ViewportManager';
 import { renderStrokesToPng } from '../transcribe/render';
 import { strokesBounds } from '../transcribe/regions';
@@ -94,7 +94,8 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     fitView();
     setDrawn({ scene, startIndex: page.strokes.length });
     setProgress([scene.strokes.length, scene.strokes.length]);
-    onInjectStrokes(scene.strokes.map((s) => ({ ...s, id: `sim-${seed}-${s.id}` })));
+    const run = newId('sim');
+    onInjectStrokes(scene.strokes.map((s) => ({ ...s, id: `${run}-${s.id}` })));
   };
 
   const stop = () => abortRef.current?.abort();
