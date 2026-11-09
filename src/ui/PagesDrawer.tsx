@@ -112,7 +112,7 @@ function PageCard({ page, active, renaming, onOpen, onRename, onStartRename, onC
             }}
           />
         ) : (
-          <button className="page-title" onClick={(e) => (e.stopPropagation(), onOpen())} onDoubleClick={(e) => (e.stopPropagation(), startRename())}>
+          <button className="page-title" onClick={(e) => (e.stopPropagation(), onOpen())}>
             {page.title || 'Untitled'}
           </button>
         )}
