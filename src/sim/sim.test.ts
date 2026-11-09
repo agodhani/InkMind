@@ -188,6 +188,25 @@ describe('diagram metrics', () => {
     expect(m.spuriousDiagrams).toBe(1);
     expect(m.labelRecall).toBe(0);
   });
+  it('prefers a clean diagram over a contaminated one with higher coverage', () => {
+    const m = diagramMetrics([figures[0]], [
+      { kind: 'diagram', text: 'big messy block', strokeIds: ['a', 'b', 'c', 'd', 'e', 'x', 'y', 'z', 'w', 'v'] },
+      { kind: 'diagram', text: 'loss over step', strokeIds: ['a', 'b', 'c', 'd'] },
+    ]);
+    expect(m.perFigure[0].detected).toBe(true);
+    expect(m.perFigure[0].caption).toBe('loss over step');
+    expect(m.perFigure[0].labelsFound).toEqual(['loss', 'step']);
+  });
+  it('does not credit labels from a diagram that shares no strokes with the figure', () => {
+    const m = diagramMetrics([figures[0]], [
+      { kind: 'diagram', text: 'loss vs step on the x axis', strokeIds: ['p', 'q'] },
+      { kind: 'paragraph', text: 'loss', strokeIds: ['a', 'b', 'c', 'd', 'e'] },
+    ]);
+    expect(m.perFigure[0].detected).toBe(false);
+    expect(m.perFigure[0].caption).toBe('');
+    expect(m.labelsFound).toBe(0);
+    expect(m.textLeak).toBe(1);
+  });
   it('returns nulls when there is nothing to score', () => {
     const m = diagramMetrics([], [{ kind: 'paragraph', text: 'x', strokeIds: ['a'] }]);
     expect(m.figureRecall).toBeNull();

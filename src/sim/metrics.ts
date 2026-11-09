@@ -82,16 +82,22 @@ export function diagramMetrics(figures: FigureExpectation[], blocks: BlockLike[]
   const matchedDiagrams = new Set<BlockLike>();
   const perFigure: FigureScore[] = figures.map((f) => {
     const own = new Set(f.strokeIds);
-    let best: { block: BlockLike; coverage: number; foreign: number } | null = null;
+    type Candidate = { block: BlockLike; coverage: number; foreign: number; ok: boolean };
+    let best: Candidate | null = null;
     for (const d of diagrams) {
       const ids = new Set(d.strokeIds);
       const inter = [...ids].filter((id) => own.has(id)).length;
-      const coverage = own.size ? inter / own.size : 0;
-      const foreign = ids.size ? (ids.size - inter) / ids.size : 1;
-      if (!best || coverage > best.coverage || (coverage === best.coverage && foreign < best.foreign)) best = { block: d, coverage, foreign };
+      if (inter === 0) continue;
+      const coverage = inter / own.size;
+      const foreign = (ids.size - inter) / ids.size;
+      const ok = coverage >= FIGURE_MIN_COVERAGE && foreign <= FIGURE_MAX_FOREIGN;
+      // A block that satisfies both thresholds beats any contaminated one, however large its coverage.
+      const better = !best || (ok && !best.ok) || (ok === best.ok && (coverage > best.coverage || (coverage === best.coverage && foreign < best.foreign)));
+      if (better) best = { block: d, coverage, foreign, ok };
     }
-    const detected = !!best && best.coverage >= FIGURE_MIN_COVERAGE && best.foreign <= FIGURE_MAX_FOREIGN;
-    if (best && best.coverage > 0) matchedDiagrams.add(best.block);
+    const detected = !!best?.ok;
+    if (best) matchedDiagrams.add(best.block);
+    // Labels only count when found in the caption of a block that actually contains figure strokes.
     const caption = best?.block.text ?? '';
     const labelsFound = f.labels.filter((l) => captionHasLabel(caption, l));
     return {
