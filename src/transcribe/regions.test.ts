@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
-import type { DigitalBlock } from '../model/page';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock } from './regions';
+import type { DigitalBlock, InkStroke } from '../model/page';
+import { newId, unionBounds } from '../model/page';
+import { arrowTwoStrokes, rect, resetSynthetic, textLine } from '../__tests__/shapes';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
   id,
@@ -146,5 +148,118 @@ describe('mergeBlocks', () => {
     const def = block('d', [], { left: 0, top: 0, right: 10, bottom: 10 }, { kind: 'footnote_def', marker: '*' });
     const para = block('p', [], { left: 0, top: 100, right: 10, bottom: 110 });
     expect(mergeBlocks([], [], [def, para]).map((b) => b.id)).toEqual(['p', 'd']);
+  });
+});
+
+describe('shape hints on stroke groups', () => {
+  it('attaches geometry hints and a shared figure to the groups of a drawing', () => {
+    resetSynthetic();
+    const strokes = [rect(0, 0, 120, 80, 0), ...arrowTwoStrokes(125, 40, 235, 40, 6000), rect(240, 0, 360, 80, 12000), ...textLine(0, 160, 14, 18, 30000)];
+    const groups = buildStrokeGroups(strokes);
+    const drawn = groups.filter((g) => g.figure);
+    expect(drawn.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(drawn.map((g) => g.figure!.id)).size).toBe(1);
+    expect(drawn[0].figure!.kind).toBe('flowchart');
+    expect(drawn.some((g) => /rectangle|square/.test(g.hint ?? ''))).toBe(true);
+    const text = groups.find((g) => g.strokeIds.includes(strokes[strokes.length - 1].id))!;
+    expect(text.figure).toBeUndefined();
+    expect(text.hint).toMatch(/looks like text/);
+  });
+});
+
+describe('reconcileFigureBlocks', () => {
+  const scene = () => {
+    resetSynthetic();
+    const box1 = rect(0, 0, 120, 80, 0);
+    const arrow = arrowTwoStrokes(125, 40, 235, 40, 6000);
+    const box2 = rect(240, 0, 360, 80, 12000);
+    const label = textLine(30, 50, 3, 16, 20000);
+    const note = textLine(0, 160, 14, 18, 30000);
+    const strokes = [box1, ...arrow, box2, ...label, ...note];
+    const groups = buildStrokeGroups(strokes);
+    const groupOf = (s: InkStroke) => groups.find((g) => g.strokeIds.includes(s.id))!;
+    const block = (kind: DigitalBlock['kind'], text: string, gs: ReturnType<typeof groupOf>[], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
+      id: newId('blk'),
+      kind,
+      text,
+      bbox: gs.map((g) => g.bbox).reduce(unionBounds),
+      strokeIds: gs.flatMap((g) => g.strokeIds),
+      confidence: 0.7,
+      ...extra,
+    });
+    return { strokes, groups, groupOf, block, box1, arrow, box2, label, note };
+  };
+
+  it('puts the figure groups the geometry found in one diagram block', () => {
+    const { groups, groupOf, box1, arrow, box2, label, note } = scene();
+    const figGroups = new Set([box1, ...arrow, box2, ...label].map((s) => groupOf(s).index));
+    expect(figGroups.size).toBeGreaterThanOrEqual(2);
+    expect(figGroups.has(groupOf(note[0]).index)).toBe(false);
+    expect(groups.filter((g) => g.figure).map((g) => g.index).sort()).toEqual([...figGroups].sort());
+  });
+
+  it('merges a drawing the model split into paragraphs into one diagram block and keeps the note beside it as text', () => {
+    const { strokes, groups, groupOf, block, box1, arrow, box2, label, note } = scene();
+    const incoming = [
+      block('paragraph', 'II', [groupOf(box1)]),
+      block('paragraph', '-->', [...new Set(arrow.map(groupOf))]),
+      block('paragraph', 'Il', [groupOf(box2)]),
+      block('paragraph', 'go', [groupOf(label[0])]),
+      block('paragraph', 'some notes written beside it', [groupOf(note[0])]),
+    ];
+    const out = reconcileFigureBlocks(incoming, groups, strokes);
+    expect(out).toHaveLength(2);
+    const diagram = out.find((b) => b.kind === 'diagram')!;
+    const text = out.find((b) => b.kind === 'paragraph')!;
+    expect(text.text).toBe('some notes written beside it');
+    expect(diagram.strokeIds.sort()).toEqual([box1, ...arrow, box2, ...label].map((s) => s.id).sort());
+    expect(diagram.figure!.kind).toBe('flowchart');
+    expect(diagram.figure!.labels).toEqual(['go']);
+    expect(diagram.figure!.edges).toEqual([{ from: 'go', to: `shape (group ${groupOf(box2).index})` }]);
+    expect(diagram.text).toMatch(/^Shape: .*Labels: go/);
+  });
+
+  it('keeps the model diagram block and its figure, adding labels it read as separate text', () => {
+    const { strokes, groups, groupOf, block, box1, arrow, box2, label, note } = scene();
+    const incoming = [
+      block('diagram', 'Shape: two boxes joined by an arrow. Labels: go. Relations: go → B.', [groupOf(box1), ...new Set(arrow.map(groupOf)), groupOf(box2)], {
+        figure: { kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] },
+      }),
+      block('paragraph', 'go', [groupOf(label[0])]),
+      block('paragraph', 'some notes written beside it', [groupOf(note[0])]),
+    ];
+    const out = reconcileFigureBlocks(incoming, groups, strokes);
+    expect(out.map((b) => b.kind).sort()).toEqual(['diagram', 'paragraph']);
+    const diagram = out.find((b) => b.kind === 'diagram')!;
+    expect(diagram.id).toBe(incoming[0].id);
+    expect(diagram.text).toMatch(/^Shape: two boxes/);
+    expect(diagram.figure).toEqual({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
+    expect(diagram.strokeIds).toContain(label[0].id);
+  });
+
+  it('creates the diagram block when the model skipped the drawing entirely', () => {
+    const { strokes, groups, groupOf, block, note } = scene();
+    const out = reconcileFigureBlocks([block('paragraph', 'some notes written beside it', [groupOf(note[0])])], groups, strokes);
+    expect(out.map((b) => b.kind)).toEqual(['diagram', 'paragraph']);
+    expect(out[0].text).toMatch(/^Shape: /);
+    expect(out[0].figure!.shapes.length).toBeGreaterThan(0);
+  });
+
+  it('splits a text block that the model lumped with part of the drawing', () => {
+    const { strokes, groups, groupOf, block, box2, note } = scene();
+    const lumped = block('paragraph', 'some notes written beside it', [groupOf(note[0]), groupOf(box2)]);
+    // note has 14 strokes, box2 has 1: mostly text, so it stays text minus the drawing stroke.
+    const out = reconcileFigureBlocks([lumped], groups, strokes);
+    const text = out.find((b) => b.kind === 'paragraph')!;
+    expect(text.text).toBe('some notes written beside it');
+    expect(text.strokeIds).not.toContain(box2.id);
+    expect(out.find((b) => b.kind === 'diagram')!.strokeIds).toContain(box2.id);
+  });
+
+  it('is a no-op without figures', () => {
+    const strokes = [stroke(0, 0, 50, 0, 0, 'a')];
+    const groups = buildStrokeGroups(strokes);
+    const blocks: DigitalBlock[] = [{ id: 'x', kind: 'paragraph', text: 'hi', bbox: groups[0].bbox, strokeIds: ['a'], confidence: 1 }];
+    expect(reconcileFigureBlocks(blocks, groups, strokes)).toBe(blocks);
   });
 });

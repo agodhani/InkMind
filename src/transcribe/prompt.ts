@@ -19,8 +19,14 @@ Rules:
 - groupIndices lists the stroke-group indices (from the metadata) that form the block. Every group should belong to exactly one block. Use [] only if you cannot tell.
 - text is Markdown: "# " headings (set level 1-3), "- " bullets, "1. " numbered, "- [ ] / - [x]" checklists, $...$ for inline math, $$...$$ for display math. Keep the writer's line breaks inside a block only when they matter (lists).
 - Footnotes: a marker such as *, †, ‡, (1), ¹ next to text is a footnote_ref (the block's text is the text that carries the marker; set "marker"). The definition elsewhere on the page (often the bottom or margin) is a footnote_def with the same "marker" and the definition text WITHOUT the marker.
-- Diagrams, sketches, arrows between boxes, graphs, drawings: ONE block of kind "diagram" covering the whole drawing. Its text is a one- or two-sentence caption describing what it shows, and any labels you can read, e.g. "Flow: policy → reward model → PPO update; labels: 'rollouts', 'KL'". Never transcribe a diagram as paragraphs.
-- Labels that belong to a diagram are part of the diagram block, not separate paragraphs.
+- Diagrams, sketches, arrows between boxes, graphs, drawings: ONE block of kind "diagram" covering the WHOLE drawing, even when it spans several stroke groups. Never transcribe a drawing as paragraphs, and never invent words for strokes that are a drawing.
+- Labels written inside or against a figure (text in a box, next to an arrow, on an axis) belong to the diagram block, not to separate paragraphs. A line of notes beside a figure that is not part of it stays a normal text block.
+- Shape hints: the stroke-group metadata includes a geometric analysis of the ink ("closed shape: circle", "arrow → right", "axes (L-shaped corner)", "cube / 3D box", "looks like text"). Trust it: a group hinted as a shape, arrow, axes or cube is a drawing and must NEVER be transcribed as text; a group hinted "looks like text" is handwriting. When the metadata lists a "Figure", output exactly one diagram block whose groupIndices are ALL of that figure's groups (drawing + labels).
+- Diagram caption format (the block's text): "Shape: <what is drawn>. Labels: <every label you can read, comma-separated>. Relations: <a → b, c → d>." Describe shapes plainly:
+  circles/ellipses ("a circle with 'A' written inside"), rectangles/squares ("two boxes side by side"), cubes/3D boxes ("an isometric cube, 3 visible faces"),
+  graphs/plots ("x/y axes, an increasing curve labelled 'loss', ticks '0', '1'"; bar charts: list bar labels and relative heights), flowcharts/trees ("box 'start' → diamond 'ok?' → box 'end'"; children of a tree node),
+  arrows and connections ("arrow from 'A' to 'B' labelled 'f'"). Say "Relations: none" when nothing connects.
+- Diagram blocks also carry an optional "figure" object: {"kind": "flowchart|graph|plot|sketch|tree|cube|shape|table|other", "shapes": ["rectangle", "arrow"], "labels": ["start", "end"], "edges": [{"from": "start", "to": "end", "label": "ok"}]}. labels are the words written in the figure, verbatim; edges follow the arrows (from tail to head).
 - margin_note: short text written in a margin or rotated, clearly separate from the main flow.
 - Crossed-out text: omit it.
 - Never describe or summarise what the writing is about. Every text block must be a transcription of
@@ -37,16 +43,28 @@ export function buildUserPrompt(req: TranscribeRequest): string {
   if (req.profile.habits.length) parts.push(`Writer's habits:\n- ${req.profile.habits.slice(0, 20).join('\n- ')}`);
   parts.push(`Image size: ${req.imageSize.width}x${req.imageSize.height} px.`);
   parts.push(
-    `Stroke groups (index: bbox in image px, strokes, written order):\n` +
+    `Stroke groups (index: bbox in image px, strokes, written order, shape hint):\n` +
       req.groups
         .map((g) => {
           const b = toImagePx(g.bbox, req);
-          return `${g.index}: [${b.left},${b.top},${b.right},${b.bottom}] n=${g.strokeIds.length} order=${g.writtenOrder}`;
+          return `${g.index}: [${b.left},${b.top},${b.right},${b.bottom}] n=${g.strokeIds.length} order=${g.writtenOrder}${g.hint ? ` — ${g.hint}` : ''}`;
         })
         .join('\n'),
   );
+  const figures = figureSummaries(req.groups);
+  if (figures.length) {
+    parts.push(
+      `Figures found by geometry (each must be exactly ONE diagram block with all of its groups; read the label groups and put the words in the caption and figure.labels; never transcribe the drawing groups as text):\n${figures.join('\n')}`,
+    );
+  }
   parts.push('Transcribe the region in the image into blocks.');
   return parts.join('\n\n');
+}
+
+function figureSummaries(groups: TranscribeRequest['groups']): string[] {
+  const seen = new Map<number, string>();
+  for (const g of groups) if (g.figure && !seen.has(g.figure.id)) seen.set(g.figure.id, g.figure.summary);
+  return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s);
 }
 
 export function toImagePx(b: { left: number; top: number; right: number; bottom: number }, req: TranscribeRequest) {

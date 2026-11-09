@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke, Page } from '../model/page';
 import type { HandwritingProfile, Transcriber } from './types';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, strokesBounds, type DirtyRegion } from './regions';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks, strokesBounds, type DirtyRegion } from './regions';
 import { MODEL_RENDER, renderStrokesToPng } from './render';
 
 /**
@@ -91,7 +91,11 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
           },
           abort.current.signal,
         );
-        let incoming = result.blocks.map((raw) => rawToDigitalBlock(raw, groups, rendered.bounds, rendered.size, region.strokes));
+        let incoming = reconcileFigureBlocks(
+          result.blocks.map((raw) => rawToDigitalBlock(raw, groups, rendered.bounds, rendered.size, region.strokes)),
+          groups,
+          region.strokes,
+        );
         let replacedBlockIds = region.replacedBlockIds;
         if (scope === 'page') {
           const protectedResult = protectEditedBlocks(current.blocks, incoming, new Set([...dirtyIds, ...deletedIds]));

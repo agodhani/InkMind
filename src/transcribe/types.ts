@@ -1,5 +1,6 @@
 import type { BoundingBox } from '../types';
-import type { BlockKind, DigitalBlock, InkStroke } from '../model/page';
+import type { BlockKind, DigitalBlock, FigureInfo, InkStroke } from '../model/page';
+import type { FigureHint } from '../ink/shapeHints';
 
 /** A line-ish cluster of strokes, sent as text metadata alongside the image. */
 export interface StrokeGroupMeta {
@@ -8,6 +9,10 @@ export interface StrokeGroupMeta {
   bbox: BoundingBox;
   /** Order in which the group was written, 0 = first. */
   writtenOrder: number;
+  /** Geometric hint from the shape pre-classifier, e.g. "closed shape: circle ~120 px". */
+  hint?: string;
+  /** The drawn figure this group is part of (shape, label inside it, arrow, axes…), shared by all its groups. */
+  figure?: FigureHint;
 }
 
 export interface HandwritingExample {
@@ -49,6 +54,8 @@ export interface RawBlock {
   confidence: number;
   marker?: string;
   level?: number;
+  /** Diagram blocks: structured figure description (optional, normalised leniently). */
+  figure?: FigureInfo;
 }
 
 export interface TranscribeResult {
