@@ -11,7 +11,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   if (!obj) return undefined;
   const kind = normaliseFigureKind(firstString(obj, ['kind', 'type', 'figure_kind', 'figureKind', 'category']), fallbackKind);
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
-  const labels = stringList(firstDefined(obj, ['labels', 'label', 'nodes', 'texts', 'text_labels', 'annotations']));
+  const labels = stringList(firstDefined(obj, ['labels', 'label', 'nodes', 'texts', 'text_labels', 'annotations'])).filter((l) => !isGroupRef(l));
   const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links']));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0) return undefined;
   return { kind: kind ?? fallbackKind ?? 'sketch', shapes, labels, edges };
@@ -97,14 +97,21 @@ export function stringList(value: unknown): string[] {
 
 const ARROW_RE = /\s*(?:->|-->|→|⇒|=>|—>|–>|to|,)\s*/i;
 
+/** Small models echo the prompt's stroke-group ids ("group 3", "Figure A") instead of the words written. */
+export function isGroupRef(value: unknown): boolean {
+  return typeof value === 'string' && /^\s*(group|grp|g|figure|fig)\s*[A-Z0-9]+\s*$/i.test(value);
+}
+
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
 export function edgeList(value: unknown): FigureEdge[] {
   const out: FigureEdge[] = [];
   const add = (from: unknown, to: unknown, label?: unknown) => {
+    if (isGroupRef(from) || isGroupRef(to)) return;
     const f = typeof from === 'string' || typeof from === 'number' ? cleanText(String(from)) : stringList(from)[0];
     const t = typeof to === 'string' || typeof to === 'number' ? cleanText(String(to)) : stringList(to)[0];
     if (!f || !t || out.length >= MAX_ITEMS) return;
-    const l = typeof label === 'string' ? cleanText(label) : undefined;
+    const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
+    const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) ? cleaned : undefined;
     if (out.some((e) => e.from === f && e.to === t && (e.label ?? '') === (l ?? ''))) return;
     out.push(l ? { from: f, to: t, label: l } : { from: f, to: t });
   };

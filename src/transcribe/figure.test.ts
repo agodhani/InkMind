@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, stringList } from './figure';
 
 describe('normaliseFigure', () => {
+  it('drops stroke-group ids echoed as labels or edge endpoints', () => {
+    const fig = normaliseFigure({ kind: 'plot', labels: ['group 0', 'loss', 'Figure A'], edges: [{ from: 'group 0', to: 'group 1', label: 'loss' }, { from: 'x', to: 'y' }] });
+    expect(fig?.labels).toEqual(['loss']);
+    expect(fig?.edges).toEqual([{ from: 'x', to: 'y' }]);
+  });
+
+  it('drops edge labels that are only arrow glyphs or punctuation', () => {
+    const fig = normaliseFigure({ kind: 'flowchart', edges: [{ from: 'a', to: 'b', label: '→' }, { from: 'b', to: 'c', label: ' -> ' }, { from: 'c', to: 'd', label: 'x2' }] });
+    expect(fig?.edges).toEqual([{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd', label: 'x2' }]);
+  });
+
   it('accepts the documented shape', () => {
     const fig = normaliseFigure({ kind: 'flowchart', shapes: ['rectangle', 'rectangle', 'arrow'], labels: ['start', 'end'], edges: [{ from: 'start', to: 'end', label: 'ok' }] });
     expect(fig).toEqual({ kind: 'flowchart', shapes: ['rectangle', 'arrow'], labels: ['start', 'end'], edges: [{ from: 'start', to: 'end', label: 'ok' }] });
