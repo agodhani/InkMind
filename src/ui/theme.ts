@@ -15,11 +15,10 @@ export function resolveTheme(pref: ThemePreference, systemPrefersDark: boolean):
   return pref;
 }
 
-/** Cycle used by the toolbar toggle: follow the OS, then force the opposite of what is showing. */
+/** Toolbar toggle: always flip what is showing; land on `system` when the target matches the OS so OS-follow stays reachable. */
 export function nextThemePreference(pref: ThemePreference, systemPrefersDark: boolean): ThemePreference {
-  const showing = resolveTheme(pref, systemPrefersDark);
-  if (pref === 'system') return showing === 'dark' ? 'light' : 'dark';
-  return 'system';
+  const target: ResolvedTheme = resolveTheme(pref, systemPrefersDark) === 'dark' ? 'light' : 'dark';
+  return resolveTheme('system', systemPrefersDark) === target ? 'system' : target;
 }
 
 export function readThemePreference(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): ThemePreference {

@@ -14,6 +14,9 @@ describe('theme', () => {
     expect(nextThemePreference('system', true)).toBe('light');
     expect(nextThemePreference('dark', false)).toBe('system');
     expect(nextThemePreference('light', true)).toBe('system');
+    // chosen theme equals the OS theme: must still flip visibly, not silently fall back to system
+    expect(nextThemePreference('light', false)).toBe('dark');
+    expect(nextThemePreference('dark', true)).toBe('light');
   });
 
   it('reads only valid preferences from storage', () => {
