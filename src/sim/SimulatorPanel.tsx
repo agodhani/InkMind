@@ -18,6 +18,8 @@ export interface SimulatorPanelProps {
   onInjectStrokes: (strokes: InkStroke[]) => void;
   onClearPage: () => void;
   onTranscribeNow: () => void;
+  /** Called before a replay so the canvas is in pen mode (an eraser would erase instead of draw). */
+  onBeforeDraw: () => void;
 }
 
 const SPEEDS = [
@@ -33,7 +35,7 @@ interface Drawn {
   startIndex: number;
 }
 
-export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onClearPage, onTranscribeNow }: SimulatorPanelProps) {
+export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onClearPage, onTranscribeNow, onBeforeDraw }: SimulatorPanelProps) {
   const [kind, setKind] = useState<SceneKind>('mixed-notes');
   const [seed, setSeed] = useState(1);
   const [speed, setSpeed] = useState(10);
@@ -72,6 +74,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
       return;
     }
     setError(null);
+    onBeforeDraw();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setRunning(true);
