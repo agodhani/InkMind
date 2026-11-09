@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, stringList } from './figure';
 
 describe('normaliseFigure', () => {
+  it('does not split edge names on "to" inside a word', () => {
+    expect(normaliseFigure({ kind: 'flowchart', edges: 'motor -> stop' })?.edges).toEqual([{ from: 'motor', to: 'stop' }]);
+    expect(normaliseFigure({ kind: 'flowchart', edges: 'start to stop' })?.edges).toEqual([{ from: 'start', to: 'stop' }]);
+  });
+
   it('drops stroke-group ids echoed as labels or edge endpoints', () => {
     const fig = normaliseFigure({ kind: 'plot', labels: ['group 0', 'loss', 'Figure A'], edges: [{ from: 'group 0', to: 'group 1', label: 'loss' }, { from: 'x', to: 'y' }] });
     expect(fig?.labels).toEqual(['loss']);

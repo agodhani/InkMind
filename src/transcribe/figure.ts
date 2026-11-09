@@ -95,7 +95,7 @@ export function stringList(value: unknown): string[] {
   return out;
 }
 
-const ARROW_RE = /\s*(?:->|-->|→|⇒|=>|—>|–>|to|,)\s*/i;
+const ARROW_RE = /\s*(?:->|-->|→|⇒|=>|—>|–>|,)\s*|\s+to\s+/i;
 
 /** Small models echo the prompt's stroke-group ids ("group 3", "Figure A") instead of the words written. */
 export function isGroupRef(value: unknown): boolean {
