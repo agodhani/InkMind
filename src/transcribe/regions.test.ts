@@ -3,7 +3,7 @@ import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
 import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
@@ -368,8 +368,27 @@ describe('reconcileFigureBlocks', () => {
     const out = reconcileFigureBlocks([tableBlock], groups, strokes);
     expect(out).toHaveLength(1);
     expect(out[0].kind).toBe('diagram');
-    expect(out[0].figure!.cells).toEqual([['name', 'qty'], ['nut', '']]);
+    expect(out[0].figure!.cells).toEqual([['name', 'qty'], ['nut', ''], ['', '']]);
     expect(out[0].figure!.labels).toEqual(expect.arrayContaining(['name', 'qty', 'nut']));
+  });
+
+  it('aligns model nodes to geometry nodes by label group, and lets geometry decide shapes and nesting', () => {
+    const geo = { nodes: [{ id: 'n1', label: 'circle 1', shape: 'circle', group: 1 }, { id: 'n2', label: 'circle 2', shape: 'circle', group: 8 }], edges: [{ from: 'circle 2', to: 'circle 1', kind: 'line' as const }], unnamed: ['circle 1', 'circle 2'] };
+    const hint = { id: 0, groupIndices: [0], kind: 'mindmap' as const, shapes: [], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
+    const prior = { kind: 'sketch' as const, shapes: [], labels: ['topic', 'a'], edges: [], nodes: [{ id: 'n1', label: 'topic', shape: 'box 2', group: 8, parent: 'n2' }, { id: 'n2', label: 'a', group: 1 }] };
+    const fig = mergeWithGeometry(prior, hint, ['topic', 'a'], geo);
+    expect(fig.edges).toEqual([{ from: 'topic', to: 'a', kind: 'line', inferred: true }]);
+    expect(fig.nodes).toEqual([{ id: 'n1', label: 'topic', shape: 'circle', group: 8 }, { id: 'n2', label: 'a', shape: 'circle', group: 1 }]);
+  });
+
+  it('keeps differently labelled edges when folding diagram blocks, and leaves a far-away stroke-less diagram alone', () => {
+    const merged = mergeFigures({ kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'yes' }] }, { kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'no' }, { from: 'a', to: 'b', label: 'yes' }] });
+    expect(merged.edges).toEqual([{ from: 'a', to: 'b', label: 'yes' }, { from: 'a', to: 'b', label: 'no' }]);
+    const { groups, strokes } = scene();
+    const far: DigitalBlock = { id: 'far', kind: 'diagram', text: 'Shape: a sun.', bbox: { left: 2000, top: 2000, right: 2100, bottom: 2100 }, strokeIds: [], confidence: 0.5, figure: { kind: 'sketch', shapes: ['sun'], labels: [], edges: [] } };
+    const out = reconcileFigureBlocks([far], groups, strokes);
+    expect(out.filter((b) => b.kind === 'diagram')).toHaveLength(2);
+    expect(out.find((b) => b.id === 'far')!.figure!.shapes).toEqual(['sun']);
   });
 
   it('is a no-op without figures', () => {

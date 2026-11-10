@@ -1568,6 +1568,7 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
   const nodes: FigureNode[] = fig.nodes.map((n) => {
     const node: FigureNode = { id: n.id, label: names.get(n.id)!, shape: n.decision ? 'decision diamond' : n.shape };
     if (n.parent !== undefined) node.parent = n.parent;
+    if (n.labelGroup !== undefined) node.group = n.labelGroup;
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {

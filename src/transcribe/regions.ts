@@ -144,7 +144,8 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const c = { x: (b.bbox.left + b.bbox.right) / 2, y: (b.bbox.top + b.bbox.bottom) / 2 };
     const ranked = figures
       .map((f) => ({ f, box: figBoxOf(f) }))
-      .map(({ f, box }) => ({ f, hit: boundsIntersect(b.bbox, box), d: Math.hypot(c.x - (box.left + box.right) / 2, c.y - (box.top + box.bottom) / 2) }))
+      .map(({ f, box }) => ({ f, hit: boundsIntersect(b.bbox, box), near: boundsIntersect(b.bbox, expandBounds(box, Math.max(box.right - box.left, box.bottom - box.top))), d: Math.hypot(c.x - (box.left + box.right) / 2, c.y - (box.top + box.bottom) / 2) }))
+      .filter((r) => r.hit || r.near)
       .sort((p, q) => Number(q.hit) - Number(p.hit) || p.d - q.d);
     if (ranked.length) orphanOwner.set(b, ranked[0].f.id);
   }
@@ -196,7 +197,9 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
       const cells = tableText ? cellGrid(tableText.text) : [];
       if (cells.flat().filter(Boolean).length >= 2) {
-        figure.cells = cells;
+        // Keep the drawn grid's size: a row the model skipped (empty cells) stays a row.
+        const rows = Math.max(cells.length, fig.cells?.length ?? 0), cols = Math.max(cells[0].length, fig.cells?.[0]?.length ?? 0);
+        figure.cells = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => cells[r]?.[c] ?? ''));
         figure.labels = dedupe([...figure.labels.filter((l) => !cells.some((row) => row.join(' ') === l)), ...cells.flat().filter(Boolean)]);
       }
     }
@@ -211,7 +214,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   }
   // Small models sometimes return an empty "diagram" for a line of text beside a figure: it carries nothing, drop it.
   const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
-  blocks = blocks.filter((b) => b.kind !== 'diagram' || (b.strokeIds.length > 0 && (b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)))));
+  blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
   return sortBlocksForReading(blocks);
 }
 
@@ -225,7 +228,7 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
     labels: dedupe([...a.labels, ...b.labels]),
     edges: [...a.edges],
   };
-  for (const e of b.edges) if (!out.edges.some((x) => sameEdge(x, e))) out.edges.push(e);
+  for (const e of b.edges) if (!out.edges.some((x) => sameEdge(x, e) && (x.label ?? '') === (e.label ?? '') && (x.kind ?? 'arrow') === (e.kind ?? 'arrow'))) out.edges.push(e);
   const nodes = [...(a.nodes ?? [])];
   for (const n of b.nodes ?? []) if (!nodes.some((x) => sameText(x.label, n.label))) nodes.push(n);
   if (nodes.length) out.nodes = nodes;
@@ -242,10 +245,17 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  */
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): ReturnType<typeof figureFromGeometry> {
   const rename = new Map<string, string>();
+  const taken = new Set<FigureNode>();
   for (const g of geo.nodes ?? []) {
     if (!geo.unnamed.includes(g.label)) continue;
-    const m = prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase());
-    if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) rename.set(g.label, m.label);
+    // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
+    const m =
+      (g.group !== undefined ? prior?.nodes?.find((n) => n.group === g.group && !taken.has(n)) : undefined) ??
+      prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase() && !taken.has(n) && n.group === undefined);
+    if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
+      rename.set(g.label, m.label);
+      taken.add(m);
+    }
   }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
@@ -287,22 +297,24 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     if (!prior?.nodes?.length) return geo.nodes?.length ? geo.nodes : undefined;
     const out = prior.nodes.map((n) => ({ ...n }));
     for (const g of geo.nodes ?? []) {
-      const match = out.find((n) => sameText(n.label, g.label) || sameText(n.id, g.id));
+      const match =
+        (g.group !== undefined ? out.find((n) => n.group === g.group) : undefined) ?? out.find((n) => sameText(n.label, g.label)) ?? out.find((n) => sameText(n.id, g.id));
       if (!match) {
         if (!geo.unnamed.includes(g.label)) out.push(g);
         continue;
       }
-      if (!match.shape && g.shape) match.shape = g.shape;
-      if (match.parent === undefined && g.parent !== undefined) {
-        const parent = geo.nodes!.find((p) => p.id === g.parent);
-        const target = parent && (out.find((n) => sameText(n.label, parent.label) || sameText(n.id, parent.id)) ?? out.find((n) => n.id === parent.id));
-        if (target && target !== match) match.parent = target.id;
-      }
+      // Drawn geometry beats the model's guess for what shape a node is and what it sits inside.
+      if (g.shape) match.shape = g.shape;
+      if (g.group !== undefined) match.group = g.group;
+      const parent = g.parent !== undefined ? geo.nodes!.find((p) => p.id === g.parent) : undefined;
+      const target = parent && (out.find((n) => sameText(n.label, parent.label) || sameText(n.id, parent.id)) ?? out.find((n) => n.id === parent.id));
+      if (target && target !== match) match.parent = target.id;
+      else if (geo.nodes!.length) delete match.parent;
     }
     return out;
   })();
   const sequence = prior?.sequence?.length ? prior.sequence : geo.sequence?.length && !geo.sequence.every((s) => geo.unnamed.includes(s)) ? geo.sequence : undefined;
-  const cells = kind === 'table' && prior?.cells?.length ? prior.cells : geo.cells?.some((row) => row.some(Boolean)) ? geo.cells : undefined;
+  const cells = kind === 'table' && prior?.cells?.length ? prior.cells : geo.cells?.length && (kind === 'table' || geo.cells.some((row) => row.some(Boolean))) ? geo.cells : undefined;
   const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels, edges };
   if (nodes?.length) figure.nodes = nodes;
   if (sequence) figure.sequence = sequence;

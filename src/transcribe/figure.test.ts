@@ -127,4 +127,9 @@ describe('normaliseFigure', () => {
     expect(seq.sequence).toEqual(['client', 'server']);
     expect(seq.cells).toBeUndefined();
   });
+  it('keeps "to" inside a step name, empty table rows, and same-word nodes with different ids', () => {
+    expect(normaliseFigure({ kind: 'flowchart', sequence: ['ready to ship', 'done → shipped'] })!.sequence).toEqual(['ready to ship', 'done', 'shipped']);
+    expect(normaliseFigure({ kind: 'table', cells: [['a', 'b'], ['', ''], ['c', 'd']] })!.cells).toEqual([['a', 'b'], ['', ''], ['c', 'd']]);
+    expect(normaliseFigure({ kind: 'graph', nodes: [{ id: 'n1', label: 'x' }, { id: 'n2', label: 'x' }, { label: 'x' }] })!.nodes).toHaveLength(2);
+  });
 });

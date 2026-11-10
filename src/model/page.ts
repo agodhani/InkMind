@@ -47,6 +47,8 @@ export interface FigureNode {
   shape?: string;
   /** id of the enclosing node when this shape is drawn inside another one. */
   parent?: string;
+  /** Stroke group holding this node's label (from the geometry hints); aligns model nodes with geometry nodes. */
+  group?: number;
 }
 
 /** Structured description of a diagram block: what was drawn, the labels in it, and what connects to what. */

@@ -31,7 +31,7 @@ Rules:
   {"kind": "flowchart|graph|plot|sketch|tree|cube|shape|table|sequence|mindmap|other",
    "shapes": ["<shape drawn>", ...],
    "labels": ["<word written in the figure>", ...],
-   "nodes": [{"id": "<node id from the hints>", "label": "<word written in/at that node>", "shape": "<its shape>", "parent": "<id of the node it is drawn inside, only when nested>"}],
+   "nodes": [{"id": "<node id from the hints>", "group": <number of that node's label group from the hints>, "label": "<word written in/at that node>", "shape": "<its shape>", "parent": "<id of the node it is drawn inside, only when nested>"}],
    "edges": [{"from": "<label of the node the arrow leaves>", "to": "<label of the node it points at>", "label": "<text on the arrow, optional>", "kind": "arrow|line|self-loop"}],
    "sequence": ["<first step's label>", "<second step's label>", ...],
    "cells": [["<row 1 col 1>", "<row 1 col 2>"], ["<row 2 col 1>", ...]]}.
