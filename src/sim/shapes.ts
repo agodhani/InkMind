@@ -198,19 +198,20 @@ export function drawPolygon(pen: Pen, corners: Offset[], strokesHint?: 1 | 2 | '
   const m = messOf(pen);
   const c = corners.map((p) => jitterCorner(pen, p));
   const mode = strokesHint ?? rng.pick([1, 1, 2, 'sides'] as const);
-  // A side either overshoots its corner or (messy hands) stops short of it.
-  const end = () => (rng.chance(m.gap) ? 1 - rng.range(0.03, 0.08) : 1 + rng.range(0, 0.05) * m.overshoot);
-  const begin = () => (rng.chance(m.gap) ? rng.range(0.02, 0.06) : -0.02 * m.overshoot);
+  // A side either overshoots its corner (a few px, more for a messy hand) or stops short of it, leaving a gap.
+  const len = (a: Offset, b: Offset) => Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+  const end = (a: Offset, b: Offset) => (rng.chance(m.gap) ? 1 - rng.range(6, 16) / len(a, b) : 1 + (rng.range(0, 7) * m.overshoot) / len(a, b));
+  const begin = (a: Offset, b: Offset) => (rng.chance(m.gap) ? rng.range(4, 12) / len(a, b) : (-3 * m.overshoot) / len(a, b));
   if (mode === 1) {
-    // Close by hand: overshoot the first corner a little, or stop just short of it (a gap).
-    w.stroke([...c, lerp(c[c.length - 1], c[0], end())]);
+    // Close by hand: overshoot the first corner a little, or stop just short of it.
+    w.stroke([...c, lerp(c[c.length - 1], c[0], end(c[c.length - 1], c[0]))]);
   } else if (mode === 2 && c.length === 4) {
     w.stroke([c[0], c[1], c[2]]);
-    w.stroke([lerp(c[2], c[3], begin()), c[3], lerp(c[0], c[3], -0.04 * m.overshoot)], { pauseMs: 200 });
+    w.stroke([lerp(c[2], c[3], begin(c[2], c[3])), c[3], lerp(c[0], c[3], (-5 * m.overshoot) / len(c[0], c[3]))], { pauseMs: 200 });
   } else {
     for (let i = 0; i < c.length; i++) {
       const a = c[i], b = c[(i + 1) % c.length];
-      w.stroke([lerp(a, b, begin()), lerp(a, b, end())], { pauseMs: 160 });
+      w.stroke([lerp(a, b, begin(a, b)), lerp(a, b, end(a, b))], { pauseMs: 160 });
     }
   }
 }

@@ -4,8 +4,9 @@ import { glyphFor, layoutText, measureText, parseJhf } from './font';
 import { DEFAULT_INK_STYLE, InkWriter, resample } from './ink';
 import { drawCircle, drawRect, writeText, type Pen } from './shapes';
 import { DATASETS, SCENE_KINDS, buildScene, sceneReference } from './scenes';
-import { captionHasLabel, diagramMetrics, formatReferencePage, parseReferencePage } from './metrics';
+import { captionHasLabel, containmentFromCaption, diagramMetrics, edgesFromCaption, formatReferencePage, kendallTau, normLabel, parseReferencePage, relationMetrics, stepPositions, type FigureExpectation } from './metrics';
 import { strokesBounds } from '../transcribe/regions';
+import type { DigitalBlock } from '../model/page';
 
 const pen = (seed = 1): Pen => {
   const rng = new Rng(seed);
@@ -133,6 +134,16 @@ describe('scenes', () => {
   it('changes with the seed', () => {
     expect(JSON.stringify(buildScene('circle', 1))).not.toBe(JSON.stringify(buildScene('circle', 2)));
   });
+  it('keeps every dataset page (normal and messy) inside its page bounds', () => {
+    for (const pages of Object.values(DATASETS)) {
+      for (const p of pages) {
+        const a = buildScene(p.kind, p.seed, p.messiness);
+        let out = 0;
+        for (const s of a.strokes) for (const q of s.inputs.inputs) if (!(q.x > 0 && q.x < a.width && q.y > 0 && q.y < a.height)) out++;
+        expect(out, `${p.kind} #${p.seed} ${p.messiness ?? 'normal'}`).toBe(0);
+      }
+    }
+  });
   it('mixed-notes has heading, bullets, a figure with labels and a footnote', () => {
     const s = buildScene('mixed-notes', 41);
     expect(s.text).toMatch(/^# /);
@@ -226,5 +237,113 @@ describe('diagram metrics', () => {
     expect(parsed.figures).toEqual(figures);
     expect(parseReferencePage('plain').figures).toEqual([]);
     expect(parseReferencePage('<!-- circle #1: a hand-drawn circle -->\n\n' + formatReferencePage('', figures)).text).toBe('');
+  });
+});
+
+describe('relation metrics', () => {
+  const fig = (over: Partial<FigureExpectation>): FigureExpectation => ({ id: 'fig1', type: 'flowchart-complex', labels: [], strokeIds: ['s1', 's2'], ...over });
+  const block = (text: string, figure?: DigitalBlock['figure']): Pick<DigitalBlock, 'kind' | 'text' | 'strokeIds' | 'figure'> => ({ kind: 'diagram', text, strokeIds: ['s1', 's2'], figure });
+
+  it('normalises labels and arrows', () => {
+    expect(normLabel('  Read Input. ')).toBe('read input');
+    expect(normLabel('A -> B')).toBe('a → b');
+    expect(normLabel('A => B')).toBe('a → b');
+  });
+
+  it('parses edges out of captions and tolerates -> vs →', () => {
+    expect(edgesFromCaption('Flowchart. Relations: start → read input, valid? -> process (yes), valid? → show error (no).')).toEqual([
+      { from: 'start', to: 'read input' },
+      { from: 'valid?', to: 'process', label: 'yes' },
+      { from: 'valid?', to: 'show error', label: 'no' },
+    ]);
+    expect(edgesFromCaption('a circle')).toEqual([]);
+  });
+
+  it('scores edge recall/precision by endpoint labels, case-insensitively', () => {
+    const f = fig({ edges: [{ from: 'start', to: 'read input' }, { from: 'valid?', to: 'process', label: 'yes' }, { from: 'process', to: 'save' }] });
+    const m = relationMetrics([f], [block('Flowchart: START -> Read input; valid? → process (yes); save → done')]);
+    expect(m.edges).toBe(3);
+    expect(m.edgesFound).toBe(2);
+    expect(m.predicted).toBe(3);
+    expect(m.predictedMatched).toBe(2);
+    expect(m.edgeRecall).toBeCloseTo(2 / 3);
+    expect(m.edgePrecision).toBeCloseTo(2 / 3);
+  });
+
+  it('prefers structured figure.edges and accepts either direction for undirected figures', () => {
+    const f = fig({ type: 'tree-deep', directed: false, edges: [{ from: 'root', to: 'A' }, { from: 'A', to: 'x' }] });
+    const m = relationMetrics([f], [block('tree', { kind: 'tree', shapes: [], labels: [], edges: [{ from: 'A', to: 'root' }, { from: 'x', to: 'A' }, { from: 'q', to: 'z' }] })]);
+    expect(m.edgesFound).toBe(2);
+    expect(m.edgePrecision).toBeCloseTo(2 / 3);
+    const d = relationMetrics([{ ...f, directed: true }], [block('tree', { kind: 'tree', shapes: [], labels: [], edges: [{ from: 'A', to: 'root' }] })]);
+    expect(d.edgesFound).toBe(0);
+  });
+
+  it('measures sequence order with Kendall tau and exact order', () => {
+    expect(kendallTau([0, 5, 9])).toBe(1);
+    expect(kendallTau([9, 5, 0])).toBe(-1);
+    expect(kendallTau([0, null, 9])).toBe(1);
+    expect(kendallTau([0, null, null])).toBeNull();
+    expect(stepPositions(['1', '2', '3'], 'steps 1, 2 and 3')).toEqual([6, 9, 15]);
+    const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
+    const exact = relationMetrics([f], [block('Pipeline: collect → clean → train → eval')]);
+    expect(exact.sequences).toBe(1);
+    expect(exact.sequencesExact).toBe(1);
+    expect(exact.sequenceTau).toBe(1);
+    expect(exact.stepsFound).toBe(4);
+    const swapped = relationMetrics([f], [block('Pipeline: collect, train, clean, eval')]);
+    expect(swapped.sequencesExact).toBe(0);
+    expect(swapped.sequenceTau).toBeCloseTo(4 / 6);
+    const partial = relationMetrics([f], [block('Pipeline: collect then eval')]);
+    expect(partial.stepsFound).toBe(2);
+    expect(partial.sequencesExact).toBe(0);
+  });
+
+  it('scores containment from caption phrases and figure count', () => {
+    expect(containmentFromCaption('ui inside frontend; backend contains api')).toEqual([
+      { inner: 'ui', outer: 'frontend' },
+      { inner: 'api', outer: 'backend' },
+    ]);
+    const f = fig({ type: 'nested-boxes', contains: [{ outer: 'system', inner: 'frontend' }, { outer: 'frontend', inner: 'ui' }, { outer: 'system', inner: 'backend' }] });
+    const m = relationMetrics([f], [block('Nested boxes: the system box contains frontend and backend; ui is inside frontend.')]);
+    expect(m.contains).toBe(3);
+    expect(m.containsFound).toBe(2);
+    expect(m.containmentRecall).toBeCloseTo(2 / 3);
+    expect(m.figureCountExact).toBe(true);
+    const two = relationMetrics([f, fig({ id: 'fig2', strokeIds: ['s3'] })], [block('x')]);
+    expect(two.figureCountExact).toBe(false);
+    expect(two.expectedFigures).toBe(2);
+    expect(two.diagramBlocks).toBe(1);
+  });
+
+  it('exports relations in the reference and round-trips them with page meta', () => {
+    const scene = buildScene('flowchart-complex', 51, 'messy');
+    expect(scene.figures[0].edges!.length).toBeGreaterThan(4);
+    expect(scene.figures[0].edges!.some((e) => e.label === 'yes' || e.label === 'no' || e.label === 'hit' || e.label === 'int')).toBe(true);
+    const ref = parseReferencePage(sceneReference(scene));
+    expect(ref.meta).toEqual({ kind: 'flowchart-complex', seed: 51, messiness: 'messy' });
+    expect(ref.figures[0].edges).toEqual(scene.figures[0].edges);
+    const seq = buildScene('sequence-diagram', 71);
+    expect(seq.figures[0].sequence!.length).toBeGreaterThan(2);
+    const notes = buildScene('notes-complex', 131);
+    expect(notes.figures.length).toBeGreaterThanOrEqual(2);
+    expect(notes.links.length).toBe(notes.figures.length - 1);
+    expect(parseReferencePage(sceneReference(notes)).meta.links).toEqual(notes.links);
+    expect(notes.text).toMatch(/fig \d/);
+  });
+
+  it('messiness changes the ink but keeps determinism', () => {
+    const neat = buildScene('square', 3, 'neat'), messy = buildScene('square', 3, 'messy');
+    expect(buildScene('square', 3, 'messy').strokes).toEqual(messy.strokes);
+    expect(neat.strokes).not.toEqual(messy.strokes);
+    const spread = (s: typeof neat) => {
+      let d = 0, n = 0;
+      for (const st of s.strokes) for (let i = 1; i < st.inputs.inputs.length; i++) {
+        const a = st.inputs.inputs[i - 1], b = st.inputs.inputs[i];
+        d += Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - 2.8); n++;
+      }
+      return d / n;
+    };
+    expect(spread(messy)).toBeGreaterThan(spread(neat));
   });
 });

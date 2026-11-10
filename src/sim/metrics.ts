@@ -181,3 +181,216 @@ function round(v: number): number {
 export function pct(v: number | null): string {
   return v === null ? '—' : `${Math.round(v * 100)}%`;
 }
+
+// ---------------------------------------------------------------- relations / sequences / containment
+
+type RelBlockLike = Pick<DigitalBlock, 'kind' | 'text' | 'strokeIds' | 'figure'>;
+
+/** Lower-case, trim, unify arrows (`->`, `=>`, `→`) and whitespace so labels/edges compare loosely. */
+export function normLabel(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/(->|=>|-->|→|⇒)/g, '→')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s"'`([{]+|[\s"'`)\]}.,;:]+$/g, '')
+    .trim();
+}
+
+function labelsMatch(a: string, b: string): boolean {
+  const x = normLabel(a), y = normLabel(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  // Labels may be quoted with extra words ("read input" vs "read input box"); short ones must match whole words.
+  return captionHasLabel(x, y) || captionHasLabel(y, x);
+}
+
+/** Edges stated in a caption as "A → B", "A -> B (label)", separated by commas/semicolons. */
+export function edgesFromCaption(caption: string): FigureEdge[] {
+  const out: FigureEdge[] = [];
+  const text = caption.replace(/(->|=>|-->|⇒)/g, '→');
+  if (!text.includes('→')) return out;
+  for (const chunk of text.split(/[,;\n]|\.\s/)) {
+    const parts = chunk.split('→').map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const from = parts[i].replace(/^.*?:\s*/, '').replace(/\s*\(.*\)$/, '');
+      const m = /^(.*?)\s*\(([^)]*)\)\s*\.?\s*$/.exec(parts[i + 1]);
+      const to = (m ? m[1] : parts[i + 1]).replace(/\.$/, '').trim();
+      if (!from || !to || from.length > 40 || to.length > 40) continue;
+      out.push({ from, to, ...(m?.[2] ? { label: m[2] } : {}) });
+    }
+  }
+  return out;
+}
+
+/** All relations a set of blocks claims: structured `figure.edges` first, else edges parsed from the caption. */
+export function predictedEdges(blocks: RelBlockLike[]): FigureEdge[] {
+  const out: FigureEdge[] = [];
+  for (const b of blocks) {
+    if (b.kind !== 'diagram') continue;
+    const structured = b.figure?.edges ?? [];
+    out.push(...(structured.length ? structured : edgesFromCaption(b.text)));
+  }
+  return out;
+}
+
+export function edgeMatches(expected: FigureEdge, got: FigureEdge, directed = true): boolean {
+  const fwd = labelsMatch(expected.from, got.from) && labelsMatch(expected.to, got.to);
+  if (fwd) return true;
+  return !directed && labelsMatch(expected.from, got.to) && labelsMatch(expected.to, got.from);
+}
+
+/** Containment claims in a caption: "a inside b", "b contains a", "a within b", "a nested in b", "a in b". */
+export function containmentFromCaption(caption: string): ContainmentExpectation[] {
+  const out: ContainmentExpectation[] = [];
+  const text = caption.replace(/\s+/g, ' ');
+  const word = '([\\p{L}\\p{N}_∩/-]+(?: [\\p{L}\\p{N}_∩/-]+)?)';
+  const push = (inner: string, outer: string) => out.push({ inner: inner.trim(), outer: outer.trim() });
+  for (const m of text.matchAll(new RegExp(`${word} (?:is |are |sits |drawn )?(?:inside|within|nested in|in the middle of|contained in|in) (?:the |a |an )?${word}`, 'giu'))) push(m[1], m[2]);
+  for (const m of text.matchAll(new RegExp(`${word} (?:contains|containing|encloses|enclosing|surrounds|wraps) (?:the |a |an )?${word}`, 'giu'))) push(m[2], m[1]);
+  return out;
+}
+
+/** Kendall tau-b style agreement in [-1, 1] between an expected order and the positions found; null when < 2 items were found. */
+export function kendallTau(positions: (number | null)[]): number | null {
+  const found = positions.map((p, i) => ({ p, i })).filter((x): x is { p: number; i: number } => x.p !== null);
+  if (found.length < 2) return null;
+  let concordant = 0, discordant = 0;
+  for (let a = 0; a < found.length; a++) {
+    for (let b = a + 1; b < found.length; b++) {
+      const d = Math.sign(found[b].p - found[a].p);
+      if (d > 0) concordant++;
+      else if (d < 0) discordant++;
+    }
+  }
+  const pairs = concordant + discordant;
+  return pairs ? round((concordant - discordant) / pairs) : null;
+}
+
+/** Position of each step in `text` (first whole-word-ish occurrence), or null when absent. */
+export function stepPositions(steps: string[], text: string): (number | null)[] {
+  const t = text.toLowerCase();
+  let cursor = 0;
+  return steps.map((s) => {
+    const l = normLabel(s);
+    if (!l) return null;
+    // Prefer the first occurrence after the previous step so repeated tokens ("1", "2") resolve in order.
+    let idx = t.indexOf(l, cursor);
+    if (idx < 0) idx = t.indexOf(l);
+    if (idx < 0) return null;
+    cursor = idx + l.length;
+    return idx;
+  });
+}
+
+export interface RelationMetrics {
+  /** Expected edges across all figures on the page. */
+  edges: number;
+  edgesFound: number;
+  /** Edges the blocks claim, and how many of those match an expected edge. */
+  predicted: number;
+  predictedMatched: number;
+  edgeRecall: number | null;
+  edgePrecision: number | null;
+  /** Ordered step lists: how many figures had one, how many were reproduced in exact order. */
+  sequences: number;
+  sequencesExact: number;
+  steps: number;
+  stepsFound: number;
+  /** Mean Kendall tau over figures with a sequence (null when none scored). */
+  sequenceTau: number | null;
+  contains: number;
+  containsFound: number;
+  containmentRecall: number | null;
+  /** Expected figures vs diagram blocks produced. */
+  expectedFigures: number;
+  diagramBlocks: number;
+  figureCountExact: boolean;
+}
+
+/**
+ * Score relations on a page: edge recall/precision by endpoint labels (case-insensitive, `→` == `->`,
+ * either direction for undirected figures), sequence order (Kendall tau + exact order of the step list
+ * as it appears in the caption), containment recall (caption phrases such as "ui inside frontend")
+ * and whether the number of diagram blocks equals the number of expected figures.
+ */
+export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLike[]): RelationMetrics {
+  const diagrams = blocks.filter((b) => b.kind === 'diagram');
+  const got = predictedEdges(diagrams);
+  const captionAll = diagrams.map((b) => b.text).join('\n');
+  const strokeIndex = new Map<string, RelBlockLike>();
+  for (const b of diagrams) for (const id of b.strokeIds) strokeIndex.set(id, b);
+  // Caption of the diagram block holding most of a figure's strokes; all captions when none does.
+  const captionFor = (f: FigureExpectation): string => {
+    const counts = new Map<RelBlockLike, number>();
+    for (const id of f.strokeIds) {
+      const b = strokeIndex.get(id);
+      if (b) counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    let best: RelBlockLike | null = null, bestN = 0;
+    for (const [b, n] of counts) if (n > bestN) { best = b; bestN = n; }
+    return best && bestN >= f.strokeIds.length * 0.5 ? best.text : captionAll;
+  };
+
+  let edges = 0, edgesFound = 0;
+  const matchedPredicted = new Set<number>();
+  for (const f of figures) {
+    for (const e of f.edges ?? []) {
+      edges++;
+      let hit = false;
+      got.forEach((g, i) => {
+        if (edgeMatches(e, g, f.directed !== false)) {
+          hit = true;
+          matchedPredicted.add(i);
+        }
+      });
+      if (hit) edgesFound++;
+    }
+  }
+
+  let sequences = 0, sequencesExact = 0, steps = 0, stepsFound = 0;
+  const taus: number[] = [];
+  for (const f of figures) {
+    if (!f.sequence?.length) continue;
+    sequences++;
+    const pos = stepPositions(f.sequence, captionFor(f));
+    steps += f.sequence.length;
+    const found = pos.filter((p) => p !== null).length;
+    stepsFound += found;
+    const tau = kendallTau(pos);
+    if (tau !== null) taus.push(tau);
+    if (found === f.sequence.length && tau === 1) sequencesExact++;
+  }
+
+  let contains = 0, containsFound = 0;
+  const claimed = containmentFromCaption(captionAll);
+  for (const b of diagrams) for (const e of b.figure?.edges ?? []) {
+    if (e.label && /contain|inside|within|nested/i.test(e.label)) claimed.push({ outer: e.from, inner: e.to });
+  }
+  for (const f of figures) {
+    for (const c of f.contains ?? []) {
+      contains++;
+      if (claimed.some((k) => labelsMatch(k.inner, c.inner) && labelsMatch(k.outer, c.outer))) containsFound++;
+    }
+  }
+
+  return {
+    edges,
+    edgesFound,
+    predicted: got.length,
+    predictedMatched: matchedPredicted.size,
+    edgeRecall: edges ? round(edgesFound / edges) : null,
+    edgePrecision: got.length ? round(matchedPredicted.size / got.length) : null,
+    sequences,
+    sequencesExact,
+    steps,
+    stepsFound,
+    sequenceTau: taus.length ? round(taus.reduce((a, b) => a + b, 0) / taus.length) : null,
+    contains,
+    containsFound,
+    containmentRecall: contains ? round(containsFound / contains) : null,
+    expectedFigures: figures.length,
+    diagramBlocks: diagrams.length,
+    figureCountExact: diagrams.length === figures.length,
+  };
+}
