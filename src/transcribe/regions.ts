@@ -320,7 +320,9 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   })();
   const sequence = prior?.sequence?.length ? prior.sequence : geo.sequence?.length && !geo.sequence.every((s) => geo.unnamed.includes(s)) ? geo.sequence : undefined;
   const cells = kind === 'table' && prior?.cells?.length ? prior.cells : geo.cells?.length && (kind === 'table' || geo.cells.some((row) => row.some(Boolean))) ? geo.cells : undefined;
-  const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels, edges };
+  // Words written on arrows are labels of the figure too.
+  const allLabels = dedupe([...labels, ...edges.map((e) => e.label).filter((l): l is string => !!l && !labels.some((x) => sameText(x, l)))]);
+  const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels: allLabels, edges };
   if (nodes?.length) figure.nodes = nodes;
   if (sequence) figure.sequence = sequence;
   if (cells) figure.cells = cells;
