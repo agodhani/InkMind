@@ -278,6 +278,12 @@ describe('relation metrics', () => {
     expect(m.edgePrecision).toBeCloseTo(2 / 3);
     const d = relationMetrics([{ ...f, directed: true }], [block('tree', { kind: 'tree', shapes: [], labels: [], edges: [{ from: 'A', to: 'root' }] })]);
     expect(d.edgesFound).toBe(0);
+    // Labelled transitions: a wrong label on the same endpoints is not a hit; an unlabelled prediction still is.
+    const sm = fig({ type: 'state-machine', edges: [{ from: 'q0', to: 'q1', label: 'a' }, { from: 'q0', to: 'q1', label: 'b' }] });
+    const wrong = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1', label: 'a' }] })]);
+    expect(wrong.edgesFound).toBe(1);
+    const bare = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1' }] })]);
+    expect(bare.edgesFound).toBe(2);
   });
 
   it('measures sequence order with Kendall tau and exact order', () => {
@@ -286,6 +292,7 @@ describe('relation metrics', () => {
     expect(kendallTau([0, null, 9])).toBe(1);
     expect(kendallTau([0, null, null])).toBeNull();
     expect(stepPositions(['1', '2', '3'], 'steps 1, 2 and 3')).toEqual([6, 9, 15]);
+    expect(stepPositions(['1', '2', '10'], 'values 10 and 2')).toEqual([null, 14, 7]);
     const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
     const exact = relationMetrics([f], [block('Pipeline: collect → clean → train → eval')]);
     expect(exact.sequences).toBe(1);

@@ -234,7 +234,9 @@ export function predictedEdges(blocks: RelBlockLike[]): FigureEdge[] {
   return out;
 }
 
+/** Endpoints must match; when both sides carry an edge label (e.g. state-machine transitions) the labels must match too. */
 export function edgeMatches(expected: FigureEdge, got: FigureEdge, directed = true): boolean {
+  if (expected.label && got.label && !labelsMatch(expected.label, got.label)) return false;
   const fwd = labelsMatch(expected.from, got.from) && labelsMatch(expected.to, got.to);
   if (fwd) return true;
   return !directed && labelsMatch(expected.from, got.to) && labelsMatch(expected.to, got.from);
@@ -274,9 +276,18 @@ export function stepPositions(steps: string[], text: string): (number | null)[] 
   return steps.map((s) => {
     const l = normLabel(s);
     if (!l) return null;
-    // Prefer the first occurrence after the previous step so repeated tokens ("1", "2") resolve in order.
-    let idx = t.indexOf(l, cursor);
-    if (idx < 0) idx = t.indexOf(l);
+    // Prefer the first occurrence after the previous step so repeated tokens ("1", "2") resolve in order;
+    // short labels must match whole words ("1" is not inside "10").
+    const find = (from: number) => {
+      if (l.length > 2) return t.indexOf(l, from);
+      const esc = l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(^|[^\\p{L}\\p{N}])${esc}(?=$|[^\\p{L}\\p{N}])`, 'gu');
+      re.lastIndex = from;
+      const m = re.exec(t);
+      return m ? m.index + m[1].length : -1;
+    };
+    let idx = find(cursor);
+    if (idx < 0) idx = find(0);
     if (idx < 0) return null;
     cursor = idx + l.length;
     return idx;
