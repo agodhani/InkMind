@@ -16,9 +16,10 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
-import { buildStrokeGroups, rawToDigitalBlock } from '../src/transcribe/regions';
+import { buildStrokeGroups, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
 import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
 import { OllamaTranscriber } from '../src/transcribe/ollama';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
@@ -32,9 +33,9 @@ setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const nodeCanvas: CanvasFactory = (w, h) => createCanvas(w, h) as unknown as ReturnType<CanvasFactory>;
 import { ModelOutputError } from '../src/transcribe/prompt';
-import { diagramMetrics, parseReferencePage, pct, type DiagramMetrics } from '../src/sim/metrics';
+import { diagramMetrics, parseReferencePage, pct, relationMetrics, type DiagramMetrics, type RelationMetrics } from '../src/sim/metrics';
 
-interface Args {
+export interface Args {
   dataset: string;
   provider: 'ollama' | 'openrouter';
   model: string;
@@ -51,9 +52,13 @@ interface Args {
   raster: string;
   run?: string;
   url: string;
+  /** Only score pages generated at this messiness (`neat|normal|messy`; synthetic datasets record it in reference.md). */
+  messiness?: string;
+  /** Apply the app's geometry reconciliation (reconcileFigureBlocks) to the model's blocks, as the live app does. `--reconcile 0` scores raw model output. */
+  reconcile: boolean;
 }
 
-function parseArgs(): Args {
+export function parseArgs(): Args {
   const a: Record<string, string> = {};
   for (let i = 2; i < process.argv.length; i += 2) a[process.argv[i].replace(/^--/, '')] = process.argv[i + 1];
   const provider = (a.provider ?? 'ollama') as Args['provider'];
@@ -69,7 +74,102 @@ function parseArgs(): Args {
     raster: a.raster ?? 'pages',
     run: a.run,
     url: a.url ?? 'http://localhost:11434',
+    messiness: a.messiness,
+    reconcile: !(a.reconcile === '0' || a.reconcile === 'off' || a.reconcile === 'false'),
   };
+}
+
+/** Sums over pages, for the total row, one scene kind, or one dataset. */
+export interface Agg {
+  pages: number;
+  textPages: number;
+  wer: number;
+  cer: number;
+  figures: number;
+  detected: number;
+  figureStrokes: number;
+  leaked: number;
+  labels: number;
+  labelsFound: number;
+  spurious: number;
+  edges: number;
+  edgesFound: number;
+  predicted: number;
+  predictedMatched: number;
+  sequences: number;
+  sequencesExact: number;
+  steps: number;
+  stepsFound: number;
+  tauSum: number;
+  tauN: number;
+  contains: number;
+  containsFound: number;
+  /** Pages with expected figures, and how many had exactly that many diagram blocks. */
+  countPages: number;
+  countExact: number;
+}
+
+export function emptyAgg(): Agg {
+  return { pages: 0, textPages: 0, wer: 0, cer: 0, figures: 0, detected: 0, figureStrokes: 0, leaked: 0, labels: 0, labelsFound: 0, spurious: 0, edges: 0, edgesFound: 0, predicted: 0, predictedMatched: 0, sequences: 0, sequencesExact: 0, steps: 0, stepsFound: 0, tauSum: 0, tauN: 0, contains: 0, containsFound: 0, countPages: 0, countExact: 0 };
+}
+
+export function addAgg(into: Agg, from: Agg): Agg {
+  for (const k of Object.keys(into) as (keyof Agg)[]) into[k] += from[k];
+  return into;
+}
+
+function accumulate(a: Agg, s: { wer: number; cer: number } | null, figures: { strokeIds: string[] }[], dm: DiagramMetrics, rm: RelationMetrics): void {
+  a.pages++;
+  if (s) { a.textPages++; a.wer += s.wer; a.cer += s.cer; }
+  const figureStrokes = figures.reduce((t, f) => t + f.strokeIds.length, 0);
+  a.figures += dm.figures; a.detected += dm.detected; a.figureStrokes += figureStrokes;
+  a.leaked += Math.round((dm.textLeak ?? 0) * figureStrokes); a.labels += dm.labels; a.labelsFound += dm.labelsFound; a.spurious += dm.spuriousDiagrams;
+  a.edges += rm.edges; a.edgesFound += rm.edgesFound; a.predicted += rm.predicted; a.predictedMatched += rm.predictedMatched;
+  a.sequences += rm.sequences; a.sequencesExact += rm.sequencesExact; a.steps += rm.steps; a.stepsFound += rm.stepsFound;
+  if (rm.sequenceTau !== null) { a.tauSum += rm.sequenceTau; a.tauN++; }
+  a.contains += rm.contains; a.containsFound += rm.containsFound;
+  if (figures.length) { a.countPages++; if (rm.figureCountExact) a.countExact++; }
+}
+
+const ratio = (a: number, b: number) => (b ? a / b : null);
+const frac = (a: number, b: number) => (b ? `${a}/${b} (${pct(ratio(a, b))})` : '—');
+
+export const AGG_HEADER = [
+  '| scope | pages | WER | CER | figures found | text leak | labels found | edge recall | edge precision | sequence exact | τ | nesting | figure count ok |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+];
+
+/** One Markdown row of aggregate scores. */
+export function aggRow(name: string, a: Agg): string {
+  const cells = [
+    name,
+    String(a.pages),
+    a.textPages ? (a.wer / a.textPages).toFixed(3) : '—',
+    a.textPages ? (a.cer / a.textPages).toFixed(3) : '—',
+    frac(a.detected, a.figures),
+    a.figures ? pct(ratio(a.leaked, a.figureStrokes)) : '—',
+    frac(a.labelsFound, a.labels),
+    frac(a.edgesFound, a.edges),
+    frac(a.predictedMatched, a.predicted),
+    frac(a.sequencesExact, a.sequences),
+    a.tauN ? (a.tauSum / a.tauN).toFixed(2) : '—',
+    frac(a.containsFound, a.contains),
+    frac(a.countExact, a.countPages),
+  ];
+  return `| ${cells.join(' | ')} |`;
+}
+
+export const METRIC_NOTES =
+  'figures found = a `diagram` block covers ≥80 % of the figure\'s strokes with ≤20 % foreign strokes · text leak = figure strokes that ended up in text blocks · labels found = expected labels present in the diagram caption (case-insensitive) · ' +
+  'edge recall/precision = expected relations `{from,to}` vs the relations the blocks claim (`figure.edges`, else `A → B` in the caption), matched by endpoint label, case-insensitive, `->` == `→`, either direction for undirected figures · ' +
+  'sequence exact = ordered step lists reproduced completely and in order in the caption, τ = mean Kendall tau of the steps found · nesting = expected "inner inside outer" pairs stated in the caption · ' +
+  'figure count ok = pages whose number of `diagram` blocks equals the number of expected figures. WER/CER cover the text parts only.';
+
+export interface EvalResult {
+  run: string;
+  outDir: string;
+  total: Agg;
+  byKind: Record<string, Agg>;
 }
 
 function pngSize(buf: Buffer) {
@@ -121,11 +221,10 @@ export function score(hyp: string, ref: string) {
   };
 }
 
-async function main() {
-  const args = parseArgs();
+export async function runEval(args: Args): Promise<EvalResult> {
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}`;
+  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}${args.reconcile ? '' : '-raw'}${args.messiness ? `-${args.messiness}` : ''}`;
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
@@ -136,13 +235,16 @@ async function main() {
 
   const rows: string[] = [];
   const rawLog = new Map<number, string>();
-  let totWer = 0, totCer = 0, n = 0;
-  const diag = { figures: 0, detected: 0, figureStrokes: 0, leaked: 0, labels: 0, labelsFound: 0, spurious: 0 };
+  const total = emptyAgg();
+  const byKind: Record<string, Agg> = {};
   for (const page of data.pages) {
     if (args.pages && !args.pages.includes(page.index)) continue;
     const refPage = refs.get(page.index);
     if (!refPage) continue;
-    const { text: ref, figures } = parseReferencePage(refPage);
+    const { text: ref, figures, meta } = parseReferencePage(refPage);
+    if (args.messiness && (meta.messiness ?? 'normal') !== args.messiness) continue;
+    const kind = meta.kind ?? 'page';
+    const pageTag = `${kind}${meta.messiness && meta.messiness !== 'normal' ? ` (${meta.messiness})` : ''}`;
     const pageGroups = buildStrokeGroups(page.strokes);
     const byId = new Map(page.strokes.map((st) => [st.id, st]));
     const title = data.source.replace(/\.pdf$/i, '');
@@ -228,44 +330,56 @@ async function main() {
       }
     }
     if (failed) {
-      rows.push(`| ${page.index} | — | — | — | — | — | error (see .raw.txt) |`);
+      rows.push(`| ${page.index} | ${pageTag} | — | — | — | — | — | — | — | — | — | error (see .raw.txt) |`);
       continue;
     }
-    const blocks = sortBlocksForReading(result.blocks);
+    // The live app runs the model's blocks through geometry reconciliation (figure groups from shape hints); score the same thing.
+    const reconciled = args.reconcile ? reconcileFigureBlocks(result.blocks, pageGroups, page.strokes) : result.blocks;
+    const blocks = sortBlocksForReading(reconciled);
     const hyp = blocks.filter((b) => b.kind !== 'diagram').map((b) => b.text).join('\n');
     const s = score(hyp, ref);
     const dm: DiagramMetrics = diagramMetrics(figures, blocks);
+    const rm: RelationMetrics = relationMetrics(figures, blocks);
     const secs = ((Date.now() - started) / 1000).toFixed(1);
-    process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)${figures.length ? ` figures ${dm.detected}/${dm.figures} leak ${pct(dm.textLeak)} labels ${dm.labelsFound}/${dm.labels}` : ''}\n`);
-    writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, score: s, diagrams: dm, blocks, hyp, ref }, null, 2));
+    process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)${figures.length ? ` figures ${dm.detected}/${dm.figures} leak ${pct(dm.textLeak)} labels ${dm.labelsFound}/${dm.labels}` : ''}${rm.edges ? ` edges ${rm.edgesFound}/${rm.edges} (P ${rm.predictedMatched}/${rm.predicted})` : ''}${rm.sequences ? ` seq ${rm.sequencesExact}/${rm.sequences} τ ${rm.sequenceTau ?? '—'}` : ''}${rm.contains ? ` nesting ${rm.containsFound}/${rm.contains}` : ''}\n`);
+    writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, kind, messiness: meta.messiness, score: s, diagrams: dm, relations: rm, blocks, hyp, ref }, null, 2));
     const kinds = Object.entries(blocks.reduce<Record<string, number>>((m, b) => ((m[b.kind] = (m[b.kind] ?? 0) + 1), m), {})).map(([k, v]) => `${k}:${v}`).join(', ');
     const textCell = ref ? `${s.wer} | ${s.cer}` : '— | —';
     const figCell = figures.length ? `${dm.detected}/${dm.figures} | ${pct(dm.textLeak)} | ${dm.labels ? `${dm.labelsFound}/${dm.labels}` : '—'}` : '— | — | —';
+    const relCell = [
+      rm.edges ? `${rm.edgesFound}/${rm.edges} · P ${rm.predictedMatched}/${rm.predicted}` : '—',
+      rm.sequences ? `${rm.sequencesExact}/${rm.sequences} τ ${rm.sequenceTau ?? '—'}` : '—',
+      rm.contains ? `${rm.containsFound}/${rm.contains}` : '—',
+      figures.length ? `${rm.diagramBlocks}/${rm.expectedFigures} ${rm.figureCountExact ? '✓' : '✗'}` : '—',
+    ].join(' | ');
     const captions = dm.perFigure.filter((f) => f.caption).map((f) => `${f.type}: “${f.caption.replace(/\|/g, '/').slice(0, 80)}”`).join('; ');
-    rows.push(`| ${page.index} | ${textCell} | ${figCell} | ${blocks.length} blocks (${kinds})${dm.spuriousDiagrams ? `, ${dm.spuriousDiagrams} spurious diagram(s)` : ''}, ${secs}s${captions ? ` · ${captions}` : ''} |`);
-    if (ref) { totWer += s.wer; totCer += s.cer; n++; }
-    const figureStrokes = figures.reduce((t, f) => t + f.strokeIds.length, 0);
-    diag.figures += dm.figures; diag.detected += dm.detected; diag.figureStrokes += figureStrokes;
-    diag.leaked += Math.round((dm.textLeak ?? 0) * figureStrokes); diag.labels += dm.labels; diag.labelsFound += dm.labelsFound; diag.spurious += dm.spuriousDiagrams;
+    rows.push(`| ${page.index} | ${pageTag} | ${textCell} | ${figCell} | ${relCell} | ${blocks.length} blocks (${kinds})${dm.spuriousDiagrams ? `, ${dm.spuriousDiagrams} spurious diagram(s)` : ''}, ${secs}s${captions ? ` · ${captions}` : ''} |`);
+    const pageAgg = emptyAgg();
+    accumulate(pageAgg, ref ? s : null, figures, dm, rm);
+    addAgg(total, pageAgg);
+    addAgg((byKind[kind] ??= emptyAgg()), pageAgg);
   }
-  const ratio = (a: number, b: number) => (b ? a / b : null);
+  const kindRows = Object.keys(byKind).length > 1 ? Object.entries(byKind).sort(([a], [b]) => a.localeCompare(b)).map(([k, a]) => aggRow(k, a)) : [];
   const summary = [
     `# ${run}`,
     '',
-    `Transcriber: \`${transcriber.name}\` · image: ${args.band ? `band ${args.band} (+${args.context} ctx)` : args.image} · render: ${args.band || args.image === 'strokes' ? args.render : 'pdf raster'} · ${new Date().toISOString()}`,
+    `Transcriber: \`${transcriber.name}\` · image: ${args.band ? `band ${args.band} (+${args.context} ctx)` : args.image} · render: ${args.band || args.image === 'strokes' ? args.render : 'pdf raster'} · reconcile: ${args.reconcile ? 'on' : 'off'}${args.messiness ? ` · messiness: ${args.messiness}` : ''} · ${new Date().toISOString()}`,
     '',
-    '| page | WER | CER | figures found | text leak | labels found | notes |',
-    '|---|---|---|---|---|---|---|',
+    '| page | kind | WER | CER | figures found | text leak | labels found | edges found · precision | sequence | nesting | diagram blocks / figures | notes |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ...rows,
-    `| **total** | ${n ? `**${(totWer / n).toFixed(3)}** | **${(totCer / n).toFixed(3)}**` : '— | —'} | ${diag.figures ? `**${diag.detected}/${diag.figures}** (${pct(ratio(diag.detected, diag.figures))})` : '—'} | ${diag.figures ? `**${pct(ratio(diag.leaked, diag.figureStrokes))}**` : '—'} | ${diag.labels ? `**${diag.labelsFound}/${diag.labels}** (${pct(ratio(diag.labelsFound, diag.labels))})` : '—'} | ${n} text page(s)${diag.spurious ? `, ${diag.spurious} spurious diagram(s)` : ''} |`,
     '',
-    diag.figures
-      ? 'figures found = a `diagram` block covers ≥80 % of the figure\'s strokes with ≤20 % foreign strokes · text leak = figure strokes that ended up in text blocks · labels found = expected labels present in the diagram caption (case-insensitive). WER/CER cover the text parts only.'
-      : '',
+    ...AGG_HEADER,
+    ...kindRows,
+    aggRow('**total**', total),
+    '',
+    total.figures ? METRIC_NOTES : '',
     '',
   ].join('\n');
   writeFileSync(join(outDir, 'summary.md'), summary);
+  writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ run, total, byKind }, null, 2));
   console.log(summary);
+  return { run, outDir, total, byKind };
 }
 
-void main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) void runEval(parseArgs());
