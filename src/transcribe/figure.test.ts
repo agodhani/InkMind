@@ -110,4 +110,17 @@ describe('normaliseFigure', () => {
     expect(caption).toBe('Shape: box. Labels: a, b. Steps: a → b. Nested: b inside a. Relations: a → b (yes), b ↺, a — b.');
     expect(figureCaption({ kind: 'table', shapes: [], labels: [], edges: [], cells: [['x', 'y'], ['1', '2']] })).toBe('Shape: table. Table: 2 rows × 2 columns.');
   });
+  it('resolves hint ids the model used in edges, labels and sequence through its own node list', () => {
+    const fig = normaliseFigure({
+      kind: 'flowchart',
+      nodes: [{ id: 'n1', label: 'start', parent: 'n1' }, { id: 'n2', label: 'end' }],
+      labels: ['n1', 'n2'],
+      edges: [{ from: 'n1', to: 'n2', label: 'n1 → n2' }, { from: 'n2', to: 'n9' }],
+      sequence: ['n1', 'n2'],
+    })!;
+    expect(fig.labels).toEqual(['start', 'end']);
+    expect(fig.nodes).toEqual([{ id: 'n1', label: 'start' }, { id: 'n2', label: 'end' }]);
+    expect(fig.edges).toEqual([{ from: 'start', to: 'end' }]);
+    expect(fig.sequence).toEqual(['start', 'end']);
+  });
 });

@@ -13,12 +13,14 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
+  const byRef = (ref: string) => nodes.find((n) => n.id.toLowerCase() === ref.trim().toLowerCase())?.label ?? ref;
   const labels = dedupeText([
-    ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])),
+    ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])).map(byRef),
     ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
   ]).filter((l) => !isGroupRef(l));
-  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']));
-  const sequence = stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).filter((l) => !isGroupRef(l));
+  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef);
+  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef)).filter((l) => !isGroupRef(l));
   const cells = cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid']));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
@@ -281,12 +283,13 @@ function isEdgeEcho(label: string, from: string, to: string): boolean {
 }
 
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
-export function edgeList(value: unknown): FigureEdge[] {
+export function edgeList(value: unknown, resolve: (ref: string) => string = (r) => r): FigureEdge[] {
   const out: FigureEdge[] = [];
   const add = (from: unknown, to: unknown, label?: unknown, kind?: unknown, inferred?: unknown) => {
-    if (isGroupRef(from) || isGroupRef(to)) return;
-    const f = typeof from === 'string' || typeof from === 'number' ? cleanText(String(from)) : stringList(from)[0];
-    const t = typeof to === 'string' || typeof to === 'number' ? cleanText(String(to)) : stringList(to)[0];
+    const f0 = typeof from === 'string' || typeof from === 'number' ? resolve(cleanText(String(from))) : stringList(from)[0];
+    const t0 = typeof to === 'string' || typeof to === 'number' ? resolve(cleanText(String(to))) : stringList(to)[0];
+    if (isGroupRef(f0) || isGroupRef(t0)) return;
+    const f = f0 && cleanText(f0), t = t0 && cleanText(t0);
     if (!f || !t || out.length >= MAX_ITEMS) return;
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
     const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) && !isEdgeEcho(cleaned, f, t) && !isGroupRef(cleaned) ? cleaned : undefined;

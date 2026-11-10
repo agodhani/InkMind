@@ -346,6 +346,17 @@ describe('reconcileFigureBlocks', () => {
     expect(mergeWithGeometry({ kind: 'table', shapes: [], labels: [], edges: [] }, hint, [], { ...geo, cells: [['x', ''], ['', '']] }).cells).toEqual([['x', ''], ['', '']]);
   });
 
+  it('gives a stroke-less model diagram to the figure it overlaps and names geometry nodes with the model words by hint id', () => {
+    const { groups, strokes, block, groupOf, box1 } = scene();
+    const figBox = groups.filter((g) => g.figure).map((g) => g.bbox).reduce(unionBounds);
+    const orphan: DigitalBlock = { ...block('diagram', 'Shape: two boxes.', [groupOf(box1)]), strokeIds: [], bbox: figBox, figure: { kind: 'flowchart', shapes: [], labels: ['go', 'stop'], edges: [], nodes: [{ id: 'n1', label: 'go' }, { id: 'n2', label: 'stop' }] } };
+    const out = reconcileFigureBlocks([orphan], groups, strokes);
+    const diagrams = out.filter((b) => b.kind === 'diagram');
+    expect(diagrams).toHaveLength(1);
+    expect(diagrams[0].strokeIds.length).toBeGreaterThan(0);
+    expect(diagrams[0].figure).toMatchObject({ labels: ['go', 'stop'], edges: [{ from: 'go', to: 'stop', kind: 'arrow', inferred: true }], sequence: ['go', 'stop'] });
+  });
+
   it('is a no-op without figures', () => {
     const strokes = [stroke(0, 0, 50, 0, 0, 'a')];
     const groups = buildStrokeGroups(strokes);

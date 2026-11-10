@@ -136,6 +136,18 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   if (figures.length === 0) return incoming;
   const strokeById = new Map(strokes.map((s) => [s.id, s]));
   const boundsOf = (ids: string[], fallback: BoundingBox) => strokesBounds(ids.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s)) ?? fallback;
+  // A diagram the model placed by bbox only (no groups) describes the figure it overlaps, else the nearest one.
+  const figBoxOf = (fig: FigureHint) => groups.filter((g) => g.figure?.id === fig.id).map((g) => g.bbox).reduce(unionBounds);
+  const orphanOwner = new Map<DigitalBlock, number>();
+  for (const b of incoming) {
+    if (b.kind !== 'diagram' || b.strokeIds.length > 0) continue;
+    const c = { x: (b.bbox.left + b.bbox.right) / 2, y: (b.bbox.top + b.bbox.bottom) / 2 };
+    const ranked = figures
+      .map((f) => ({ f, box: figBoxOf(f) }))
+      .map(({ f, box }) => ({ f, hit: boundsIntersect(b.bbox, box), d: Math.hypot(c.x - (box.left + box.right) / 2, c.y - (box.top + box.bottom) / 2) }))
+      .sort((p, q) => Number(q.hit) - Number(p.hit) || p.d - q.d);
+    if (ranked.length) orphanOwner.set(b, ranked[0].f.id);
+  }
   let blocks = incoming;
   for (const fig of figures) {
     const figGroups = groups.filter((g) => g.figure?.id === fig.id);
@@ -143,11 +155,9 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const labelStrokeIds = new Set(figGroups.filter((g) => fig.labelGroups.includes(g.index) || fig.labelHostGroups.includes(g.index)).flatMap((g) => g.strokeIds));
     const members: DigitalBlock[] = [];
     const rest: DigitalBlock[] = [];
-    const figBox = figGroups.map((g) => g.bbox).reduce(unionBounds);
     for (const b of blocks) {
       const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
-      // A diagram the model placed by bbox only (no groups) over this figure describes it.
-      if (b.kind === 'diagram' && b.strokeIds.length === 0 && boundsIntersect(b.bbox, figBox)) members.push(b);
+      if (orphanOwner.get(b) === fig.id) members.push(b);
       else if (inside.length === 0) rest.push(b);
       else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
       else {
@@ -207,6 +217,28 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
   return out;
 }
 
+/**
+ * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
+ * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
+ */
+function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): ReturnType<typeof figureFromGeometry> {
+  const rename = new Map<string, string>();
+  for (const g of geo.nodes ?? []) {
+    if (!geo.unnamed.includes(g.label)) continue;
+    const m = prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase());
+    if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) rename.set(g.label, m.label);
+  }
+  if (rename.size === 0) return geo;
+  const r = (s: string) => rename.get(s) ?? s;
+  return {
+    ...geo,
+    nodes: geo.nodes?.map((n) => ({ ...n, label: r(n.label) })),
+    edges: geo.edges.map((e) => ({ ...e, from: r(e.from), to: r(e.to) })),
+    ...(geo.sequence ? { sequence: geo.sequence.map(r) } : {}),
+    unnamed: geo.unnamed.filter((u) => !rename.has(u)),
+  };
+}
+
 function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
   return sameText(a.from, b.from) && sameText(a.to, b.to);
 }
@@ -217,8 +249,9 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
  * step order and table cells are filled in when the model gave none. Geometry edges between
  * nodes whose label could not be read are only used when the model listed no edges at all.
  */
-export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geo: ReturnType<typeof figureFromGeometry>): FigureInfo {
+export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
   const kind = prior?.kind && prior.kind !== 'other' ? prior.kind : fig.kind;
+  const geo = nameGeometryNodes(geoIn, prior);
   const inferredEdges = geo.edges.map((e) => ({ ...e, inferred: true }));
   const edges: FigureEdge[] = prior?.edges.length ? [...prior.edges] : inferredEdges;
   if (prior?.edges.length) {
