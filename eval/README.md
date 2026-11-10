@@ -92,9 +92,10 @@ plain lines, an ordered `sequence`, and `contains {outer,inner}` pairs). Page me
   with 2–3 figures and arrows between them test that neighbouring figures are not merged);
 * WER/CER are unchanged and cover the text parts only (`diagram` blocks are excluded).
 
-By default the eval runs the model's blocks through the app's geometry reconciliation
-(`reconcileFigureBlocks`, the same step the live app applies) before scoring; `--reconcile 0` scores the
-raw model output. `summary.md` adds a per-scene-kind table under the per-page one, and `summary.json`
+By default the eval post-processes the model's blocks exactly like `useTranscription` does for a fresh
+page — `reconcileFigureBlocks` (geometry fill-in from the shape hints), unclaimed strokes attached to the
+last block, then `mergeBlocks` into an empty page — before scoring, so the numbers reflect what users
+see; `--reconcile 0` scores the raw model output. `summary.md` adds a per-scene-kind table under the per-page one, and `summary.json`
 holds the same aggregates.
 
 ### One table for all synthetic datasets

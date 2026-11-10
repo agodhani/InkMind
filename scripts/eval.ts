@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
-import { buildStrokeGroups, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
+import { buildStrokeGroups, mergeBlocks, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
 import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
 import { OllamaTranscriber } from '../src/transcribe/ollama';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
@@ -333,9 +333,19 @@ export async function runEval(args: Args): Promise<EvalResult> {
       rows.push(`| ${page.index} | ${pageTag} | — | — | — | — | — | — | — | — | — | error (see .raw.txt) |`);
       continue;
     }
-    // The live app runs the model's blocks through geometry reconciliation (figure groups from shape hints); score the same thing.
-    const reconciled = args.reconcile ? reconcileFigureBlocks(result.blocks, pageGroups, page.strokes) : result.blocks;
-    const blocks = sortBlocksForReading(reconciled);
+    // Same post-processing as useTranscription on a fresh page: geometry reconciliation (figure groups from
+    // shape hints), unclaimed strokes attached to the last block, then mergeBlocks into an empty page.
+    let incoming = args.reconcile ? reconcileFigureBlocks(result.blocks, pageGroups, page.strokes) : result.blocks;
+    if (args.reconcile) {
+      const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
+      const unclaimed = page.strokes.filter((st) => !claimed.has(st.id)).map((st) => st.id);
+      if (unclaimed.length && incoming.length) {
+        incoming = [...incoming];
+        incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
+      }
+      incoming = mergeBlocks([], [], incoming);
+    }
+    const blocks = sortBlocksForReading(incoming);
     const hyp = blocks.filter((b) => b.kind !== 'diagram').map((b) => b.text).join('\n');
     const s = score(hyp, ref);
     const dm: DiagramMetrics = diagramMetrics(figures, blocks);
