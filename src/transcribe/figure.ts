@@ -293,7 +293,7 @@ export function isGroupRef(value: unknown): boolean {
 /** An edge "label" that only restates the edge ("n1 → n2", "a -> b", "arrow from A to B") carries no written word. */
 function isEdgeEcho(label: string, from: string, to: string): boolean {
   const l = label.trim().toLowerCase();
-  if (/(^|\s)(->|-->|→|⇒|=>)(\s|$)/.test(l)) return true;
+  if (/(^|\s)(->|-->|→|⇒|=>|—|–|<->|↔)(\s|$)/.test(l)) return true;
   if (/^arrow( from)?\b/.test(l)) return true;
   return l === from.trim().toLowerCase() || l === to.trim().toLowerCase();
 }
