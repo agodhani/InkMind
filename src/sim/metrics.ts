@@ -1,5 +1,10 @@
 import type { BoundingBox } from '../types';
-import type { DigitalBlock } from '../model/page';
+import type { DigitalBlock, FigureEdge } from '../model/page';
+
+export interface ContainmentExpectation {
+  outer: string;
+  inner: string;
+}
 
 /** Machine-readable expectation for one figure on a reference page (see eval/README.md). */
 export interface FigureExpectation {
@@ -8,12 +13,32 @@ export interface FigureExpectation {
   labels: string[];
   strokeIds: string[];
   bbox?: BoundingBox;
+  /** Node labels when the figure is a diagram with relations. */
+  nodes?: string[];
+  /** Expected relations, tail → head. */
+  edges?: FigureEdge[];
+  /** False when the drawn connections have no arrowheads (either direction counts). */
+  directed?: boolean;
+  /** Ordered steps / stages / numbered messages. */
+  sequence?: string[];
+  /** Shapes drawn inside other shapes. */
+  contains?: ContainmentExpectation[];
+}
+
+/** Page-level metadata written by the generator (absent on hand-made references). */
+export interface PageMeta {
+  kind?: string;
+  seed?: number;
+  messiness?: string;
+  /** Arrows drawn between figures on a notes page, by figure id. */
+  links?: { from: string; to: string }[];
 }
 
 export interface PageExpectation {
   /** Reference text for the text parts (figures excluded). */
   text: string;
   figures: FigureExpectation[];
+  meta: PageMeta;
 }
 
 const FIGURES_FENCE = /```json\s*figures\s*\n([\s\S]*?)\n```/;
@@ -24,17 +49,22 @@ const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 export function parseReferencePage(md: string): PageExpectation {
   const m = FIGURES_FENCE.exec(md);
   const text = md.replace(FIGURES_FENCE, '').replace(HTML_COMMENT, '').trim();
-  if (!m) return { text, figures: [] };
-  const parsed = JSON.parse(m[1]) as { figures?: FigureExpectation[] } | FigureExpectation[];
-  const figures = Array.isArray(parsed) ? parsed : (parsed.figures ?? []);
-  return { text, figures };
+  if (!m) return { text, figures: [], meta: {} };
+  const parsed = JSON.parse(m[1]) as (PageMeta & { figures?: FigureExpectation[] }) | FigureExpectation[];
+  if (Array.isArray(parsed)) return { text, figures: parsed, meta: {} };
+  const { figures = [], ...meta } = parsed;
+  return { text, figures, meta };
 }
 
-export function formatReferencePage(text: string, figures: FigureExpectation[]): string {
-  if (figures.length === 0) return text.trim() + '\n';
+export function formatReferencePage(text: string, figures: FigureExpectation[], meta: PageMeta = {}): string {
+  if (figures.length === 0 && Object.keys(meta).length === 0) return text.trim() + '\n';
   // One figure per line keeps reference.md diff-able; stroke id lists would otherwise run to hundreds of lines.
   const body = figures.map((f) => `  ${JSON.stringify(f)}`).join(',\n');
-  return `${text.trim()}\n\n\`\`\`json figures\n{ "figures": [\n${body}\n] }\n\`\`\`\n`;
+  const head = Object.entries(meta)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `"${k}": ${JSON.stringify(v)}, `)
+    .join('');
+  return `${text.trim()}\n\n\`\`\`json figures\n{ ${head}"figures": [\n${body}\n] }\n\`\`\`\n`;
 }
 
 export const FIGURE_MIN_COVERAGE = 0.8;

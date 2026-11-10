@@ -2,7 +2,7 @@ import type { BoundingBox, Offset } from '../types';
 import type { InkStroke } from '../model/page';
 import { strokesBounds } from '../transcribe/regions';
 import { layoutText, measureText } from './font';
-import { InkWriter, arcPoints, lerp, quadPoints } from './ink';
+import { InkWriter, MESS_PROFILES, arcPoints, lerp, quadPoints, type MessProfile } from './ink';
 import type { Rng } from './rng';
 
 export type FigureType =
@@ -19,7 +19,34 @@ export type FigureType =
   | 'cube'
   | 'box-3d'
   | 'flowchart'
-  | 'tree';
+  | 'tree'
+  | 'flowchart-complex'
+  | 'state-machine'
+  | 'sequence-diagram'
+  | 'timeline'
+  | 'tree-deep'
+  | 'graph-crossing'
+  | 'nested-boxes'
+  | 'venn'
+  | 'plot-multi'
+  | 'bar-values'
+  | 'bar-stacked'
+  | 'table'
+  | 'mind-map'
+  | 'number-line'
+  | 'unit-circle'
+  | 'triangle-labelled';
+
+export interface FigureEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface Containment {
+  outer: string;
+  inner: string;
+}
 
 /** What the transcriber is expected to produce for one drawing: one diagram block over these strokes, mentioning these labels. */
 export interface Figure {
@@ -31,6 +58,26 @@ export interface Figure {
   bbox: BoundingBox;
   /** Human description used in the reference caption. */
   description: string;
+  /** Node labels (boxes, states, lifelines, …) when the figure has relations. */
+  nodes?: string[];
+  /** Drawn connections, tail → head, with the text written on the arrow when any. */
+  edges?: FigureEdge[];
+  /** False for plain lines without arrowheads (match either direction). */
+  directed?: boolean;
+  /** Ordered steps (pipeline stages, numbered sequence messages, table headers, …). */
+  sequence?: string[];
+  /** Shapes drawn inside other shapes, by label. */
+  contains?: Containment[];
+}
+
+/** Relations a drawing routine reports back for its Figure. */
+export interface Relations {
+  labels: string[];
+  nodes?: string[];
+  edges?: FigureEdge[];
+  directed?: boolean;
+  sequence?: string[];
+  contains?: Containment[];
 }
 
 export interface Box {
@@ -43,17 +90,36 @@ export interface Box {
 export interface Pen {
   w: InkWriter;
   rng: Rng;
+  /** Hand steadiness; defaults to the `normal` profile. */
+  mess?: MessProfile;
+}
+
+export function messOf(pen: Pen): MessProfile {
+  return pen.mess ?? MESS_PROFILES.normal;
 }
 
 const DEG = Math.PI / 180;
 
 /** Run `draw` (which may return the labels it wrote), then wrap the strokes it produced into a Figure. */
-export function figure(pen: Pen, id: string, type: FigureType, description: string, draw: () => string[] | void): Figure {
+export function figure(pen: Pen, id: string, type: FigureType, description: string, draw: () => string[] | Relations | void): Figure {
   const start = pen.w.strokes.length;
   pen.w.pause(600);
-  const labels = draw() ?? [];
+  const out = draw();
+  const rel: Relations = Array.isArray(out) ? { labels: out } : (out ?? { labels: [] });
   const strokes = pen.w.strokes.slice(start);
-  return { id, type, labels, strokeIds: strokes.map((s) => s.id), bbox: strokesBounds(strokes) ?? { left: 0, top: 0, right: 0, bottom: 0 }, description };
+  return {
+    id,
+    type,
+    labels: rel.labels,
+    strokeIds: strokes.map((s) => s.id),
+    bbox: strokesBounds(strokes) ?? { left: 0, top: 0, right: 0, bottom: 0 },
+    description,
+    ...(rel.nodes ? { nodes: rel.nodes } : {}),
+    ...(rel.edges ? { edges: rel.edges } : {}),
+    ...(rel.directed === false ? { directed: false } : {}),
+    ...(rel.sequence ? { sequence: rel.sequence } : {}),
+    ...(rel.contains ? { contains: rel.contains } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- text
@@ -72,15 +138,16 @@ export function writeText(pen: Pen, text: string, x: number, baseline: number, o
   const { rng, w } = pen;
   const layout = layoutText(text, x, baseline, size, size * (opts.tracking ?? 0.1));
   const out: InkStroke[] = [];
-  const slant = rng.range(-0.08, 0.14);
-  const drift = rng.range(-0.004, 0.004);
+  const m = messOf(pen);
+  const slant = rng.range(-0.08, 0.14) * m.slant;
+  const drift = rng.range(-0.004, 0.004) * m.slant;
   for (const ch of layout.chars) {
     if (ch.ch === ' ') {
       w.pause(220);
       continue;
     }
-    const dy = rng.gauss() * size * 0.035 + (ch.x - x) * drift;
-    const scale = 1 + rng.gauss() * 0.04;
+    const dy = rng.gauss() * size * 0.035 * m.slant + (ch.x - x) * drift;
+    const scale = 1 + rng.gauss() * 0.04 * m.slant;
     const cx = ch.x, cy = baseline;
     for (const path of ch.polylines) {
       const pts = path.map((p) => ({ x: cx + (p.x - cx) * scale + (cy - p.y) * slant, y: cy + (p.y - cy) * scale + dy }));
@@ -104,10 +171,12 @@ export function drawCircle(pen: Pen, cx: number, cy: number, r: number): void {
 
 export function drawEllipse(pen: Pen, cx: number, cy: number, rx: number, ry: number): void {
   const { rng, w } = pen;
+  const m = messOf(pen);
   const start = rng.range(-150, -60) * DEG;
-  const sweep = (360 + rng.range(8, 40)) * DEG;
-  const squash = 1 + rng.gauss() * 0.04;
-  const tilt = rng.gauss() * 0.06;
+  // Overshoot the closing point like a quick hand; a messy hand sometimes stops short instead.
+  const sweep = (rng.chance(m.gap) ? 360 - rng.range(6, 24) : 360 + rng.range(8, 40) * m.overshoot) * DEG;
+  const squash = 1 + rng.gauss() * 0.04 * Math.sqrt(m.shake);
+  const tilt = rng.gauss() * 0.06 * Math.sqrt(m.shake);
   const pts = arcPoints(0, 0, rx * squash, ry / squash, start, start + sweep, 72).map((p) => ({
     x: cx + p.x * Math.cos(tilt) - p.y * Math.sin(tilt),
     y: cy + p.x * Math.sin(tilt) + p.y * Math.cos(tilt),
@@ -120,23 +189,28 @@ export function drawEllipse(pen: Pen, cx: number, cy: number, rx: number, ry: nu
 }
 
 /** Corner overshoot/undershoot like a quick hand sketch. */
-function jitterCorner(rng: Rng, p: Offset, amt = 2.5): Offset {
-  return { x: p.x + rng.gauss() * amt, y: p.y + rng.gauss() * amt };
+function jitterCorner(pen: Pen, p: Offset, amt = messOf(pen).corner): Offset {
+  return { x: p.x + pen.rng.gauss() * amt, y: p.y + pen.rng.gauss() * amt };
 }
 
 export function drawPolygon(pen: Pen, corners: Offset[], strokesHint?: 1 | 2 | 'sides'): void {
   const { rng, w } = pen;
-  const c = corners.map((p) => jitterCorner(rng, p));
+  const m = messOf(pen);
+  const c = corners.map((p) => jitterCorner(pen, p));
   const mode = strokesHint ?? rng.pick([1, 1, 2, 'sides'] as const);
+  // A side either overshoots its corner or (messy hands) stops short of it.
+  const end = () => (rng.chance(m.gap) ? 1 - rng.range(0.03, 0.08) : 1 + rng.range(0, 0.05) * m.overshoot);
+  const begin = () => (rng.chance(m.gap) ? rng.range(0.02, 0.06) : -0.02 * m.overshoot);
   if (mode === 1) {
-    w.stroke(c, { close: true });
+    // Close by hand: overshoot the first corner a little, or stop just short of it (a gap).
+    w.stroke([...c, lerp(c[c.length - 1], c[0], end())]);
   } else if (mode === 2 && c.length === 4) {
     w.stroke([c[0], c[1], c[2]]);
-    w.stroke([lerp(c[2], c[3], -0.03), c[3], lerp(c[0], c[3], -0.04)], { pauseMs: 200 });
+    w.stroke([lerp(c[2], c[3], begin()), c[3], lerp(c[0], c[3], -0.04 * m.overshoot)], { pauseMs: 200 });
   } else {
     for (let i = 0; i < c.length; i++) {
       const a = c[i], b = c[(i + 1) % c.length];
-      w.stroke([lerp(a, b, -0.02), lerp(a, b, 1 + rng.range(0, 0.05))], { pauseMs: 160 });
+      w.stroke([lerp(a, b, begin()), lerp(a, b, end())], { pauseMs: 160 });
     }
   }
 }
@@ -162,12 +236,12 @@ export function drawTriangle(pen: Pen, box: Box): void {
   ]);
 }
 
-export function drawLine(pen: Pen, a: Offset, b: Offset, opts: { shake?: number; pauseMs?: number } = {}): void {
+export function drawLine(pen: Pen, a: Offset, b: Offset, opts: { shake?: number; pauseMs?: number; bow?: number } = {}): void {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const mid = lerp(a, b, 0.5);
   const nx = -(b.y - a.y) / (len || 1), ny = (b.x - a.x) / (len || 1);
-  const bow = pen.rng.gauss() * len * 0.012;
-  pen.w.stroke(quadPoints(a, { x: mid.x + nx * bow * 2, y: mid.y + ny * bow * 2 }, b, Math.max(4, Math.round(len / 10))), opts);
+  const bow = pen.rng.gauss() * len * 0.012 * messOf(pen).bow * (opts.bow ?? 1);
+  pen.w.stroke(quadPoints(a, { x: mid.x + nx * bow * 2, y: mid.y + ny * bow * 2 }, b, Math.max(4, Math.round(len / 10))), { shake: opts.shake, pauseMs: opts.pauseMs });
 }
 
 export function drawArrowHead(pen: Pen, tip: Offset, direction: number, size = 12): void {
@@ -283,11 +357,12 @@ export function drawBarChart(pen: Pen, box: Box, spec: BarChartSpec, textSize = 
     const h = ((o.y - top - 10) * b.value) / maxV;
     // Bars are drawn open at the bottom (the axis is the base), like a quick sketch.
     const left = { x, y: o.y }, tl = { x, y: o.y - h }, tr = { x: x + barW, y: o.y - h }, right = { x: x + barW, y: o.y };
-    if (rng.chance(0.5)) w.stroke([left, tl, tr, right].map((p) => jitterCorner(rng, p, 1.5)), { pauseMs: 250 });
+    const jc = (p: Offset) => jitterCorner(pen, p, messOf(pen).corner * 0.6);
+    if (rng.chance(0.5)) w.stroke([left, tl, tr, right].map(jc), { pauseMs: 250 });
     else {
-      w.stroke([left, tl].map((p) => jitterCorner(rng, p, 1.5)), { pauseMs: 200 });
-      w.stroke([tl, tr].map((p) => jitterCorner(rng, p, 1.5)), { pauseMs: 120 });
-      w.stroke([tr, right].map((p) => jitterCorner(rng, p, 1.5)), { pauseMs: 120 });
+      w.stroke([left, tl].map(jc), { pauseMs: 200 });
+      w.stroke([tl, tr].map(jc), { pauseMs: 120 });
+      w.stroke([tr, right].map(jc), { pauseMs: 120 });
     }
     writeText(pen, b.label, x + barW / 2 - textWidth(b.label, textSize * 0.85) / 2, o.y + textSize * 1.4, { size: textSize * 0.85 });
     labels.push(b.label);
