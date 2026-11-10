@@ -162,14 +162,22 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     onClearPage();
   };
 
-  /** Wait until a transcription has run for the current page and settled (idle/error), or time out. */
+  /**
+   * Wait until a transcription has run for the current page and settled (idle/error), or time out.
+   * Only a `running` state counts as "seen": `waiting` is the idle timer, and the hook may briefly
+   * report `idle` before the request starts.
+   */
   const waitSettled = async (signal: AbortSignal) => {
     const started = performance.now();
     let sawRunning = false;
     while (!signal.aborted && performance.now() - started < SUITE_TIMEOUT_MS) {
       const st = stateRef.current;
-      if (st === 'running' || st === 'waiting') sawRunning = true;
-      else if (sawRunning || (pageRef.current.blocks.length > 0 && performance.now() - started > 2500)) return false;
+      if (st === 'running') sawRunning = true;
+      else if (st === 'idle' || st === 'error') {
+        if (sawRunning) return false;
+        // The request finished before our first poll (fast model): blocks exist and nothing is pending.
+        if (pageRef.current.blocks.length > 0 && performance.now() - started > 4000) return false;
+      }
       await sleep(250);
     }
     return !signal.aborted;
@@ -193,7 +201,8 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
       if (suiteDraw) {
         if (!(await replay(target, ctrl.signal))) break;
       } else inject(target);
-      await nextFrame();
+      // Give the page state a moment to hold the new strokes before asking for a transcription.
+      await sleep(300);
       onTranscribeNow();
       const timedOut = await waitSettled(ctrl.signal);
       if (ctrl.signal.aborted) break;
