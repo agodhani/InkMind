@@ -84,6 +84,8 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
   const [suite, setSuite] = useState<{ running: boolean; current: number; plan: ReturnType<typeof suitePlan>; results: SuiteResult[] } | null>(null);
   const [copied, setCopied] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  /** Seed the current suite series started from; cleared when the user edits the seed. */
+  const suiteBase = useRef<number | null>(null);
   const viewportRef = useRef(viewport);
   const pageRef = useRef(page);
   const stateRef = useRef(transcriptionState);
@@ -189,8 +191,10 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
   };
 
   const runSuite = async () => {
-    const plan = suitePlan(suiteSize, seed);
-    const restore = { kind, seed, messiness };
+    // Re-running an unchanged suite replays the same scenes even though the pickers now follow the suite.
+    const base = suiteBase.current ?? seed;
+    suiteBase.current = base;
+    const plan = suitePlan(suiteSize, base);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const results: SuiteResult[] = [];
@@ -221,10 +225,6 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
       results.push({ ...item, title: target.title, diagrams: sc.metrics, relations: sc.relations, seconds: (performance.now() - t0) / 1000, ...(timedOut ? { timedOut } : {}) });
     }
     setSuite({ running: false, current: -1, plan, results: [...results] });
-    // Put the pickers back so running the suite again replays the same scenes.
-    setKind(restore.kind);
-    setSeed(restore.seed);
-    setMessiness(restore.messiness);
     setRunning(false);
     abortRef.current = null;
   };
@@ -275,7 +275,16 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         </label>
         <label>
           Seed
-          <input type="number" min={0} value={seed} onChange={(e) => setSeed(Math.max(0, Math.floor(Number(e.target.value) || 0)))} disabled={running} />
+          <input
+            type="number"
+            min={0}
+            value={seed}
+            onChange={(e) => {
+              suiteBase.current = null;
+              setSeed(Math.max(0, Math.floor(Number(e.target.value) || 0)));
+            }}
+            disabled={running}
+          />
         </label>
         <span className="sim-seg" role="group" aria-label="Messiness" title="How steady the simulated hand is: scales jitter, wobble, corner overshoot and gaps">
           {MESSINESS_LEVELS.map((m) => (
