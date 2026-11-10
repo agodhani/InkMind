@@ -123,6 +123,7 @@ describe('normaliseFigure', () => {
     expect(fig.edges).toEqual([{ from: 'start', to: 'end' }]);
     expect(fig.sequence).toEqual(['start', 'end']);
     expect(normaliseFigure({ edges: [{ from: 'a', to: 'b', label: 'n3 — n1', kind: 'line' }] })!.edges).toEqual([{ from: 'a', to: 'b', kind: 'line' }]);
+    expect(normaliseFigure({ edges: [{ from: 'a', to: 'b', label: 'yes — if valid' }] })!.edges).toEqual([{ from: 'a', to: 'b', label: 'yes — if valid' }]);
     const seq = normaliseFigure({ kind: 'sequence', nodes: [{ id: 'n1', label: 'client', parent: 'n2' }, { id: 'n2', label: 'server', parent: 'n1' }], sequence: ['n1 → n2', 'n2 → n1'], cells: [['client', 'server']] })!;
     expect(seq.nodes!.every((n) => n.parent === undefined)).toBe(true);
     expect(seq.sequence).toEqual(['client', 'server']);
