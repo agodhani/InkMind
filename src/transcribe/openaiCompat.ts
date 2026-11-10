@@ -1,7 +1,7 @@
 import type { RawBlock, TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { BLOCK_KINDS, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
 import { normaliseFigure } from './figure';
-import { FIGURE_KINDS, type BlockKind } from '../model/page';
+import { FIGURE_KINDS, type BlockKind, type FigureKind } from '../model/page';
 
 export interface OpenAICompatOptions {
   /** Base URL up to and including `/v1`, e.g. `https://openrouter.ai/api/v1` or `http://localhost:11434/v1`. */
@@ -132,7 +132,9 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     if (!item || typeof item !== 'object') continue;
     // A figure kind ("flowchart") or a figure object in place of the block kind means a diagram block.
     const rawKind = String(item.kind);
-    const kind = (BLOCK_KINDS as string[]).includes(rawKind) ? (rawKind as BlockKind) : (FIGURE_KINDS as string[]).includes(rawKind.toLowerCase()) || item.figure !== undefined ? 'diagram' : 'unknown';
+    const figureKind = (FIGURE_KINDS as string[]).includes(rawKind.toLowerCase()) ? (rawKind.toLowerCase() as FigureKind) : undefined;
+    const hasFigure = item.figure !== null && typeof item.figure === 'object';
+    const kind = (BLOCK_KINDS as string[]).includes(rawKind) ? (rawKind as BlockKind) : figureKind || hasFigure ? 'diagram' : 'unknown';
     const text = typeof item.text === 'string' ? item.text : '';
     if (!text.trim() && kind !== 'diagram') continue;
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -154,7 +156,7 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     };
     if (kind === 'diagram') {
       // Accept `figure`, or the figure fields spilled onto the block itself.
-      const figure = normaliseFigure(item.figure ?? pickFigureFields(item));
+      const figure = normaliseFigure(item.figure ?? pickFigureFields(item), figureKind);
       if (figure) block.figure = figure;
     }
     if (isLoopedRepeat(block, out)) continue;

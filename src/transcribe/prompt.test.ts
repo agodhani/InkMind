@@ -48,6 +48,12 @@ describe('looksDegenerate / pickSaner', () => {
 });
 
 describe('normaliseBlocks', () => {
+  it('treats a figure kind given as the block kind as a diagram of that kind, but not a null figure field', () => {
+    const blocks = normaliseBlocks({ blocks: [{ kind: 'flowchart', text: 'Shape: boxes.', bbox: {}, groupIndices: [0], figure: { labels: ['a'] } }, { kind: 'weird', text: 'note', bbox: {}, figure: null }] });
+    expect(blocks[0]).toMatchObject({ kind: 'diagram', figure: { kind: 'flowchart', labels: ['a'] } });
+    expect(blocks[1].kind).toBe('unknown');
+  });
+
   it('coerces unknown kinds, drops empty text, keeps empty diagrams', () => {
     const blocks = normaliseBlocks({
       blocks: [
