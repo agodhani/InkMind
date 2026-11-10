@@ -133,7 +133,7 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     // A figure kind ("flowchart") or a figure object in place of the block kind means a diagram block.
     const rawKind = String(item.kind);
     const figureKind = (FIGURE_KINDS as string[]).includes(rawKind.toLowerCase()) ? (rawKind.toLowerCase() as FigureKind) : undefined;
-    const hasFigure = item.figure !== null && typeof item.figure === 'object';
+    const hasFigure = (item.figure !== null && typeof item.figure === 'object') || (typeof item.figure === 'string' && item.figure.trim().length > 0);
     const kind = (BLOCK_KINDS as string[]).includes(rawKind) ? (rawKind as BlockKind) : figureKind || hasFigure ? 'diagram' : 'unknown';
     const text = typeof item.text === 'string' ? item.text : '';
     if (!text.trim() && kind !== 'diagram') continue;

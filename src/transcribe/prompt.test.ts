@@ -52,6 +52,7 @@ describe('normaliseBlocks', () => {
     const blocks = normaliseBlocks({ blocks: [{ kind: 'flowchart', text: 'Shape: boxes.', bbox: {}, groupIndices: [0], figure: { labels: ['a'] } }, { kind: 'weird', text: 'note', bbox: {}, figure: null }] });
     expect(blocks[0]).toMatchObject({ kind: 'diagram', figure: { kind: 'flowchart', labels: ['a'] } });
     expect(blocks[1].kind).toBe('unknown');
+    expect(normaliseBlocks({ blocks: [{ kind: 'drawing', text: '', bbox: {}, figure: 'tree' }] })[0]).toMatchObject({ kind: 'diagram', figure: { kind: 'tree' } });
   });
 
   it('coerces unknown kinds, drops empty text, keeps empty diagrams', () => {
