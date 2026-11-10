@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InkCanvas, type InkTool } from './ink/InkCanvas';
 import type { Viewport } from './ink/ViewportManager';
 import { useUndoRedoKeyboard } from './ink/useUndoRedo';
@@ -18,6 +18,10 @@ import { buildProfile, type Correction } from './profile/handwritingProfile';
 import { pageToMarkdown } from './export/markdown';
 import { loadSettings, saveSettings, type AppSettings } from './settings';
 import { strokesBounds } from './transcribe/regions';
+
+// Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
+const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
+const SIM_ENABLED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim');
 
 type ViewMode = 'ink' | 'digital' | 'split';
 
@@ -113,6 +117,24 @@ export default function App() {
     },
     [page, pushHistory, updatePage, markStrokesDirty],
   );
+
+  const onSimInject = useCallback(
+    (strokes: InkStroke[]) => {
+      if (!page || strokes.length === 0) return;
+      pushHistory(page);
+      updatePage(page.id, (p) => ({ ...p, strokes: [...p.strokes, ...strokes] }));
+      markStrokesDirty(strokes);
+    },
+    [page, pushHistory, updatePage, markStrokesDirty],
+  );
+
+  const onSimClear = useCallback(() => {
+    if (!page) return;
+    pushHistory(page);
+    const ids = page.strokes.map((s) => s.id);
+    updatePage(page.id, (p) => ({ ...p, strokes: [], blocks: [] }));
+    if (ids.length) markStrokesDeleted(ids);
+  }, [page, pushHistory, updatePage, markStrokesDeleted]);
 
   const onStrokesErased = useCallback(
     (ids: string[]) => {
@@ -353,6 +375,12 @@ export default function App() {
           </section>
         )}
       </main>
+
+      {SIM_ENABLED && (
+        <Suspense fallback={null}>
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={() => void flushNow()} onBeforeDraw={() => setTool('pen')} />
+        </Suspense>
+      )}
 
       {showPages && (
         <aside className="drawer" onClick={() => setShowPages(false)}>
