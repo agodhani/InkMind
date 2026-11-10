@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
-import { arrowTwoStrokes, rect, resetSynthetic, textLine } from '../__tests__/shapes';
+import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
 import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 
@@ -355,6 +355,21 @@ describe('reconcileFigureBlocks', () => {
     expect(diagrams).toHaveLength(1);
     expect(diagrams[0].strokeIds.length).toBeGreaterThan(0);
     expect(diagrams[0].figure).toMatchObject({ labels: ['go', 'stop'], edges: [{ from: 'go', to: 'stop', kind: 'arrow', inferred: true }], sequence: ['go', 'stop'] });
+  });
+
+  it('turns a model "table" text block on a drawn grid into the figure cells', () => {
+    const grid = [...rectLines(0, 0, 300, 150, 0), line(0, 50, 300, 50, 6000), line(0, 100, 300, 100, 12000), line(150, 0, 150, 150, 18000)];
+    const words = [...textLine(40, 30, 3, 14, 30000), ...textLine(190, 30, 3, 14, 40000), ...textLine(40, 80, 3, 14, 50000)];
+    const strokes = [...grid, ...words];
+    const groups = buildStrokeGroups(strokes);
+    expect(groups.find((g) => g.figure)!.figure!.kind).toBe('table');
+    const wordGroups = groups.filter((g) => g.strokeIds.some((id) => words.some((w) => w.id === id)));
+    const tableBlock: DigitalBlock = { id: 'tb', kind: 'table', text: 'name qty\nnut', bbox: wordGroups.map((g) => g.bbox).reduce(unionBounds), strokeIds: wordGroups.flatMap((g) => g.strokeIds), confidence: 0.8 };
+    const out = reconcileFigureBlocks([tableBlock], groups, strokes);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('diagram');
+    expect(out[0].figure!.cells).toEqual([['name', 'qty'], ['nut', '']]);
+    expect(out[0].figure!.labels).toEqual(expect.arrayContaining(['name', 'qty', 'nut']));
   });
 
   it('is a no-op without figures', () => {

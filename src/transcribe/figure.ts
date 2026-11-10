@@ -14,14 +14,16 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
-  const byRef = (ref: string) => nodes.find((n) => n.id.toLowerCase() === ref.trim().toLowerCase())?.label ?? ref;
+  const byRef = (ref: string) => ref.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);
   const labels = dedupeText([
     ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])).map(byRef),
     ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
   ]).filter((l) => !isGroupRef(l));
   const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef);
-  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef)).filter((l) => !isGroupRef(l));
-  const cells = cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid']));
+  // "a → b" written as a step is two steps.
+  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_RE).map(cleanText).filter(Boolean))).filter((l) => !isGroupRef(l));
+  // Cells only describe tables; small models echo the placeholder grid onto every figure.
+  const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
   if (sequence.length) fig.sequence = sequence;
@@ -125,15 +127,17 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     }
   }
   for (const n of out) {
-    const seen = new Set<string>([n.id]);
+    const chain: FigureNode[] = [n];
     let cur = n;
     while (cur.parent !== undefined) {
-      if (seen.has(cur.parent)) {
-        delete cur.parent;
+      const next = find(cur.parent)!;
+      if (chain.includes(next)) {
+        // A containment cycle (a inside b inside a) is noise: none of its members is nested.
+        for (const m of chain.slice(chain.indexOf(next))) delete m.parent;
         break;
       }
-      seen.add(cur.parent);
-      cur = find(cur.parent)!;
+      chain.push(next);
+      cur = next;
     }
   }
   return out;
@@ -150,7 +154,11 @@ export function cellGrid(value: unknown): string[][] {
   const splitRow = (s: string) => {
     const t = s.trim().replace(/^\|/, '').replace(/\|$/, '');
     if (/^[\s:|-]+$/.test(t)) return null;
-    return t.includes('|') ? t.split('|') : t.includes('\t') ? t.split('\t') : t.split(/,\s*/);
+    if (t.includes('|')) return t.split('|');
+    if (t.includes('\t')) return t.split('\t');
+    if (/\s{2,}/.test(t)) return t.split(/\s{2,}/);
+    if (t.includes(',')) return t.split(/,\s*/);
+    return t.split(/\s+/);
   };
   if (typeof value === 'string') {
     for (const line of value.split(/\n+/)) {

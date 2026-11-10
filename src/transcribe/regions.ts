@@ -4,7 +4,7 @@ import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
 import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
-import { figureCaption } from './figure';
+import { cellGrid, figureCaption } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
@@ -172,15 +172,34 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const textMembers = members.filter((b) => b.kind !== 'diagram' && b.text.trim());
     // Text the model read on the figure's label groups are labels; text "read" on drawn strokes is noise.
     const labelTexts = textMembers.filter((b) => b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
+    const labelGroupIdx = new Set([...fig.labelGroups, ...fig.labelHostGroups]);
     const labelFor = (groupIndex: number) => {
       const ids = new Set(groups[groupIndex]?.strokeIds ?? []);
       const hit = textMembers.find((b) => b.strokeIds.some((id) => ids.has(id) && labelStrokeIds.has(id)));
-      return hit ? cleanLabel(hit.text) || undefined : undefined;
+      if (!hit) return undefined;
+      // One text block read over several label groups: give each group its own line when the counts match.
+      const covered = figGroups.filter((g) => labelGroupIdx.has(g.index) && hit.strokeIds.some((id) => g.strokeIds.includes(id)));
+      const lines = hit.text.split('\n').map(cleanLabel).filter(Boolean);
+      if (covered.length > 1 && lines.length === covered.length) {
+        const ordered = [...covered].sort((a, b) => (Math.abs(a.bbox.top - b.bbox.top) > 18 ? a.bbox.top - b.bbox.top : a.bbox.left - b.bbox.left));
+        const i = ordered.findIndex((g) => g.index === groupIndex);
+        if (i >= 0) return lines[i];
+      }
+      return cleanLabel(hit.text) || undefined;
     };
     // The model may have answered with several diagram blocks for one figure: fold them into one.
     const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
     const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor));
+    // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
+    if (figure.kind === 'table' && !prior?.cells?.length) {
+      const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
+      const cells = tableText ? cellGrid(tableText.text) : [];
+      if (cells.flat().filter(Boolean).length >= 2) {
+        figure.cells = cells;
+        figure.labels = dedupe([...figure.labels.filter((l) => !cells.some((row) => row.join(' ') === l)), ...cells.flat().filter(Boolean)]);
+      }
+    }
     const strokeIds = dedupe([...members.flatMap((b) => b.strokeIds), ...figStrokeIds]);
     const bbox = boundsOf(strokeIds, diagram?.bbox ?? figGroups.map((g) => g.bbox).reduce(unionBounds));
     const text = diagrams.map((b) => b.text.trim()).find(Boolean) || figureCaption(figure);
@@ -283,7 +302,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     return out;
   })();
   const sequence = prior?.sequence?.length ? prior.sequence : geo.sequence?.length && !geo.sequence.every((s) => geo.unnamed.includes(s)) ? geo.sequence : undefined;
-  const cells = prior?.cells?.length ? prior.cells : geo.cells?.some((row) => row.some(Boolean)) ? geo.cells : undefined;
+  const cells = kind === 'table' && prior?.cells?.length ? prior.cells : geo.cells?.some((row) => row.some(Boolean)) ? geo.cells : undefined;
   const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels, edges };
   if (nodes?.length) figure.nodes = nodes;
   if (sequence) figure.sequence = sequence;

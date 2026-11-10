@@ -96,7 +96,7 @@ describe('normaliseFigure', () => {
   it('accepts a top-level containment map and string nodes, and never nests a node in itself', () => {
     const fig = normaliseFigure({ kind: 'sketch', nodes: ['outer', 'inner'], contains: { outer: ['inner', 'outer'] } })!;
     expect(fig.nodes).toEqual([{ id: 'outer', label: 'outer' }, { id: 'inner', label: 'inner', parent: 'outer' }]);
-    expect(normaliseFigure({ kind: 'graph', nodes: [{ id: 'a', label: 'a', parent: 'b' }, { id: 'b', label: 'b', parent: 'a' }] })!.nodes!.filter((n) => n.parent)).toHaveLength(1);
+    expect(normaliseFigure({ kind: 'graph', nodes: [{ id: 'a', label: 'a', parent: 'b' }, { id: 'b', label: 'b', parent: 'a' }] })!.nodes!.filter((n) => n.parent)).toHaveLength(0);
   });
   it('captions steps, nesting, tables and edge kinds', () => {
     const caption = figureCaption({
@@ -122,5 +122,9 @@ describe('normaliseFigure', () => {
     expect(fig.nodes).toEqual([{ id: 'n1', label: 'start' }, { id: 'n2', label: 'end' }]);
     expect(fig.edges).toEqual([{ from: 'start', to: 'end' }]);
     expect(fig.sequence).toEqual(['start', 'end']);
+    const seq = normaliseFigure({ kind: 'sequence', nodes: [{ id: 'n1', label: 'client', parent: 'n2' }, { id: 'n2', label: 'server', parent: 'n1' }], sequence: ['n1 → n2', 'n2 → n1'], cells: [['client', 'server']] })!;
+    expect(seq.nodes!.every((n) => n.parent === undefined)).toBe(true);
+    expect(seq.sequence).toEqual(['client', 'server']);
+    expect(seq.cells).toBeUndefined();
   });
 });
