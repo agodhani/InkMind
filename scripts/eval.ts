@@ -9,7 +9,9 @@
  *   strokes.json          pages → InkStroke[] in canvas px
  *   pages/page-N.png      raster of the original page (pdftoppm)
  *   pages/centerline-N.png re-rendering of the extracted strokes
- *   reference.md          ground truth, pages separated by `<!-- page N -->`
+ *   reference.md          ground truth, pages separated by `<!-- page N -->`; a page may end with a
+ *                         ```json figures fence listing expected diagrams (see src/sim/metrics.ts),
+ *                         which adds figure recall / text leak / label recall to the scores.
  * Results go to <dataset>/results/<run>/page-N.json + summary.md
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -30,6 +32,7 @@ setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const nodeCanvas: CanvasFactory = (w, h) => createCanvas(w, h) as unknown as ReturnType<CanvasFactory>;
 import { ModelOutputError } from '../src/transcribe/prompt';
+import { diagramMetrics, parseReferencePage, pct, type DiagramMetrics } from '../src/sim/metrics';
 
 interface Args {
   dataset: string;
@@ -134,10 +137,12 @@ async function main() {
   const rows: string[] = [];
   const rawLog = new Map<number, string>();
   let totWer = 0, totCer = 0, n = 0;
+  const diag = { figures: 0, detected: 0, figureStrokes: 0, leaked: 0, labels: 0, labelsFound: 0, spurious: 0 };
   for (const page of data.pages) {
     if (args.pages && !args.pages.includes(page.index)) continue;
-    const ref = refs.get(page.index);
-    if (!ref) continue;
+    const refPage = refs.get(page.index);
+    if (!refPage) continue;
+    const { text: ref, figures } = parseReferencePage(refPage);
     const pageGroups = buildStrokeGroups(page.strokes);
     const byId = new Map(page.strokes.map((st) => [st.id, st]));
     const title = data.source.replace(/\.pdf$/i, '');
@@ -223,27 +228,40 @@ async function main() {
       }
     }
     if (failed) {
-      rows.push(`| ${page.index} | — | — | error (see .raw.txt) |`);
+      rows.push(`| ${page.index} | — | — | — | — | — | error (see .raw.txt) |`);
       continue;
     }
     const blocks = sortBlocksForReading(result.blocks);
     const hyp = blocks.filter((b) => b.kind !== 'diagram').map((b) => b.text).join('\n');
     const s = score(hyp, ref);
+    const dm: DiagramMetrics = diagramMetrics(figures, blocks);
     const secs = ((Date.now() - started) / 1000).toFixed(1);
-    process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)\n`);
-    writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, score: s, blocks, hyp, ref }, null, 2));
-    rows.push(`| ${page.index} | ${s.wer} | ${s.cer} | ${blocks.length} blocks (${Object.entries(blocks.reduce<Record<string, number>>((m, b) => ((m[b.kind] = (m[b.kind] ?? 0) + 1), m), {})).map(([k, v]) => `${k}:${v}`).join(', ')}), ${secs}s |`);
-    totWer += s.wer; totCer += s.cer; n++;
+    process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)${figures.length ? ` figures ${dm.detected}/${dm.figures} leak ${pct(dm.textLeak)} labels ${dm.labelsFound}/${dm.labels}` : ''}\n`);
+    writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, score: s, diagrams: dm, blocks, hyp, ref }, null, 2));
+    const kinds = Object.entries(blocks.reduce<Record<string, number>>((m, b) => ((m[b.kind] = (m[b.kind] ?? 0) + 1), m), {})).map(([k, v]) => `${k}:${v}`).join(', ');
+    const textCell = ref ? `${s.wer} | ${s.cer}` : '— | —';
+    const figCell = figures.length ? `${dm.detected}/${dm.figures} | ${pct(dm.textLeak)} | ${dm.labels ? `${dm.labelsFound}/${dm.labels}` : '—'}` : '— | — | —';
+    const captions = dm.perFigure.filter((f) => f.caption).map((f) => `${f.type}: “${f.caption.replace(/\|/g, '/').slice(0, 80)}”`).join('; ');
+    rows.push(`| ${page.index} | ${textCell} | ${figCell} | ${blocks.length} blocks (${kinds})${dm.spuriousDiagrams ? `, ${dm.spuriousDiagrams} spurious diagram(s)` : ''}, ${secs}s${captions ? ` · ${captions}` : ''} |`);
+    if (ref) { totWer += s.wer; totCer += s.cer; n++; }
+    const figureStrokes = figures.reduce((t, f) => t + f.strokeIds.length, 0);
+    diag.figures += dm.figures; diag.detected += dm.detected; diag.figureStrokes += figureStrokes;
+    diag.leaked += Math.round((dm.textLeak ?? 0) * figureStrokes); diag.labels += dm.labels; diag.labelsFound += dm.labelsFound; diag.spurious += dm.spuriousDiagrams;
   }
+  const ratio = (a: number, b: number) => (b ? a / b : null);
   const summary = [
     `# ${run}`,
     '',
     `Transcriber: \`${transcriber.name}\` · image: ${args.band ? `band ${args.band} (+${args.context} ctx)` : args.image} · render: ${args.band || args.image === 'strokes' ? args.render : 'pdf raster'} · ${new Date().toISOString()}`,
     '',
-    '| page | WER | CER | notes |',
-    '|---|---|---|---|',
+    '| page | WER | CER | figures found | text leak | labels found | notes |',
+    '|---|---|---|---|---|---|---|',
     ...rows,
-    n ? `| **mean** | **${(totWer / n).toFixed(3)}** | **${(totCer / n).toFixed(3)}** | ${n} pages |` : '',
+    `| **total** | ${n ? `**${(totWer / n).toFixed(3)}** | **${(totCer / n).toFixed(3)}**` : '— | —'} | ${diag.figures ? `**${diag.detected}/${diag.figures}** (${pct(ratio(diag.detected, diag.figures))})` : '—'} | ${diag.figures ? `**${pct(ratio(diag.leaked, diag.figureStrokes))}**` : '—'} | ${diag.labels ? `**${diag.labelsFound}/${diag.labels}** (${pct(ratio(diag.labelsFound, diag.labels))})` : '—'} | ${n} text page(s)${diag.spurious ? `, ${diag.spurious} spurious diagram(s)` : ''} |`,
+    '',
+    diag.figures
+      ? 'figures found = a `diagram` block covers ≥80 % of the figure\'s strokes with ≤20 % foreign strokes · text leak = figure strokes that ended up in text blocks · labels found = expected labels present in the diagram caption (case-insensitive). WER/CER cover the text parts only.'
+      : '',
     '',
   ].join('\n');
   writeFileSync(join(outDir, 'summary.md'), summary);

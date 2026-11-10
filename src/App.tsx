@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InkCanvas, type InkTool } from './ink/InkCanvas';
 import type { Viewport } from './ink/ViewportManager';
 import { useUndoRedoKeyboard } from './ink/useUndoRedo';
@@ -27,6 +27,10 @@ import { COMPACT_QUERY, useMediaQuery } from './ui/useMediaQuery';
 import { isEditableTarget, matchesShortcut, SHORTCUTS } from './ui/shortcuts';
 import { stepBrushSize } from './ui/brush';
 import { Icon } from './ui/icons';
+
+// Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
+const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
+const SIM_ENABLED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim');
 
 interface HistoryEntry {
   strokes: InkStroke[];
@@ -143,6 +147,24 @@ export default function App() {
     },
     [page, pushHistory, updatePage, markStrokesDirty],
   );
+
+  const onSimInject = useCallback(
+    (strokes: InkStroke[]) => {
+      if (!page || strokes.length === 0) return;
+      pushHistory(page);
+      updatePage(page.id, (p) => ({ ...p, strokes: [...p.strokes, ...strokes] }));
+      markStrokesDirty(strokes);
+    },
+    [page, pushHistory, updatePage, markStrokesDirty],
+  );
+
+  const onSimClear = useCallback(() => {
+    if (!page) return;
+    pushHistory(page);
+    const ids = page.strokes.map((s) => s.id);
+    updatePage(page.id, (p) => ({ ...p, strokes: [], blocks: [] }));
+    if (ids.length) markStrokesDeleted(ids);
+  }, [page, pushHistory, updatePage, markStrokesDeleted]);
 
   const onStrokesErased = useCallback(
     (ids: string[]) => {
@@ -491,6 +513,12 @@ export default function App() {
           </section>
         )}
       </main>
+
+      {SIM_ENABLED && page && (
+        <Suspense fallback={null}>
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} />
+        </Suspense>
+      )}
 
       <PagesDrawer open={showPages} pages={pages} currentId={page?.id ?? null} onClose={() => setShowPages(false)} onOpen={openPage} onNew={() => void newPage()} onImport={(f) => void importStrokes(f)} onRename={renamePage} onDelete={(p) => void deletePage(p)} />
 

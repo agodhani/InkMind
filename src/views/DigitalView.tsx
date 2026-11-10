@@ -200,7 +200,7 @@ function BlockText({ block }: { block: DigitalBlock }) {
     case 'math':
       return <pre className="math">{text}</pre>;
     case 'diagram':
-      return <div className="caption">{text}</div>;
+      return <DiagramDetails block={block} text={text} />;
     case 'footnote_ref':
       return (
         <p>
@@ -243,6 +243,42 @@ function Inline({ text }: { text: string }) {
         return <span key={i}>{p}</span>;
       })}
     </>
+  );
+}
+
+/** Caption + label chips + compact edge list for a diagram block (falls back to caption only for legacy blocks). */
+function DiagramDetails({ block, text }: { block: DigitalBlock; text: string }) {
+  const fig = block.figure;
+  return (
+    <div className="diagram-details">
+      {text && <div className="caption">{text}</div>}
+      {fig && (fig.kind !== 'other' || fig.shapes.length > 0) && (
+        <div className="diagram-kind">
+          <span className="chip chip-kind">{fig.kind}</span>
+          {fig.shapes.map((s, i) => (
+            <span key={`${s}-${i}`} className="chip chip-shape">{s}</span>
+          ))}
+        </div>
+      )}
+      {fig && fig.labels.length > 0 && (
+        <div className="diagram-labels" aria-label="labels">
+          {fig.labels.map((l, i) => (
+            <span key={`${l}-${i}`} className="chip chip-label">{l}</span>
+          ))}
+        </div>
+      )}
+      {fig && fig.edges.length > 0 && (
+        <ul className="diagram-edges" aria-label="relations">
+          {fig.edges.map((e, i) => (
+            <li key={`${e.from}-${e.to}-${i}`}>
+              <span className="edge-node">{e.from}</span>
+              <span className="edge-arrow">{e.label ? ` —${e.label}→ ` : ' → '}</span>
+              <span className="edge-node">{e.to}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

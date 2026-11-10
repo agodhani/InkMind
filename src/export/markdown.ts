@@ -21,7 +21,7 @@ export function pageToMarkdown(page: Page, blocks: DigitalBlock[] = page.blocks)
         break;
       }
       case 'diagram':
-        body.push(`![[${page.id}/${b.id}.png]]`, b.text ? `*${b.text}*` : '', '');
+        body.push(`![[${page.id}/${b.id}.png]]`, b.text ? `*${b.text}*` : '', ...figureLines(b), '');
         break;
       case 'footnote_ref':
         body.push(`${b.text}${b.marker ? `[^${footnoteKey(b.marker)}]` : ''}`, '');
@@ -41,6 +41,16 @@ export function pageToMarkdown(page: Page, blocks: DigitalBlock[] = page.blocks)
     for (const d of defs) body.push(`[^${footnoteKey(d.marker ?? '*')}]: ${d.text}`);
   }
   return body.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+}
+
+/** Labels and relations of a diagram block, as Markdown lines under the image embed. */
+export function figureLines(b: DigitalBlock): string[] {
+  const fig = b.figure;
+  if (!fig) return [];
+  const lines: string[] = [];
+  if (fig.labels.length) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
+  if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${e.from} → ${e.to}${e.label ? ` (${e.label})` : ''}`));
+  return lines;
 }
 
 export function footnoteKey(marker: string): string {

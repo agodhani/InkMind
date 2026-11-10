@@ -6,3 +6,20 @@
 */results/*/page-*.json
 */results/*/page-*.raw.txt
 */pages220/
+
+# Synthetic datasets from `npm run gen:shapes` contain no personal data and are committed.
+!shapes-basic/strokes.json
+!shapes-basic/pages/
+!shapes-basic/reference.md
+!graphs/strokes.json
+!graphs/pages/
+!graphs/reference.md
+!cubes-3d/strokes.json
+!cubes-3d/pages/
+!cubes-3d/reference.md
+!flowcharts/strokes.json
+!flowcharts/pages/
+!flowcharts/reference.md
+!mixed-notes/strokes.json
+!mixed-notes/pages/
+!mixed-notes/reference.md

@@ -172,7 +172,11 @@ export function InkCanvas({
     }
     if (activePointer.current !== null) return;
     activePointer.current = e.pointerId;
-    target.setPointerCapture(e.pointerId);
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic pointer events (dev simulator) have no active pointer to capture.
+    }
     const pt = toCanvasPoint(e);
     downInfo.current = { x: e.clientX, y: e.clientY, t: performance.now() };
 
