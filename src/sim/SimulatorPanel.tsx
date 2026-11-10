@@ -36,6 +36,7 @@ const SPEEDS = [
 
 const SUITE_SIZES = [4, 8, 15, 30];
 const SUITE_TIMEOUT_MS = 6 * 60_000;
+const NO_TRANSCRIPTION_MS = 20_000;
 
 interface Drawn {
   scene: Scene;
@@ -173,7 +174,11 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     while (!signal.aborted && performance.now() - started < SUITE_TIMEOUT_MS) {
       const st = stateRef.current;
       if (st === 'running') sawRunning = true;
-      else if (st === 'idle' || st === 'error') {
+      else if (!sawRunning && performance.now() - started > NO_TRANSCRIPTION_MS) {
+        // Nothing ever started: live transcription is off (or no transcriber) — don't sit out the full timeout.
+        setError('No transcription started — enable “Transcribe while I write” in Settings for the suite to score scenes.');
+        return true;
+      } else if (st === 'idle' || st === 'error') {
         if (sawRunning) return false;
         // The request finished before our first poll (fast model): blocks exist and nothing is pending.
         if (pageRef.current.blocks.length > 0 && performance.now() - started > 4000) return false;
@@ -185,6 +190,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
 
   const runSuite = async () => {
     const plan = suitePlan(suiteSize, seed);
+    const restore = { kind, seed, messiness };
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const results: SuiteResult[] = [];
@@ -215,6 +221,10 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
       results.push({ ...item, title: target.title, diagrams: sc.metrics, relations: sc.relations, seconds: (performance.now() - t0) / 1000, ...(timedOut ? { timedOut } : {}) });
     }
     setSuite({ running: false, current: -1, plan, results: [...results] });
+    // Put the pickers back so running the suite again replays the same scenes.
+    setKind(restore.kind);
+    setSeed(restore.seed);
+    setMessiness(restore.messiness);
     setRunning(false);
     abortRef.current = null;
   };
