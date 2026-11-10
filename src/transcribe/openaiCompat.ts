@@ -1,5 +1,6 @@
 import type { RawBlock, TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { BLOCK_KINDS, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
+import { normaliseFigure } from './figure';
 import type { BlockKind } from '../model/page';
 
 export interface OpenAICompatOptions {
@@ -138,7 +139,7 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
       ? { left: rawBox[0], top: rawBox[1], right: rawBox[2], bottom: rawBox[3] }
       : ((rawBox ?? {}) as Record<string, unknown>);
     // Some models nest the other fields inside bbox, or put the whole [l,t,r,b] box in each bbox field.
-    for (const key of ['groupIndices', 'confidence', 'marker', 'level'] as const) if (item[key] === undefined && b[key] !== undefined) item[key] = b[key];
+    for (const key of ['groupIndices', 'confidence', 'marker', 'level', 'figure'] as const) if (item[key] === undefined && b[key] !== undefined) item[key] = b[key];
     if (Array.isArray(b.left) && b.left.length === 4) b = { left: b.left[0], top: b.left[1], right: b.left[2], bottom: b.left[3] };
     const block: RawBlock = {
       kind,
@@ -149,10 +150,22 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
       marker: typeof item.marker === 'string' && item.marker ? item.marker : undefined,
       level: typeof item.level === 'number' ? item.level : undefined,
     };
+    if (kind === 'diagram') {
+      // Accept `figure`, or the figure fields spilled onto the block itself.
+      const figure = normaliseFigure(item.figure ?? pickFigureFields(item));
+      if (figure) block.figure = figure;
+    }
     if (isLoopedRepeat(block, out)) continue;
     out.push(block);
   }
   return out;
+}
+
+const FIGURE_FIELDS = ['shapes', 'labels', 'edges', 'relations', 'nodes', 'figure_kind', 'figureKind'];
+
+function pickFigureFields(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  const picked = Object.fromEntries(FIGURE_FIELDS.filter((k) => item[k] !== undefined).map((k) => [k, item[k]]));
+  return Object.keys(picked).length ? picked : undefined;
 }
 
 /**

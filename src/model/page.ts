@@ -13,6 +13,24 @@ export type BlockKind =
   | 'margin_note'
   | 'unknown';
 
+export type FigureKind = 'flowchart' | 'graph' | 'plot' | 'sketch' | 'tree' | 'cube' | 'shape' | 'table' | 'other';
+
+export const FIGURE_KINDS: FigureKind[] = ['flowchart', 'graph', 'plot', 'sketch', 'tree', 'cube', 'shape', 'table', 'other'];
+
+export interface FigureEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+/** Structured description of a diagram block: what was drawn, the labels in it, and what connects to what. */
+export interface FigureInfo {
+  kind: FigureKind;
+  shapes: string[];
+  labels: string[];
+  edges: FigureEdge[];
+}
+
 export interface DigitalBlock {
   id: string;
   kind: BlockKind;
@@ -25,6 +43,8 @@ export interface DigitalBlock {
   marker?: string;
   /** Heading level 1-3 */
   level?: number;
+  /** Diagram blocks: structured description (shapes, labels, edges). */
+  figure?: FigureInfo;
   /** True when the user edited this block; survives re-transcription. */
   userEdited?: boolean;
 }

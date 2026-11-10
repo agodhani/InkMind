@@ -1,8 +1,10 @@
 import type { BoundingBox } from '../types';
 import { getStrokeBoundingBox } from '../types/brush';
-import type { DigitalBlock, InkStroke } from '../model/page';
+import type { DigitalBlock, FigureInfo, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
+import { analyseInk, namedEdges, type FigureHint } from '../ink/shapeHints';
+import { figureCaption } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
@@ -91,12 +93,16 @@ export function computeDirtyRegions(
   return regions.filter((r) => r.strokes.length > 0 || r.replacedBlockIds.length > 0);
 }
 
-/** Group region strokes into line-ish clusters with written order. */
+/**
+ * Group region strokes into line-ish clusters with written order, then run the geometric
+ * shape classifier so each group carries a hint (circle, arrow, axes, looks like text…) and,
+ * when it is part of a drawing, the figure it belongs to.
+ */
 export function buildStrokeGroups(strokes: InkStroke[]): StrokeGroupMeta[] {
   const clusters = clusterStrokes(strokes, { spatialThreshold: 30, temporalThreshold: 4000 });
   const ordered = [...clusters].sort((a, b) => a.startTime - b.startTime);
   const writtenOrder = new Map(ordered.map((c, i) => [c, i]));
-  return clusters
+  const groups: StrokeGroupMeta[] = clusters
     .map((c) => ({
       strokeIds: (c.strokes as InkStroke[]).map((s) => s.id),
       bbox: c.bounds,
@@ -104,6 +110,88 @@ export function buildStrokeGroups(strokes: InkStroke[]): StrokeGroupMeta[] {
     }))
     .sort((a, b) => (Math.abs(a.bbox.top - b.bbox.top) > 18 ? a.bbox.top - b.bbox.top : a.bbox.left - b.bbox.left))
     .map((g, index) => ({ index, ...g }));
+  const analysis = analyseInk(strokes, groups);
+  return groups.map((g) => {
+    const hint = analysis.hints.get(g.index);
+    const figure = analysis.figures.find((f) => f.groupIndices.includes(g.index));
+    return { ...g, ...(hint ? { hint } : {}), ...(figure ? { figure } : {}) };
+  });
+}
+
+/** Figures detected by geometry in these groups, each once, in reading order. */
+export function figuresOf(groups: StrokeGroupMeta[]): FigureHint[] {
+  const seen = new Map<number, FigureHint>();
+  for (const g of groups) if (g.figure && !seen.has(g.figure.id)) seen.set(g.figure.id, g.figure);
+  return [...seen.values()].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * Geometry found figures (a shape with a label inside, box → arrow → box, axes + curve, a cube).
+ * Whatever the model did with those groups — split the drawing into paragraphs, captioned only
+ * part of it, or skipped it — each figure ends up as exactly ONE diagram block that owns all of the
+ * figure's strokes. Text the geometry did not assign to the figure stays in its own text block.
+ */
+export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGroupMeta[], strokes: InkStroke[]): DigitalBlock[] {
+  const figures = figuresOf(groups);
+  if (figures.length === 0) return incoming;
+  const strokeById = new Map(strokes.map((s) => [s.id, s]));
+  const boundsOf = (ids: string[], fallback: BoundingBox) => strokesBounds(ids.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s)) ?? fallback;
+  let blocks = incoming;
+  for (const fig of figures) {
+    const figGroups = groups.filter((g) => g.figure?.id === fig.id);
+    const figStrokeIds = new Set(figGroups.flatMap((g) => g.strokeIds));
+    const labelStrokeIds = new Set(figGroups.filter((g) => fig.labelGroups.includes(g.index) || fig.labelHostGroups.includes(g.index)).flatMap((g) => g.strokeIds));
+    const members: DigitalBlock[] = [];
+    const rest: DigitalBlock[] = [];
+    for (const b of blocks) {
+      const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
+      if (inside.length === 0) rest.push(b);
+      else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
+      else {
+        // Text the model lumped together with part of the figure: its words must survive, so it
+        // stays a text block on the strokes outside the figure (the figure takes the rest).
+        const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
+        rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+      }
+    }
+    const diagram = members.find((b) => b.kind === 'diagram');
+    const textMembers = members.filter((b) => b.kind !== 'diagram' && b.text.trim());
+    // Text the model read on the figure's label groups are labels; text "read" on drawn strokes is noise.
+    const labelTexts = textMembers.filter((b) => b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
+    const labelFor = (groupIndex: number) => {
+      const ids = new Set(groups[groupIndex]?.strokeIds ?? []);
+      const hit = textMembers.find((b) => b.strokeIds.some((id) => ids.has(id) && labelStrokeIds.has(id)));
+      return hit ? cleanLabel(hit.text) || undefined : undefined;
+    };
+    const prior = diagram?.figure;
+    const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
+    const figure: FigureInfo = {
+      kind: prior?.kind && prior.kind !== 'other' ? prior.kind : fig.kind,
+      shapes: prior?.shapes.length ? prior.shapes : fig.shapes,
+      labels,
+      edges: prior?.edges.length ? prior.edges : namedEdges(fig, labelFor),
+    };
+    const strokeIds = dedupe([...members.flatMap((b) => b.strokeIds), ...figStrokeIds]);
+    const bbox = boundsOf(strokeIds, diagram?.bbox ?? figGroups.map((g) => g.bbox).reduce(unionBounds));
+    const text = diagram?.text.trim() || figureCaption(figure);
+    const confidence = diagram?.confidence ?? (textMembers.length ? Math.min(...textMembers.map((b) => b.confidence)) : 0.4);
+    const merged: DigitalBlock = { ...(diagram ?? { id: newId('blk') }), kind: 'diagram', text, bbox, strokeIds, confidence, figure };
+    delete merged.marker;
+    delete merged.level;
+    blocks = [...rest, merged];
+  }
+  // Small models sometimes return an empty "diagram" for a line of text beside a figure: it carries nothing, drop it.
+  const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
+  blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
+  return sortBlocksForReading(blocks);
+}
+
+function cleanLabel(s: string): string {
+  return s.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, '').replace(/^#+\s*/, '').trim();
+}
+
+function dedupe<T>(xs: Iterable<T>): T[] {
+  return [...new Set(xs)];
 }
 
 /** Map a raw model block to a DigitalBlock in page coordinates. */
@@ -139,6 +227,7 @@ export function rawToDigitalBlock(
     confidence: Math.max(0, Math.min(1, raw.confidence ?? 0.5)),
     marker: raw.marker,
     level: raw.level,
+    ...(raw.figure ? { figure: raw.figure } : {}),
   };
 }
 
@@ -149,10 +238,16 @@ export function rawToDigitalBlock(
 export function mergeBlocks(existing: DigitalBlock[], replacedIds: string[], incoming: DigitalBlock[]): DigitalBlock[] {
   const replaced = existing.filter((b) => replacedIds.includes(b.id));
   const kept = existing.filter((b) => !replacedIds.includes(b.id));
+  // Each replaced block hands its id to at most one incoming block: two byte-identical incoming
+  // blocks must not end up sharing an id (duplicate React keys, both selected).
+  const take = (pred: (ob: DigitalBlock) => boolean) => {
+    const i = replaced.findIndex(pred);
+    return i < 0 ? undefined : replaced.splice(i, 1)[0];
+  };
   const matched = incoming.map((nb) => {
-    const same = replaced.find((ob) => ob.text.trim() === nb.text.trim() && ob.kind === nb.kind);
+    const same = take((ob) => ob.text.trim() === nb.text.trim() && ob.kind === nb.kind);
     if (same) return { ...nb, id: same.id, userEdited: same.userEdited };
-    const edited = replaced.find((ob) => ob.userEdited && overlapRatio(ob.bbox, nb.bbox) > 0.6);
+    const edited = take((ob) => !!ob.userEdited && overlapRatio(ob.bbox, nb.bbox) > 0.6);
     if (edited) return { ...nb, id: edited.id, text: edited.text, userEdited: true };
     return nb;
   });
