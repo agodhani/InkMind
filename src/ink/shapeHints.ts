@@ -1008,7 +1008,33 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     }
   }
   const lifelineGroups = new Set([...usedLifelines].map((i) => tall[i].groupIndex));
-  const isDrawing = (a: GroupAnalysis) => a.graphic || lifelineGroups.has(a.index);
+  // Plain lines whose two ends sit on different shapes connect them (graphs, trees, mind maps).
+  const lineLinks: { from: number; to: number; toLabel?: number; groupIndex: number }[] = [];
+  const linkGroups = new Set<number>();
+  for (const g of analyses) {
+    if (g.cube || g.axes || g.textLike) continue;
+    for (const sg of g.looseSegments) {
+      if (segLen(sg) < MIN_LINE_SIZE) continue;
+      const from = nearestShape(sg.a, []), to = nearestShape(sg.b, []);
+      if (from && to && from !== to) {
+        lineLinks.push({ from: closed.indexOf(from), to: closed.indexOf(to), groupIndex: g.index });
+        linkGroups.add(g.index);
+        uf.union(g.index, from.groupIndex);
+        uf.union(g.index, to.groupIndex);
+      } else if ((from || to) && !(from && to)) {
+        const shape = (from ?? to)!, free = from ? sg.b : sg.a;
+        const t = nearestText(free, Math.max(14, 0.15 * segLen(sg)));
+        if (t && !contains(shape.bbox, center(t.bbox))) {
+          lineLinks.push({ from: closed.indexOf(shape), to: -1, toLabel: t.index, groupIndex: g.index });
+          linkGroups.add(g.index);
+          attached.add(t.index);
+          uf.union(g.index, shape.groupIndex);
+          uf.union(g.index, t.index);
+        }
+      }
+    }
+  }
+  const isDrawing = (a: GroupAnalysis) => a.graphic || lifelineGroups.has(a.index) || linkGroups.has(a.index);
 
   for (const g of analyses) {
     if (!isDrawing(g)) continue;
@@ -1064,33 +1090,16 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const m = mid(a.tail, a.head);
       const len = Math.max(dist(a.tail, a.head), diagOf(arrowBox(g, a)));
       const t = nearestText(m, Math.max(20, 0.3 * len));
-      if (!t || attached.has(t.index) || width(t.bbox) > Math.max(1.6 * len, 80)) continue;
-      if (closed.some((c) => contains(c.bbox, center(t.bbox)))) continue;
-      a.labelGroup = t.index;
-      attached.add(t.index);
-      uf.union(g.index, t.index);
-    }
-  }
-  // Plain lines whose two ends sit on different shapes connect them (graphs, trees, mind maps).
-  const lineLinks: { from: number; to: number; toLabel?: number; groupIndex: number }[] = [];
-  for (const g of analyses) {
-    if (!g.graphic || g.cube || g.axes) continue;
-    for (const sg of g.looseSegments) {
-      if (segLen(sg) < MIN_LINE_SIZE) continue;
-      const from = nearestShape(sg.a, []), to = nearestShape(sg.b, []);
-      if (from && to && from !== to) {
-        lineLinks.push({ from: closed.indexOf(from), to: closed.indexOf(to), groupIndex: g.index });
-        uf.union(g.index, from.groupIndex);
-        uf.union(g.index, to.groupIndex);
-      } else if ((from || to) && !(from && to)) {
-        const shape = (from ?? to)!, free = from ? sg.b : sg.a;
-        const t = nearestText(free, Math.max(14, 0.15 * segLen(sg)));
-        if (t && !contains(shape.bbox, center(t.bbox))) {
-          lineLinks.push({ from: closed.indexOf(shape), to: -1, toLabel: t.index, groupIndex: g.index });
-          attached.add(t.index);
-          uf.union(g.index, shape.groupIndex);
-          uf.union(g.index, t.index);
-        }
+      if (t && !attached.has(t.index) && width(t.bbox) <= Math.max(1.6 * len, 80) && !closed.some((c) => contains(c.bbox, center(t.bbox)))) {
+        a.labelGroup = t.index;
+        attached.add(t.index);
+        uf.union(g.index, t.index);
+        continue;
+      }
+      // Text strokes clustered into the arrow's own group, beside its middle and outside every shape.
+      if (g.textStrokes.length && g.closed.length === 0 && g.arrows.length === 1) {
+        const tb = g.textStrokes.map((st) => st.bbox).reduce(unionBox);
+        if (boxDistance(tb, m) <= Math.max(20, 0.3 * len) && !closed.some((c) => contains(c.bbox, center(tb)))) a.labelGroup = g.index;
       }
     }
   }
@@ -1333,7 +1342,9 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       orderBasis = 'left→right';
     } else if (arrowCount > 0) {
       const forward = relations.filter((r) => r.kind === 'arrow' && !r.back);
-      const stepNodes = nodes.filter((n) => n.parent === undefined || relations.some((r) => r.from === n.id || r.to === n.id));
+      const linked = (n: FigureNodeHint) => relations.some((r) => r.from === n.id || r.to === n.id);
+      const container = (n: FigureNodeHint) => nodes.some((m) => m.parent === n.id);
+      const stepNodes = nodes.filter((n) => linked(n) || (n.parent === undefined && !container(n)));
       order = topologicalOrder(stepNodes.map((n) => n.id), forward, rank);
       orderBasis = 'arrow order';
     } else if (nodes.length >= 2 && !grid) {
@@ -1380,6 +1391,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const selfLabelled = groupIndices.filter((i) => byIndex.get(i)!.graphic && labelInside[i] === i);
     const hostGroups = new Set(selfLabelled);
     for (const n of nodes) if (n.labelGroup !== undefined && byIndex.get(n.labelGroup)?.graphic) hostGroups.add(n.labelGroup);
+    for (const r of relations) if (r.labelGroup !== undefined && byIndex.get(r.labelGroup)?.graphic) hostGroups.add(r.labelGroup);
     for (const g of gs) if (g.graphic && g.textStrokes.length && grid) hostGroups.add(g.index);
     const nameOf = (n: FigureNodeHint) => {
       const what = n.decision ? 'decision diamond' : n.shape === 'text' ? 'text' : n.shape;
