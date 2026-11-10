@@ -1,4 +1,4 @@
-import { FIGURE_KINDS, type FigureEdge, type FigureInfo, type FigureKind } from '../model/page';
+import { FIGURE_KINDS, type FigureEdge, type FigureEdgeKind, type FigureInfo, type FigureKind, type FigureNode } from '../model/page';
 
 /**
  * Lenient parser for the optional `figure` object on diagram blocks. Small vision models produce
@@ -11,15 +11,185 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   if (!obj) return undefined;
   const kind = normaliseFigureKind(firstString(obj, ['kind', 'type', 'figure_kind', 'figureKind', 'category']), fallbackKind);
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
-  const labels = stringList(firstDefined(obj, ['labels', 'label', 'nodes', 'texts', 'text_labels', 'annotations'])).filter((l) => !isGroupRef(l));
-  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links']));
-  if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0) return undefined;
-  return { kind: kind ?? fallbackKind ?? 'sketch', shapes, labels, edges };
+  const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices']);
+  const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  const labels = dedupeText([
+    ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])),
+    ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
+  ]).filter((l) => !isGroupRef(l));
+  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']));
+  const sequence = stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).filter((l) => !isGroupRef(l));
+  const cells = cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid']));
+  if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
+  const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
+  if (sequence.length) fig.sequence = sequence;
+  if (nodes.length) fig.nodes = nodes;
+  if (cells.length) fig.cells = cells;
+  return fig;
+}
+
+function dedupeText(xs: string[]): string[] {
+  const out: string[] = [];
+  for (const x of xs) if (x && !out.some((o) => o.toLowerCase() === x.toLowerCase())) out.push(x);
+  return out;
+}
+
+/**
+ * Nodes from: [{id,label,shape,parent,children:[...]}] (children nest recursively), ["label", ...],
+ * or {"id": "label"}. `nesting` is a top-level parent→children map or [{parent, child}] list that
+ * sets `parent` on the referenced nodes.
+ */
+export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
+  const out: FigureNode[] = [];
+  const find = (ref: string) => {
+    const r = ref.toLowerCase();
+    return out.find((n) => n.id.toLowerCase() === r) ?? out.find((n) => n.label.toLowerCase() === r);
+  };
+  const add = (node: Partial<FigureNode> & { label: string }): FigureNode | undefined => {
+    const label = cleanText(node.label);
+    if (!label || isGroupRef(label) || out.length >= MAX_ITEMS) return undefined;
+    const id = cleanText(node.id ?? '') || label;
+    const existing = find(id) ?? find(label);
+    if (existing) {
+      if (node.shape && !existing.shape) existing.shape = node.shape;
+      if (node.parent && !existing.parent) existing.parent = node.parent;
+      return existing;
+    }
+    const n: FigureNode = { id, label };
+    if (node.shape) n.shape = node.shape;
+    if (node.parent) n.parent = node.parent;
+    out.push(n);
+    return n;
+  };
+  const visit = (v: unknown, parent?: string) => {
+    if (v === null || v === undefined) return;
+    if (typeof v === 'string' || typeof v === 'number') {
+      for (const part of stringList(v)) add({ label: part, parent });
+    } else if (Array.isArray(v)) v.forEach((x) => visit(x, parent));
+    else if (typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      const label = firstDefined(o, ['label', 'text', 'name', 'title', 'value']);
+      const id = firstDefined(o, ['id', 'key']);
+      const shape = firstDefined(o, ['shape', 'type', 'kind', 'form']);
+      const own = firstDefined(o, ['parent', 'inside', 'within', 'container']);
+      const kids = firstDefined(o, ['children', 'contains', 'nested', 'inner']);
+      if (label !== undefined || id !== undefined) {
+        const text = typeof label === 'string' || typeof label === 'number' ? String(label) : typeof id === 'string' || typeof id === 'number' ? String(id) : stringList(label)[0];
+        if (!text) return;
+        const node = add({
+          id: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined,
+          label: text,
+          shape: typeof shape === 'string' ? cleanText(shape).toLowerCase() || undefined : undefined,
+          parent: typeof own === 'string' ? cleanText(own) || undefined : parent,
+        });
+        if (node && kids !== undefined) visit(kids, node.id);
+      } else {
+        // {"id": "label"} or {"parent": ["child", ...]} maps: values that are arrays nest under the key.
+        for (const [k, val] of Object.entries(o)) {
+          if (Array.isArray(val) || (val && typeof val === 'object')) {
+            const node = add({ id: k, label: k, parent });
+            visit(val, node?.id ?? k);
+          } else if (typeof val === 'string' || typeof val === 'number') add({ id: k, label: String(val), parent });
+        }
+      }
+    }
+  };
+  visit(value);
+  const nest = (parentRef: unknown, childRef: unknown) => {
+    if (typeof parentRef !== 'string' || typeof childRef !== 'string') return;
+    const parent = find(cleanText(parentRef)) ?? add({ label: parentRef });
+    const child = find(cleanText(childRef)) ?? add({ label: childRef });
+    if (parent && child && parent !== child) child.parent = parent.id;
+  };
+  if (Array.isArray(nesting)) {
+    for (const item of nesting) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const o = item as Record<string, unknown>;
+        const parent = firstDefined(o, ['parent', 'outer', 'container', 'from']);
+        const kids = firstDefined(o, ['child', 'children', 'inner', 'contains', 'to']);
+        if (parent !== undefined) for (const c of stringList(kids)) nest(parent, c);
+        else for (const [k, val] of Object.entries(o)) for (const c of stringList(val)) nest(k, c);
+      } else if (Array.isArray(item) && item.length === 2) nest(item[0], item[1]);
+    }
+  } else if (nesting && typeof nesting === 'object') {
+    for (const [k, val] of Object.entries(nesting as Record<string, unknown>)) for (const c of stringList(val)) nest(k, c);
+  }
+  // A node can't contain itself through a cycle or reference a missing parent.
+  for (const n of out) {
+    if (n.parent !== undefined) {
+      const p = find(n.parent);
+      if (!p || p === n) delete n.parent;
+      else n.parent = p.id;
+    }
+  }
+  for (const n of out) {
+    const seen = new Set<string>([n.id]);
+    let cur = n;
+    while (cur.parent !== undefined) {
+      if (seen.has(cur.parent)) {
+        delete cur.parent;
+        break;
+      }
+      seen.add(cur.parent);
+      cur = find(cur.parent)!;
+    }
+  }
+  return out;
+}
+
+/** Table cells from: [["a","b"],["c","d"]], ["a | b", "c | d"], [{col: val}], or a Markdown table string. */
+export function cellGrid(value: unknown): string[][] {
+  if (value === null || value === undefined) return [];
+  const rows: string[][] = [];
+  const pushRow = (cells: string[]) => {
+    const cleaned = cells.map(cleanText);
+    if (cleaned.some(Boolean) && rows.length < MAX_ITEMS) rows.push(cleaned);
+  };
+  const splitRow = (s: string) => {
+    const t = s.trim().replace(/^\|/, '').replace(/\|$/, '');
+    if (/^[\s:|-]+$/.test(t)) return null;
+    return t.includes('|') ? t.split('|') : t.includes('\t') ? t.split('\t') : t.split(/,\s*/);
+  };
+  if (typeof value === 'string') {
+    for (const line of value.split(/\n+/)) {
+      const cells = splitRow(line);
+      if (cells) pushRow(cells);
+    }
+  } else if (Array.isArray(value)) {
+    let headers: string[] | null = null;
+    for (const row of value) {
+      if (Array.isArray(row)) pushRow(row.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : stringList(c)[0] ?? '')));
+      else if (typeof row === 'string' || typeof row === 'number') {
+        const cells = splitRow(String(row));
+        if (cells) pushRow(cells);
+      } else if (row && typeof row === 'object') {
+        const o = row as Record<string, unknown>;
+        const inner = firstDefined(o, ['cells', 'row', 'values', 'columns']);
+        if (Array.isArray(inner)) pushRow(inner.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : stringList(c)[0] ?? '')));
+        else {
+          if (!headers) {
+            headers = Object.keys(o);
+            pushRow(headers);
+          }
+          pushRow(headers.map((h) => (o[h] === undefined || o[h] === null ? '' : typeof o[h] === 'object' ? stringList(o[h]).join(' ') : String(o[h]))));
+        }
+      }
+    }
+  } else if (typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    const inner = firstDefined(o, ['rows', 'cells', 'data']);
+    if (inner !== undefined) return cellGrid(inner);
+    for (const [k, val] of Object.entries(o)) pushRow([k, ...stringList(val)]);
+  }
+  const width = Math.max(0, ...rows.map((r) => r.length));
+  return rows.map((r) => [...r, ...Array(width - r.length).fill('')]);
 }
 
 const KIND_SYNONYMS: [RegExp, FigureKind][] = [
   [/flow|process|pipeline|state|box.*arrow|block diagram/, 'flowchart'],
-  [/tree|hierarch|org ?chart|mind ?map/, 'tree'],
+  [/mind ?map|radial|spider/, 'mindmap'],
+  [/sequence|lifeline|swim ?lane|timeline/, 'sequence'],
+  [/tree|hierarch|org ?chart/, 'tree'],
   [/plot|chart|axis|axes|curve|histogram|function|graph of|line graph|bar graph|coordinate/, 'plot'],
   [/cube|3d|three.dim|isometric|prism|cuboid/, 'cube'],
   [/table|grid|matrix/, 'table'],
@@ -105,15 +275,20 @@ export function isGroupRef(value: unknown): boolean {
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
 export function edgeList(value: unknown): FigureEdge[] {
   const out: FigureEdge[] = [];
-  const add = (from: unknown, to: unknown, label?: unknown) => {
+  const add = (from: unknown, to: unknown, label?: unknown, kind?: unknown, inferred?: unknown) => {
     if (isGroupRef(from) || isGroupRef(to)) return;
     const f = typeof from === 'string' || typeof from === 'number' ? cleanText(String(from)) : stringList(from)[0];
     const t = typeof to === 'string' || typeof to === 'number' ? cleanText(String(to)) : stringList(to)[0];
     if (!f || !t || out.length >= MAX_ITEMS) return;
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
     const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) ? cleaned : undefined;
+    const k = f.toLowerCase() === t.toLowerCase() ? 'self-loop' : normaliseEdgeKind(kind);
     if (out.some((e) => e.from === f && e.to === t && (e.label ?? '') === (l ?? ''))) return;
-    out.push(l ? { from: f, to: t, label: l } : { from: f, to: t });
+    const e: FigureEdge = { from: f, to: t };
+    if (l) e.label = l;
+    if (k) e.kind = k;
+    if (inferred === true) e.inferred = true;
+    out.push(e);
   };
   const visit = (v: unknown) => {
     if (v === null || v === undefined) return;
@@ -122,8 +297,9 @@ export function edgeList(value: unknown): FigureEdge[] {
         const m = part.match(/^(.*?)\s*(?:\((.*?)\)|:\s*(.*?))?\s*$/);
         const body = m?.[1] ?? part;
         const label = m?.[2] ?? m?.[3];
-        const pieces = body.split(ARROW_RE).filter((p) => p.trim());
-        for (let i = 0; i + 1 < pieces.length; i++) add(pieces[i], pieces[i + 1], label);
+        const undirected = !/->|-->|→|⇒|=>|—>|–>|\bto\b/i.test(body) && /(^|\s)(—|–|-|—)(\s|$)/.test(body);
+        const pieces = body.split(undirected ? /\s+[—–-]+\s+/ : ARROW_RE).filter((p) => p.trim());
+        for (let i = 0; i + 1 < pieces.length; i++) add(pieces[i], pieces[i + 1], label, undirected ? 'line' : undefined);
       }
     } else if (Array.isArray(v)) {
       if (v.length >= 2 && v.every((x) => typeof x === 'string' || typeof x === 'number') && v.length <= 3) add(v[0], v[1], v[2]);
@@ -133,7 +309,8 @@ export function edgeList(value: unknown): FigureEdge[] {
       const from = firstDefined(o, ['from', 'source', 'src', 'start', 'a', 'tail']);
       const to = firstDefined(o, ['to', 'target', 'dst', 'dest', 'end', 'b', 'head']);
       const label = firstDefined(o, ['label', 'text', 'name', 'relation']);
-      if (from !== undefined && to !== undefined) add(from, to, label);
+      const kind = firstDefined(o, ['kind', 'type', 'style', 'arrow']);
+      if (from !== undefined && to !== undefined) add(from, to, label, kind, o.inferred);
       else if (typeof label === 'string' && Object.keys(o).length === 1) visit(label);
       else {
         // {"A": "B"} or {"A": ["B", "C"]} adjacency form.
@@ -148,12 +325,58 @@ export function edgeList(value: unknown): FigureEdge[] {
   return out;
 }
 
-/** "Shape: … Labels: … Relations: a → b" caption for a figure with no usable model caption. */
+export function normaliseEdgeKind(raw: unknown): FigureEdgeKind | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim().toLowerCase();
+  if (!s) return undefined;
+  if (/self|loop|cycle|return/.test(s)) return 'self-loop';
+  if (/^(line|undirected|plain|edge|connection|link|bidirectional|dashed|solid|none|false|no)$/.test(s) || /no ?arrow|without/.test(s)) return 'line';
+  if (/arrow|directed|true|yes|->|→/.test(s)) return 'arrow';
+  return undefined;
+}
+
+/** "a → b (label)", "a — b" for plain lines, "a ↺ (label)" for self-loops. */
+export function edgeText(e: FigureEdge): string {
+  const label = e.label ? ` (${e.label})` : '';
+  if (e.kind === 'self-loop' || e.from === e.to) return `${e.from} ↺${label}`;
+  return `${e.from} ${e.kind === 'line' ? '—' : '→'} ${e.to}${label}`;
+}
+
+/** Nodes in display order: parents before their children, children right after their parent, with depth. */
+export function nodeTree(nodes: FigureNode[]): { node: FigureNode; depth: number }[] {
+  const ids = new Set(nodes.map((n) => n.id));
+  const out: { node: FigureNode; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (parent: string | undefined, depth: number) => {
+    for (const n of nodes) {
+      const p = n.parent !== undefined && ids.has(n.parent) ? n.parent : undefined;
+      if (p !== parent || seen.has(n.id)) continue;
+      seen.add(n.id);
+      out.push({ node: n, depth });
+      if (depth < 8) walk(n.id, depth + 1);
+    }
+  };
+  walk(undefined, 0);
+  for (const n of nodes) if (!seen.has(n.id)) out.push({ node: n, depth: 0 });
+  return out;
+}
+
+export function hasNesting(fig: FigureInfo): boolean {
+  return !!fig.nodes?.some((n) => n.parent !== undefined);
+}
+
+/** "Shape: … Labels: … Steps: … Relations: a → b" caption for a figure with no usable model caption. */
 export function figureCaption(fig: FigureInfo): string {
   const parts: string[] = [];
   if (fig.shapes.length) parts.push(`Shape: ${fig.shapes.join(', ')}.`);
   else if (fig.kind !== 'other') parts.push(`Shape: ${fig.kind}.`);
+  if (fig.cells?.length) parts.push(`Table: ${fig.cells.length} row${fig.cells.length > 1 ? 's' : ''} × ${fig.cells[0].length} column${fig.cells[0].length > 1 ? 's' : ''}.`);
   if (fig.labels.length) parts.push(`Labels: ${fig.labels.join(', ')}.`);
-  if (fig.edges.length) parts.push(`Relations: ${fig.edges.map((e) => `${e.from} → ${e.to}${e.label ? ` (${e.label})` : ''}`).join(', ')}.`);
+  if (fig.sequence?.length) parts.push(`Steps: ${fig.sequence.join(' → ')}.`);
+  if (hasNesting(fig)) {
+    const nested = nodeTree(fig.nodes!).filter((n) => n.depth > 0).map((n) => `${n.node.label} inside ${fig.nodes!.find((p) => p.id === n.node.parent)?.label ?? n.node.parent}`);
+    parts.push(`Nested: ${nested.join(', ')}.`);
+  }
+  if (fig.edges.length) parts.push(`Relations: ${fig.edges.map(edgeText).join(', ')}.`);
   return parts.join(' ');
 }

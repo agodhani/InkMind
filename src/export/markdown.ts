@@ -1,5 +1,6 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
+import { edgeText, hasNesting, nodeTree } from '../transcribe/figure';
 
 /**
  * Obsidian-compatible Markdown. Diagrams become image embeds pointing at
@@ -43,13 +44,23 @@ export function pageToMarkdown(page: Page, blocks: DigitalBlock[] = page.blocks)
   return body.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
 }
 
-/** Labels and relations of a diagram block, as Markdown lines under the image embed. */
+/**
+ * Labels, table cells, nested shapes, step order and relations of a diagram block, as Markdown
+ * lines under the image embed (a table, an indented list, a numbered list, a bullet list).
+ */
 export function figureLines(b: DigitalBlock): string[] {
   const fig = b.figure;
   if (!fig) return [];
   const lines: string[] = [];
   if (fig.labels.length) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
-  if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${e.from} → ${e.to}${e.label ? ` (${e.label})` : ''}`));
+  if (fig.cells?.length) {
+    const cell = (s: string) => s.replace(/\|/g, '\\|').trim();
+    const [head, ...rows] = fig.cells;
+    lines.push('', `| ${head.map(cell).join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`), '');
+  }
+  if (hasNesting(fig)) lines.push(...nodeTree(fig.nodes!).map(({ node, depth }) => `${'  '.repeat(depth)}- ${node.label}${node.shape ? ` (${node.shape})` : ''}`));
+  if (fig.sequence && fig.sequence.length > 1) lines.push(...fig.sequence.map((step, i) => `${i + 1}. ${step}`), '');
+  if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
   return lines;
 }
 

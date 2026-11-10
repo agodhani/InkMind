@@ -224,7 +224,7 @@ describe('reconcileFigureBlocks', () => {
     expect(diagram.strokeIds.sort()).toEqual([box1, ...arrow, box2, ...label].map((s) => s.id).sort());
     expect(diagram.figure!.kind).toBe('flowchart');
     expect(diagram.figure!.labels).toEqual(['go']);
-    expect(diagram.figure!.edges).toEqual([{ from: 'go', to: `shape (group ${groupOf(box2).index})` }]);
+    expect(diagram.figure!.edges).toEqual([{ from: 'go', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
     expect(diagram.text).toMatch(/^Shape: .*Labels: go/);
   });
 
@@ -242,7 +242,10 @@ describe('reconcileFigureBlocks', () => {
     const diagram = out.find((b) => b.kind === 'diagram')!;
     expect(diagram.id).toBe(incoming[0].id);
     expect(diagram.text).toMatch(/^Shape: two boxes/);
-    expect(diagram.figure).toEqual({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
+    expect(diagram.figure).toMatchObject({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
+    // Geometry knows the second box but not its word: no placeholder edge is added next to the model's.
+    expect(diagram.figure!.edges).toHaveLength(1);
+    expect(diagram.figure!.nodes?.map((n) => n.label)).toEqual(['go', 'rectangle 2']);
     expect(diagram.strokeIds).toContain(label[0].id);
   });
 
@@ -280,7 +283,7 @@ describe('reconcileFigureBlocks', () => {
     const out = reconcileFigureBlocks([block('start', groupOf(box1)), block('end', groupOf(box2))], groups, strokes);
     const diagram = out.find((b) => b.kind === 'diagram');
     expect(diagram?.figure?.labels).toEqual(['start', 'end']);
-    expect(diagram?.figure?.edges).toEqual([{ from: 'start', to: 'end' }]);
+    expect(diagram?.figure?.edges).toEqual([{ from: 'start', to: 'end', kind: 'arrow', inferred: true }]);
   });
 
   it('keeps every digit of a numeric label', () => {

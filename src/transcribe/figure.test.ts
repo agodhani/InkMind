@@ -53,7 +53,7 @@ describe('normaliseFigure', () => {
     expect(normaliseFigureKind('bar chart')).toBe('plot');
     expect(normaliseFigureKind('x-y graph of loss')).toBe('plot');
     expect(normaliseFigureKind('3D box')).toBe('cube');
-    expect(normaliseFigureKind('mind-map')).toBe('tree');
+    expect(normaliseFigureKind('mind-map')).toBe('mindmap');
     expect(normaliseFigureKind('drawing')).toBe('sketch');
     expect(normaliseFigureKind('network graph')).toBe('graph');
     expect(normaliseFigureKind(undefined, 'shape')).toBe('shape');

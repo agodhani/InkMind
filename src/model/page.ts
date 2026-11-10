@@ -13,14 +13,40 @@ export type BlockKind =
   | 'margin_note'
   | 'unknown';
 
-export type FigureKind = 'flowchart' | 'graph' | 'plot' | 'sketch' | 'tree' | 'cube' | 'shape' | 'table' | 'other';
+export type FigureKind =
+  | 'flowchart'
+  | 'graph'
+  | 'plot'
+  | 'sketch'
+  | 'tree'
+  | 'cube'
+  | 'shape'
+  | 'table'
+  | 'sequence'
+  | 'mindmap'
+  | 'other';
 
-export const FIGURE_KINDS: FigureKind[] = ['flowchart', 'graph', 'plot', 'sketch', 'tree', 'cube', 'shape', 'table', 'other'];
+export const FIGURE_KINDS: FigureKind[] = ['flowchart', 'graph', 'plot', 'sketch', 'tree', 'cube', 'shape', 'table', 'sequence', 'mindmap', 'other'];
+
+export type FigureEdgeKind = 'arrow' | 'line' | 'self-loop';
 
 export interface FigureEdge {
   from: string;
   to: string;
   label?: string;
+  /** Arrow (directed, the default), plain connecting line, or an arrow that returns to its own node. */
+  kind?: FigureEdgeKind;
+  /** Filled in from the ink geometry rather than read by the model: lower confidence. */
+  inferred?: boolean;
+}
+
+/** A node of a flowchart / graph / tree: its written label, the shape it is drawn as, and the node it sits inside. */
+export interface FigureNode {
+  id: string;
+  label: string;
+  shape?: string;
+  /** id of the enclosing node when this shape is drawn inside another one. */
+  parent?: string;
 }
 
 /** Structured description of a diagram block: what was drawn, the labels in it, and what connects to what. */
@@ -29,6 +55,12 @@ export interface FigureInfo {
   shapes: string[];
   labels: string[];
   edges: FigureEdge[];
+  /** Steps / states in arrow or reading order (flowcharts, pipelines, timelines, state machines). */
+  sequence?: string[];
+  /** Labelled nodes with their shapes and nesting. */
+  nodes?: FigureNode[];
+  /** Table cells, row-major, header row first when there is one. */
+  cells?: string[][];
 }
 
 export interface DigitalBlock {

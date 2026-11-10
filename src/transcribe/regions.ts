@@ -1,9 +1,9 @@
 import type { BoundingBox } from '../types';
 import { getStrokeBoundingBox } from '../types/brush';
-import type { DigitalBlock, FigureInfo, InkStroke } from '../model/page';
+import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
-import { analyseInk, namedEdges, type FigureHint } from '../ink/shapeHints';
+import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
 import { figureCaption } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
@@ -154,7 +154,8 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
     }
-    const diagram = members.find((b) => b.kind === 'diagram');
+    const diagrams = members.filter((b) => b.kind === 'diagram');
+    const diagram = diagrams[0];
     const textMembers = members.filter((b) => b.kind !== 'diagram' && b.text.trim());
     // Text the model read on the figure's label groups are labels; text "read" on drawn strokes is noise.
     const labelTexts = textMembers.filter((b) => b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
@@ -163,18 +164,14 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const hit = textMembers.find((b) => b.strokeIds.some((id) => ids.has(id) && labelStrokeIds.has(id)));
       return hit ? cleanLabel(hit.text) || undefined : undefined;
     };
-    const prior = diagram?.figure;
+    // The model may have answered with several diagram blocks for one figure: fold them into one.
+    const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
-    const figure: FigureInfo = {
-      kind: prior?.kind && prior.kind !== 'other' ? prior.kind : fig.kind,
-      shapes: prior?.shapes.length ? prior.shapes : fig.shapes,
-      labels,
-      edges: prior?.edges.length ? prior.edges : namedEdges(fig, labelFor),
-    };
+    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor));
     const strokeIds = dedupe([...members.flatMap((b) => b.strokeIds), ...figStrokeIds]);
     const bbox = boundsOf(strokeIds, diagram?.bbox ?? figGroups.map((g) => g.bbox).reduce(unionBounds));
-    const text = diagram?.text.trim() || figureCaption(figure);
-    const confidence = diagram?.confidence ?? (textMembers.length ? Math.min(...textMembers.map((b) => b.confidence)) : 0.4);
+    const text = diagrams.map((b) => b.text.trim()).find(Boolean) || figureCaption(figure);
+    const confidence = diagrams.length ? Math.min(...diagrams.map((b) => b.confidence)) : textMembers.length ? Math.min(...textMembers.map((b) => b.confidence)) : 0.4;
     const merged: DigitalBlock = { ...(diagram ?? { id: newId('blk') }), kind: 'diagram', text, bbox, strokeIds, confidence, figure };
     delete merged.marker;
     delete merged.level;
@@ -184,6 +181,78 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
   blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
   return sortBlocksForReading(blocks);
+}
+
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Union of two model figures for the same drawing (labels, nodes, edges; the longer sequence; the first table). */
+export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
+  const out: FigureInfo = {
+    kind: a.kind !== 'other' ? a.kind : b.kind,
+    shapes: dedupe([...a.shapes, ...b.shapes]),
+    labels: dedupe([...a.labels, ...b.labels]),
+    edges: [...a.edges],
+  };
+  for (const e of b.edges) if (!out.edges.some((x) => sameEdge(x, e))) out.edges.push(e);
+  const nodes = [...(a.nodes ?? [])];
+  for (const n of b.nodes ?? []) if (!nodes.some((x) => sameText(x.label, n.label))) nodes.push(n);
+  if (nodes.length) out.nodes = nodes;
+  const sequence = (a.sequence?.length ?? 0) >= (b.sequence?.length ?? 0) ? a.sequence : b.sequence;
+  if (sequence?.length) out.sequence = sequence;
+  const cells = a.cells?.length ? a.cells : b.cells;
+  if (cells?.length) out.cells = cells;
+  return out;
+}
+
+function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
+  return sameText(a.from, b.from) && sameText(a.to, b.to);
+}
+
+/**
+ * The model's figure, completed from geometry: edges an arrow clearly draws but the model left
+ * out are added with `inferred: true` (lower confidence); edge labels, node shapes/nesting, the
+ * step order and table cells are filled in when the model gave none. Geometry edges between
+ * nodes whose label could not be read are only used when the model listed no edges at all.
+ */
+export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geo: ReturnType<typeof figureFromGeometry>): FigureInfo {
+  const kind = prior?.kind && prior.kind !== 'other' ? prior.kind : fig.kind;
+  const inferredEdges = geo.edges.map((e) => ({ ...e, inferred: true }));
+  const edges: FigureEdge[] = prior?.edges.length ? [...prior.edges] : inferredEdges;
+  if (prior?.edges.length) {
+    for (const e of inferredEdges) {
+      if (geo.unnamed.includes(e.from) || geo.unnamed.includes(e.to)) continue;
+      const match = edges.find((x) => sameEdge(x, e));
+      if (match) {
+        if (!match.label && e.label) match.label = e.label;
+        if (!match.kind && e.kind) match.kind = e.kind;
+      } else edges.push(e);
+    }
+  }
+  const nodes: FigureNode[] | undefined = (() => {
+    if (!prior?.nodes?.length) return geo.nodes?.length ? geo.nodes : undefined;
+    const out = prior.nodes.map((n) => ({ ...n }));
+    for (const g of geo.nodes ?? []) {
+      const match = out.find((n) => sameText(n.label, g.label) || sameText(n.id, g.id));
+      if (!match) {
+        if (!geo.unnamed.includes(g.label)) out.push(g);
+        continue;
+      }
+      if (!match.shape && g.shape) match.shape = g.shape;
+      if (match.parent === undefined && g.parent !== undefined) {
+        const parent = geo.nodes!.find((p) => p.id === g.parent);
+        const target = parent && (out.find((n) => sameText(n.label, parent.label) || sameText(n.id, parent.id)) ?? out.find((n) => n.id === parent.id));
+        if (target && target !== match) match.parent = target.id;
+      }
+    }
+    return out;
+  })();
+  const sequence = prior?.sequence?.length ? prior.sequence : geo.sequence?.length && !geo.sequence.every((s) => geo.unnamed.includes(s)) ? geo.sequence : undefined;
+  const cells = prior?.cells?.length ? prior.cells : geo.cells?.some((row) => row.some(Boolean)) ? geo.cells : undefined;
+  const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels, edges };
+  if (nodes?.length) figure.nodes = nodes;
+  if (sequence) figure.sequence = sequence;
+  if (cells) figure.cells = cells;
+  return figure;
 }
 
 function cleanLabel(s: string): string {
