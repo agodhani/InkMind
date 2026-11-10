@@ -435,10 +435,18 @@ function classifyOpen(base: Base, pts: Offset[], length: number): StrokeShape {
 
   const simp = simplify(pts, 0.045 * diag);
   const segs: Segment[] = simp.slice(1).map((p, i) => ({ a: simp[i], b: p }));
-  const arrow = singleStrokeArrow(simp, segs, length);
-  if (arrow) return { ...open('arrow', simp, [arrow.shaft]), head: arrow.head, tail: arrow.tail };
-  const bent = curvedStrokeArrow(simp, segs, length);
-  if (bent) return { ...open('arrow', simp, []), head: bent.head, tail: bent.tail, curved: true };
+  // A long arrow's head is small relative to its shaft: a coarse simplification erases it, so
+  // the arrow checks also run on a finer one.
+  const fineEps = Math.min(0.045 * diag, 5);
+  const fine = fineEps < 0.045 * diag ? simplify(pts, fineEps) : simp;
+  const fineSegs: Segment[] = fine === simp ? segs : fine.slice(1).map((p, i) => ({ a: fine[i], b: p }));
+  for (const [vs, ss] of [[simp, segs], [fine, fineSegs]] as const) {
+    const arrow = singleStrokeArrow(vs, ss, length);
+    if (arrow) return { ...open('arrow', vs, [arrow.shaft]), head: arrow.head, tail: arrow.tail };
+    const bent = curvedStrokeArrow(vs, ss, length);
+    if (bent) return { ...open('arrow', vs, []), head: bent.head, tail: bent.tail, curved: true };
+    if (vs === fine) break;
+  }
 
   const turns = simp.slice(1, -1).map((v, i) => turnAngle(simp[i], v, simp[i + 2]));
   const sharpTurns = turns.filter((t) => t >= 40).length;
@@ -715,7 +723,8 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   axes?.strokeIds.forEach((id) => usedIds.add(id));
 
   const rest = shapes.filter((s) => !usedIds.has(s.strokeId));
-  const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= Math.max(MIN_LINE_SIZE * 0.5, 2 * medH));
+  const looseMin = shapes.length <= 2 ? MIN_LINE_SIZE : Math.max(MIN_LINE_SIZE * 0.5, 2 * medH);
+  const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= looseMin);
   const looseSegments = looseStrokes.flatMap((s) => s.segments);
   // Big smooth curves are drawings; angular polylines/vees only when clearly larger than a letter (Λ, L, V are letters too).
   const curves = rest.filter((s) => {
@@ -932,18 +941,18 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   const textGroups = analyses.filter((a) => !a.graphic && a.textStrokes.length > 0);
   const shapeArea = (c: ClosedShape) => Math.max(1, width(c.bbox) * height(c.bbox));
 
+  const boxInside = (inner: BoundingBox, outer: BoundingBox, pad = 3) => inner.left >= outer.left - pad && inner.top >= outer.top - pad && inner.right <= outer.right + pad && inner.bottom <= outer.bottom + pad;
   const nearestShape = (p: Offset, exclude: string[]): ClosedShape | undefined => {
-    let best: ClosedShape | undefined, bestD = Infinity;
-    for (const c of closed) {
-      if (c.strokeIds.some((id) => exclude.includes(id))) continue;
-      const d = boxDistance(c.bbox, p);
-      const tol = Math.max(18, 0.2 * diagOf(c.bbox));
-      // Among shapes at the same distance (a point inside nested boxes) take the innermost.
-      if (d <= tol && (d < bestD - 1e-6 || (Math.abs(d - bestD) <= 1e-6 && best && shapeArea(c) < shapeArea(best)))) {
-        best = c;
-        bestD = d;
-      }
-    }
+    const near = closed
+      .filter((c) => !c.strokeIds.some((id) => exclude.includes(id)))
+      .map((c) => ({ c, d: boxDistance(c.bbox, p) }))
+      .filter(({ c, d }) => d <= Math.max(20, 0.22 * diagOf(c.bbox)))
+      .sort((a, b) => a.d - b.d || shapeArea(a.c) - shapeArea(b.c));
+    if (near.length === 0) return undefined;
+    let best = near[0].c;
+    // A point inside a big box is "at distance 0" from it, yet an arrow ending there is aimed at
+    // the smaller box drawn inside it that it touches.
+    for (const { c } of near) if (c !== best && boxInside(c.bbox, best.bbox) && shapeArea(c) < shapeArea(best)) best = c;
     return best;
   };
   const nearestText = (p: Offset, maxD: number, exclude?: number): GroupAnalysis | undefined => {
@@ -1084,18 +1093,33 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       if ((isDrawing(h) || h.looseSegments.length > 0) && intersects(g.bbox, h.bbox, 12)) uf.union(g.index, h.index);
     }
   }
-  // Text beside the middle of an arrow is that arrow's label ("yes", "no", a message name).
+  // Text beside the middle of an arrow is that arrow's label ("yes", "no", a message name); each
+  // text goes to the arrow it sits closest to, relative to that arrow's size.
+  const labelCandidates: { g: GroupAnalysis; a: Arrow; t: GroupAnalysis; score: number }[] = [];
   for (const g of analyses) {
     for (const a of g.arrows) {
       const m = mid(a.tail, a.head);
       const len = Math.max(dist(a.tail, a.head), diagOf(arrowBox(g, a)));
-      const t = nearestText(m, Math.max(20, 0.3 * len));
-      if (t && !attached.has(t.index) && width(t.bbox) <= Math.max(1.6 * len, 80) && !closed.some((c) => contains(c.bbox, center(t.bbox)))) {
-        a.labelGroup = t.index;
-        attached.add(t.index);
-        uf.union(g.index, t.index);
-        continue;
+      const tol = Math.max(20, 0.3 * len);
+      for (const t of textGroups) {
+        if (attached.has(t.index) || width(t.bbox) > Math.max(1.6 * len, 80)) continue;
+        const d = boxDistance(t.bbox, m);
+        if (d <= tol && !closed.some((c) => contains(c.bbox, center(t.bbox)))) labelCandidates.push({ g, a, t, score: d / tol });
       }
+    }
+  }
+  labelCandidates.sort((p, q) => p.score - q.score);
+  for (const { g, a, t } of labelCandidates) {
+    if (a.labelGroup !== undefined || attached.has(t.index)) continue;
+    a.labelGroup = t.index;
+    attached.add(t.index);
+    uf.union(g.index, t.index);
+  }
+  for (const g of analyses) {
+    for (const a of g.arrows) {
+      if (a.labelGroup !== undefined) continue;
+      const m = mid(a.tail, a.head);
+      const len = Math.max(dist(a.tail, a.head), diagOf(arrowBox(g, a)));
       // Text strokes clustered into the arrow's own group, beside its middle and outside every shape.
       if (g.textStrokes.length && g.closed.length === 0 && g.arrows.length === 1) {
         const tb = g.textStrokes.map((st) => st.bbox).reduce(unionBox);
@@ -1189,7 +1213,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         if (head) nodeOfShape.set(closed.indexOf(head), node);
       }
     }
-    if (!cube) {
+    if (!cube && !grid) {
       for (const c of closedHere) {
         const ci = closed.indexOf(c);
         if (nodeOfShape.has(ci)) continue;
@@ -1216,15 +1240,30 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       if (a.toLabel !== undefined && inFigure(a.toLabel)) textNode(a.toLabel);
     }
     for (const l of lineLinks) if (inFigure(l.groupIndex) && l.toLabel !== undefined) textNode(l.toLabel);
-    // ids in reading order; nesting from bbox containment (innermost enclosing shape = parent).
-    const sorted = readingOrder(nodes, (n) => n.bbox, rowTol);
-    sorted.forEach((n, i) => (n.id = `n${i + 1}`));
-    nodes.sort((a, b) => sorted.indexOf(a) - sorted.indexOf(b));
+    // Nesting from bbox containment (innermost enclosing shape = parent); ids in reading order,
+    // a container right before the nodes drawn inside it.
     const area = (b: BoundingBox) => Math.max(1, width(b) * height(b));
+    const parentOf = new Map<FigureNodeHint, FigureNodeHint>();
     for (const n of nodes) {
-      const enclosing = nodes.filter((m) => m !== n && m.shape !== 'text' && m.shape !== 'lifeline' && area(m.bbox) > 1.2 * area(n.bbox) && contains(m.bbox, { x: n.bbox.left, y: n.bbox.top }, 3) && contains(m.bbox, { x: n.bbox.right, y: n.bbox.bottom }, 3));
-      if (enclosing.length) n.parent = enclosing.reduce((a, b) => (area(a.bbox) <= area(b.bbox) ? a : b)).id;
+      const enclosing = nodes.filter((m) => m !== n && m.shape !== 'text' && m.shape !== 'lifeline' && area(m.bbox) > 1.2 * area(n.bbox) && boxInside(n.bbox, m.bbox));
+      if (enclosing.length) parentOf.set(n, enclosing.reduce((a, b) => (area(a.bbox) <= area(b.bbox) ? a : b)));
     }
+    const numbered: FigureNodeHint[] = [];
+    const assign = (parent: FigureNodeHint | undefined) => {
+      for (const n of readingOrder(nodes.filter((m) => parentOf.get(m) === parent), (m) => m.bbox, rowTol)) {
+        n.id = `n${numbered.length + 1}`;
+        numbered.push(n);
+        assign(n);
+      }
+    };
+    assign(undefined);
+    for (const n of nodes) {
+      if (numbered.includes(n)) continue;
+      n.id = `n${numbered.length + 1}`;
+      numbered.push(n);
+    }
+    nodes.splice(0, nodes.length, ...numbered);
+    for (const [n, p] of parentOf) n.parent = p.id;
 
     // ---- relations
     const relations: FigureRelationHint[] = [];
@@ -1272,7 +1311,8 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         sum.y += (a.head.y - a.tail.y) / L;
       }
       const mag = Math.hypot(sum.x, sum.y);
-      if (mag >= 0.5 * directed.length) flow = { x: sum.x / mag, y: sum.y / mag };
+      // A clear majority direction (two arrows down and one back up still flows down).
+      if (mag > 0.3 * directed.length) flow = { x: sum.x / mag, y: sum.y / mag };
     }
     if (flow) {
       for (const { rel, a } of directed) {
@@ -1334,7 +1374,8 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const horizontalLayout = width(figBox) >= 1.4 * height(figBox);
     nodes.forEach((n) => rank.set(n.id, horizontalLayout ? center(n.bbox).x : center(n.bbox).y * 10 + center(n.bbox).x / 1000));
     if (hub) {
-      const spokes = hub.spokes.map((n, i) => ({ n, a: ((hub.angles[i] + Math.PI / 2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) })).sort((p, q) => p.a - q.a);
+      // Angle from "straight up", clockwise; the small offset keeps a branch drawn exactly above the hub first.
+      const spokes = hub.spokes.map((n, i) => ({ n, a: (hub.angles[i] + Math.PI / 2 + 0.05 + 4 * Math.PI) % (2 * Math.PI) })).sort((p, q) => p.a - q.a);
       order = [hub.h.id, ...spokes.map((s) => s.n.id)];
       orderBasis = 'hub first, then clockwise from top';
     } else if (lifelines.length >= 2) {
@@ -1350,6 +1391,14 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     } else if (nodes.length >= 2 && !grid) {
       order = [...nodes].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!).map((n) => n.id);
       orderBasis = horizontalLayout ? 'left→right' : 'top→bottom';
+    }
+
+    if (!lifelines.length && order.length) {
+      const pos = (id: string) => {
+        const i = order.indexOf(id);
+        return i < 0 ? order.length + nodes.findIndex((n) => n.id === id) : i;
+      };
+      relations.sort((a, b) => pos(a.from) - pos(b.from) || (a.kind === 'self-loop' ? 1 : 0) - (b.kind === 'self-loop' ? 1 : 0) || pos(a.to) - pos(b.to));
     }
 
     // ---- table cells
@@ -1460,14 +1509,14 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         ? 'drawing'
         : lifelineGroups.has(a.index)
           ? `drawing (lifeline ${fig.nodes.find((n) => n.groupIndex === a.index)?.id ?? ''})`.replace(/ \)$/, ')')
-          : labelInside[a.index] !== undefined
-            ? `label inside group ${labelInside[a.index]}${node ? ` = name of ${node.id}` : ''}`
-            : node
-              ? `name of ${node.id}`
-              : edge
-                ? `label on the arrow ${edge.from} → ${edge.to}`
-                : fig.cells?.some((row) => row.includes(a.index))
-                  ? 'table cell text'
+          : fig.cells?.some((row) => row.includes(a.index))
+            ? 'table cell text'
+            : labelInside[a.index] !== undefined
+              ? `label inside group ${labelInside[a.index]}${node ? ` = name of ${node.id}` : ''}`
+              : node
+                ? `name of ${node.id}`
+                : edge
+                  ? `label on the arrow ${edge.from} → ${edge.to}`
                   : 'label';
       hint = `${hint}${hint ? ' — ' : ''}part of ${figureName(fig.id)} (${role})`;
     }

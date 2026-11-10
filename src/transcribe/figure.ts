@@ -283,7 +283,7 @@ export function edgeList(value: unknown): FigureEdge[] {
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
     const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) ? cleaned : undefined;
     const k = f.toLowerCase() === t.toLowerCase() ? 'self-loop' : normaliseEdgeKind(kind);
-    if (out.some((e) => e.from === f && e.to === t && (e.label ?? '') === (l ?? ''))) return;
+    if (out.some((e) => e.from === f && e.to === t && (e.label ?? '') === (l ?? '') && (e.kind ?? 'arrow') === (k ?? 'arrow'))) return;
     const e: FigureEdge = { from: f, to: t };
     if (l) e.label = l;
     if (k) e.kind = k;

@@ -66,7 +66,7 @@ export function flowchartWithLoop(): Scene {
     rect(100, 360, 220, 420, next()),
     arrowStroke(160, 165, 160, 220, next()),
     arrowStroke(160, 300, 160, 355, next()),
-    arrowStroke(250, 385, 250, 135, next()),
+    arrowStroke(240, 385, 240, 135, next()),
     ...label(labels, 'start', textLine(125, 138, 3, 14, next())),
     ...label(labels, 'ok?', textLine(140, 268, 2, 14, next())),
     ...label(labels, 'end', textLine(130, 398, 3, 14, next())),
