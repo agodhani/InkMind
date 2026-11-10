@@ -7,6 +7,7 @@ import { DATASETS, SCENE_KINDS, buildScene, sceneReference } from './scenes';
 import { captionHasLabel, containmentFromCaption, diagramMetrics, edgesFromCaption, formatReferencePage, kendallTau, normLabel, parseReferencePage, relationMetrics, stepPositions, type FigureExpectation } from './metrics';
 import { strokesBounds } from '../transcribe/regions';
 import type { DigitalBlock } from '../model/page';
+import { SUITE_KINDS, suiteMarkdown, suitePlan, summariseSuite } from './suite';
 
 const pen = (seed = 1): Pen => {
   const rng = new Rng(seed);
@@ -345,5 +346,30 @@ describe('relation metrics', () => {
       return d / n;
     };
     expect(spread(messy)).toBeGreaterThan(spread(neat));
+  });
+});
+
+describe('suite', () => {
+  it('plans kinds at normal then messy with distinct seeds', () => {
+    const plan = suitePlan(SUITE_KINDS.length + 2, 10);
+    expect(plan).toHaveLength(SUITE_KINDS.length + 2);
+    expect(plan[0]).toEqual({ kind: SUITE_KINDS[0], seed: 10, messiness: 'normal' });
+    expect(plan[SUITE_KINDS.length]).toEqual({ kind: SUITE_KINDS[0], seed: 10 + SUITE_KINDS.length, messiness: 'messy' });
+    expect(new Set(plan.map((p) => p.seed)).size).toBe(plan.length);
+    expect(suitePlan(2, 1, ['circle'])).toEqual([{ kind: 'circle', seed: 1, messiness: 'normal' }, { kind: 'circle', seed: 2, messiness: 'messy' }]);
+  });
+  it('sums results into a summary and a markdown table', () => {
+    const scene = buildScene('timeline', 73);
+    const figures: FigureExpectation[] = scene.figures.map((f) => ({ id: f.id, type: f.type, labels: f.labels, strokeIds: f.strokeIds, edges: f.edges, sequence: f.sequence }));
+    const blocks = [{ kind: 'diagram' as const, text: `Pipeline: ${scene.figures[0].sequence!.join(' → ')}`, strokeIds: scene.strokes.map((s) => s.id) }];
+    const r = { kind: 'timeline' as const, seed: 73, messiness: 'normal' as const, title: scene.title, diagrams: diagramMetrics(figures, blocks), relations: relationMetrics(figures, blocks), seconds: 12 };
+    const s = summariseSuite([r, r]);
+    expect(s.scenes).toBe(2);
+    expect(s.edgesFound).toBe(s.edges);
+    expect(s.sequencesExact).toBe(2);
+    expect(s.countExact).toBe(2);
+    const md = suiteMarkdown([r]);
+    expect(md).toContain('| timeline | normal |');
+    expect(md).toContain('**total**');
   });
 });
