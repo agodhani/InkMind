@@ -144,10 +144,10 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     abortRef.current = null;
   };
 
-  const inject = (target: Scene) => {
+  const inject = (target: Scene, startIndex = pageRef.current.strokes.length) => {
     setError(null);
     fitView(target);
-    setDrawn({ scene: target, startIndex: pageRef.current.strokes.length });
+    setDrawn({ scene: target, startIndex });
     setProgress([target.strokes.length, target.strokes.length]);
     const run = newId('sim');
     onInjectStrokes(target.strokes.map((s) => ({ ...s, id: `${run}-${s.id}` })));
@@ -194,13 +194,17 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
       const item = plan[i];
       setSuite({ running: true, current: i, plan, results: [...results] });
       const target = buildScene(item.kind, item.seed, item.messiness);
+      // Keep the Scene/Expected columns on the scene being replayed.
+      setKind(item.kind);
+      setSeed(item.seed);
+      setMessiness(item.messiness);
       onClearPage();
       await nextFrame();
       const t0 = performance.now();
       const run: Drawn = { scene: target, startIndex: 0 };
       if (suiteDraw) {
         if (!(await replay(target, ctrl.signal))) break;
-      } else inject(target);
+      } else inject(target, 0);
       // Give the page state a moment to hold the new strokes before asking for a transcription.
       await sleep(300);
       onTranscribeNow();
