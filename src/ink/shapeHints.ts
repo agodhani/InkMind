@@ -494,7 +494,8 @@ function singleStrokeArrow(simp: Offset[], segs: Segment[], length: number): { s
  * segments fold back ≥ 100° against the shaft; the shaft itself turns smoothly.
  */
 function curvedStrokeArrow(simp: Offset[], segs: Segment[], length: number): { head: Offset; tail: Offset } | null {
-  if (segs.length < 3 || segs.length > 12) return null;
+  // Letters (f, t, ?, 2) are bent strokes ending in a hook too: only pen paths longer than a drawn line qualify.
+  if (segs.length < 3 || segs.length > 12 || length < MIN_LINE_SIZE) return null;
   for (const reversed of [false, true]) {
     const pts = reversed ? [...simp].reverse() : simp;
     const ss = pts.slice(1).map((p, i) => ({ a: pts[i], b: p }));
@@ -705,7 +706,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   }
 
   const arrows: Arrow[] = shapes
-    .filter((s) => s.kind === 'arrow' && !usedIds.has(s.strokeId) && s.length >= 0.75 * MIN_LINE_SIZE && (shapes.length <= 3 || s.length >= 2 * medH))
+    .filter((s) => s.kind === 'arrow' && !usedIds.has(s.strokeId) && s.length >= 0.75 * MIN_LINE_SIZE && dist(s.tail!, s.head!) >= 0.5 * MIN_LINE_SIZE && (shapes.length <= 3 || s.length >= 2 * medH))
     .map((s) => ({ strokeIds: [s.strokeId], tail: s.tail!, head: s.head!, groupIndex: group.index, ...(s.curved ? { curved: true } : {}) }));
   arrows.forEach((a) => a.strokeIds.forEach((id) => usedIds.add(id)));
   const shaftCandidates = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline' || s.kind === 'curve'));

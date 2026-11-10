@@ -1,5 +1,9 @@
 import type { InkStroke } from '../model/page';
-import { arrowStroke, circle, fromPoints, line, polygon, rect, rectLines, textLine } from './shapes';
+import { measureText } from '../sim/font';
+import { DEFAULT_INK_STYLE, InkWriter } from '../sim/ink';
+import { Rng } from '../sim/rng';
+import { writeText, type Pen } from '../sim/shapes';
+import { arrowStroke, circle, fromPoints, line, polygon, rect, rectLines } from './shapes';
 
 /**
  * Synthetic multi-shape scenes for the relation/order geometry tests and the local-model smoke
@@ -12,7 +16,21 @@ import { arrowStroke, circle, fromPoints, line, polygon, rect, rectLines, textLi
 const STEP = 6000;
 let t = 0;
 const next = () => (t += STEP);
-export const resetScenes = () => (t = 0);
+let pen: Pen;
+export const resetScenes = () => {
+  t = 0;
+  const rng = new Rng('complex-scenes');
+  pen = { rng, w: new InkWriter(rng.fork('ink'), 'w', { ...DEFAULT_INK_STYLE }) };
+};
+resetScenes();
+
+/** Hand-written word (simulator Hershey glyphs) centred on (cx, cy); `size` is the cap height. */
+export function word(text: string, cx: number, cy: number, size = 14): InkStroke[] {
+  pen.w.pause(STEP);
+  const w = measureText(text, size, size * 0.1);
+  return writeText(pen, text, cx - w / 2, cy + size / 2, { size, shake: 0.4 });
+}
+export const wordWidth = (text: string, size = 14) => measureText(text, size, size * 0.1);
 
 /** Arrow whose shaft follows `path` (≥ 3 points), ending in a V head at the last point. */
 export function curvedArrow(path: { x: number; y: number }[], time = next(), head = 12): InkStroke {
@@ -67,10 +85,10 @@ export function flowchartWithLoop(): Scene {
     arrowStroke(160, 165, 160, 220, next()),
     arrowStroke(160, 300, 160, 355, next()),
     arrowStroke(240, 385, 240, 135, next()),
-    ...label(labels, 'start', textLine(125, 138, 3, 14, next())),
-    ...label(labels, 'ok?', textLine(140, 268, 2, 14, next())),
-    ...label(labels, 'end', textLine(130, 398, 3, 14, next())),
-    ...label(labels, 'yes', textLine(180, 334, 2, 12, next())),
+    ...label(labels, 'start', word('start', 160, 130)),
+    ...label(labels, 'ok?', word('ok?', 160, 260, 12)),
+    ...label(labels, 'end', word('end', 160, 390)),
+    ...label(labels, 'yes', word('yes', 190, 328, 11)),
   ];
   return { name: 'flowchart-loop', strokes, labels };
 }
@@ -84,8 +102,8 @@ export function stateMachine(): Scene {
     circle(350, 200, 40, next()),
     arrowStroke(195, 200, 305, 200, next()),
     curvedArrow(arcPath(350, 130, 36, 65, -245), next()),
-    ...label(labels, 'idle', textLine(128, 206, 3, 14, next())),
-    ...label(labels, 'run', textLine(330, 206, 3, 14, next())),
+    ...label(labels, 'idle', word('idle', 150, 200)),
+    ...label(labels, 'run', word('run', 350, 200)),
   ];
   return { name: 'state-machine', strokes, labels };
 }
@@ -99,9 +117,9 @@ export function nestedBoxes(): Scene {
     rect(120, 160, 210, 260, next()),
     rect(290, 160, 380, 260, next()),
     arrowStroke(215, 210, 285, 210, next()),
-    ...label(labels, 'system', textLine(200, 135, 4, 14, next())),
-    ...label(labels, 'in', textLine(150, 216, 2, 14, next())),
-    ...label(labels, 'out', textLine(315, 216, 3, 14, next())),
+    ...label(labels, 'system', word('system', 250, 128)),
+    ...label(labels, 'in', word('in', 165, 210)),
+    ...label(labels, 'out', word('out', 335, 210)),
   ];
   return { name: 'nested-boxes', strokes, labels };
 }
@@ -113,12 +131,12 @@ export function sequenceDiagram(): Scene {
   const strokes = [
     line(150, 120, 150, 400, next()),
     line(350, 120, 350, 400, next()),
-    ...label(labels, 'client', textLine(128, 100, 4, 14, next())),
-    ...label(labels, 'server', textLine(328, 100, 4, 14, next())),
+    ...label(labels, 'client', word('client', 150, 97)),
+    ...label(labels, 'server', word('server', 350, 97)),
     arrowStroke(155, 180, 345, 180, next()),
     arrowStroke(345, 260, 155, 260, next()),
-    ...label(labels, 'req', textLine(235, 172, 3, 12, next())),
-    ...label(labels, 'resp', textLine(230, 252, 3, 12, next())),
+    ...label(labels, 'req', word('req', 250, 166, 11)),
+    ...label(labels, 'resp', word('resp', 250, 246, 11)),
   ];
   return { name: 'sequence', strokes, labels };
 }
@@ -133,10 +151,10 @@ export function tableGrid(): Scene {
     line(100, 150, 400, 150, next()),
     line(100, 200, 400, 200, next()),
     line(250, 100, 250, 250, next()),
-    ...label(labels, 'name', textLine(130, 132, 3, 14, next())),
-    ...label(labels, 'qty', textLine(290, 132, 3, 14, next())),
-    ...label(labels, 'nut', textLine(130, 182, 3, 14, next())),
-    ...label(labels, '12', textLine(290, 232, 2, 14, next())),
+    ...label(labels, 'name', word('name', 175, 125)),
+    ...label(labels, 'qty', word('qty', 325, 125)),
+    ...label(labels, 'nut', word('nut', 175, 175)),
+    ...label(labels, '12', word('12', 325, 225)),
   ];
   return { name: 'table', strokes, labels };
 }
@@ -155,11 +173,11 @@ export function mindMap(): Scene {
     line(345, 300, 415, 300, next()),
     line(300, 345, 300, 415, next()),
     line(255, 300, 185, 300, next()),
-    ...label(labels, 'topic', textLine(275, 306, 4, 12, next())),
-    ...label(labels, 'a', textLine(292, 156, 1, 12, next())),
-    ...label(labels, 'b', textLine(442, 306, 1, 12, next())),
-    ...label(labels, 'c', textLine(292, 456, 1, 12, next())),
-    ...label(labels, 'd', textLine(142, 306, 1, 12, next())),
+    ...label(labels, 'topic', word('topic', 300, 300, 12)),
+    ...label(labels, 'a', word('a', 300, 150, 12)),
+    ...label(labels, 'b', word('b', 450, 300, 12)),
+    ...label(labels, 'c', word('c', 300, 450, 12)),
+    ...label(labels, 'd', word('d', 150, 300, 12)),
   ];
   return { name: 'mind-map', strokes, labels };
 }
@@ -168,12 +186,14 @@ export function mindMap(): Scene {
 export function arrowsBetweenWords(): Scene {
   resetScenes();
   const labels: Record<string, string[]> = {};
+  const cx = [120, 290, 460];
+  const half = ['load', 'train', 'eval'].map((w) => wordWidth(w) / 2);
   const strokes = [
-    ...label(labels, 'load', textLine(100, 100, 4, 14, next())),
-    ...label(labels, 'train', textLine(260, 100, 4, 14, next())),
-    ...label(labels, 'eval', textLine(420, 100, 4, 14, next())),
-    arrowStroke(150, 93, 252, 93, next()),
-    arrowStroke(310, 93, 412, 93, next()),
+    ...label(labels, 'load', word('load', cx[0], 95)),
+    ...label(labels, 'train', word('train', cx[1], 95)),
+    ...label(labels, 'eval', word('eval', cx[2], 95)),
+    arrowStroke(cx[0] + half[0] + 10, 93, cx[1] - half[1] - 10, 93, next()),
+    arrowStroke(cx[1] + half[1] + 10, 93, cx[2] - half[2] - 10, 93, next()),
   ];
   return { name: 'arrows-between-words', strokes, labels };
 }
@@ -186,11 +206,11 @@ export function twoFiguresWithNotes(): Scene {
     rect(100, 100, 200, 160, next()),
     rect(300, 100, 400, 160, next()),
     arrowStroke(205, 130, 295, 130, next()),
-    ...label(labels, 'a', textLine(140, 136, 1, 14, next())),
-    ...label(labels, 'b', textLine(340, 136, 1, 14, next())),
-    ...label(labels, 'notes', textLine(100, 230, 14, 16, next())),
+    ...label(labels, 'a', word('a', 150, 130)),
+    ...label(labels, 'b', word('b', 350, 130)),
+    ...label(labels, 'notes', word('notes on the flow above', 230, 225, 16)),
     circle(180, 360, 45, next()),
-    ...label(labels, 'c', textLine(172, 366, 1, 14, next())),
+    ...label(labels, 'c', word('c', 180, 360)),
   ];
   return { name: 'two-figures', strokes, labels };
 }

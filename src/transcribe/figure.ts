@@ -269,7 +269,15 @@ const ARROW_RE = /\s*(?:->|-->|→|⇒|=>|—>|–>|,)\s*|\s+to\s+/i;
 
 /** Small models echo the prompt's stroke-group ids ("group 3", "Figure A") instead of the words written. */
 export function isGroupRef(value: unknown): boolean {
-  return typeof value === 'string' && /^\s*(group|grp|g|figure|fig)\s*[A-Z0-9]+\s*$/i.test(value);
+  return typeof value === 'string' && /^\s*(?:(group|grp|g|figure|fig|node)\s*[A-Z0-9]+|n\d+)\s*$/i.test(value);
+}
+
+/** An edge "label" that only restates the edge ("n1 → n2", "a -> b", "arrow from A to B") carries no written word. */
+function isEdgeEcho(label: string, from: string, to: string): boolean {
+  const l = label.trim().toLowerCase();
+  if (/(^|\s)(->|-->|→|⇒|=>)(\s|$)/.test(l)) return true;
+  if (/^arrow( from)?\b/.test(l)) return true;
+  return l === from.trim().toLowerCase() || l === to.trim().toLowerCase();
 }
 
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
@@ -281,7 +289,7 @@ export function edgeList(value: unknown): FigureEdge[] {
     const t = typeof to === 'string' || typeof to === 'number' ? cleanText(String(to)) : stringList(to)[0];
     if (!f || !t || out.length >= MAX_ITEMS) return;
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
-    const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) ? cleaned : undefined;
+    const l = cleaned && /[\p{L}\p{N}]/u.test(cleaned) && !isEdgeEcho(cleaned, f, t) && !isGroupRef(cleaned) ? cleaned : undefined;
     const k = f.toLowerCase() === t.toLowerCase() ? 'self-loop' : normaliseEdgeKind(kind);
     if (out.some((e) => e.from === f && e.to === t && (e.label ?? '') === (l ?? '') && (e.kind ?? 'arrow') === (k ?? 'arrow'))) return;
     const e: FigureEdge = { from: f, to: t };

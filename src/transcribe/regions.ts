@@ -143,9 +143,12 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const labelStrokeIds = new Set(figGroups.filter((g) => fig.labelGroups.includes(g.index) || fig.labelHostGroups.includes(g.index)).flatMap((g) => g.strokeIds));
     const members: DigitalBlock[] = [];
     const rest: DigitalBlock[] = [];
+    const figBox = figGroups.map((g) => g.bbox).reduce(unionBounds);
     for (const b of blocks) {
       const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
-      if (inside.length === 0) rest.push(b);
+      // A diagram the model placed by bbox only (no groups) over this figure describes it.
+      if (b.kind === 'diagram' && b.strokeIds.length === 0 && boundsIntersect(b.bbox, figBox)) members.push(b);
+      else if (inside.length === 0) rest.push(b);
       else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
       else {
         // Text the model lumped together with part of the figure: its words must survive, so it
@@ -179,7 +182,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   }
   // Small models sometimes return an empty "diagram" for a line of text beside a figure: it carries nothing, drop it.
   const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
-  blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
+  blocks = blocks.filter((b) => b.kind !== 'diagram' || (b.strokeIds.length > 0 && (b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)))));
   return sortBlocksForReading(blocks);
 }
 
