@@ -80,7 +80,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
       const own = firstDefined(o, ['parent', 'inside', 'within', 'container']);
       const kids = firstDefined(o, ['children', 'contains', 'nested', 'inner']);
       const groupRaw = firstDefined(o, ['group', 'labelGroup', 'label_group', 'groupIndex', 'group_index']);
-      const groupNum = typeof groupRaw === 'number' ? groupRaw : typeof groupRaw === 'string' ? Number(groupRaw.replace(/\D+/g, '')) : NaN;
+      const groupNum = typeof groupRaw === 'number' ? groupRaw : typeof groupRaw === 'string' && /^\D*\d+\s*$/.test(groupRaw) ? Number(groupRaw.replace(/\D+/g, '')) : NaN;
       if (label !== undefined || id !== undefined) {
         const text = typeof label === 'string' || typeof label === 'number' ? String(label) : typeof id === 'string' || typeof id === 'number' ? String(id) : stringList(label)[0];
         if (!text) return;

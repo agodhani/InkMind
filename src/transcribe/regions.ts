@@ -228,7 +228,12 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
     labels: dedupe([...a.labels, ...b.labels]),
     edges: [...a.edges],
   };
-  for (const e of b.edges) if (!out.edges.some((x) => sameEdge(x, e) && (x.label ?? '') === (e.label ?? '') && (x.kind ?? 'arrow') === (e.kind ?? 'arrow'))) out.edges.push(e);
+  for (const e of b.edges) {
+    // The same arrow described twice, once without its label: one edge, labelled.
+    const same = out.edges.find((x) => sameEdge(x, e) && (x.kind ?? 'arrow') === (e.kind ?? 'arrow') && (!x.label || !e.label || x.label === e.label));
+    if (!same) out.edges.push(e);
+    else if (!same.label && e.label) same.label = e.label;
+  }
   const nodes = [...(a.nodes ?? [])];
   for (const n of b.nodes ?? []) if (!nodes.some((x) => sameText(x.label, n.label))) nodes.push(n);
   if (nodes.length) out.nodes = nodes;
@@ -251,7 +256,7 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
     const m =
       (g.group !== undefined ? prior?.nodes?.find((n) => n.group === g.group && !taken.has(n)) : undefined) ??
-      prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase() && !taken.has(n) && n.group === undefined);
+      prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase() && !taken.has(n) && (n.group === undefined || !geo.nodes?.some((o) => o.group === n.group)));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
       taken.add(m);

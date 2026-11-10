@@ -131,5 +131,6 @@ describe('normaliseFigure', () => {
     expect(normaliseFigure({ kind: 'flowchart', sequence: ['ready to ship', 'done → shipped'] })!.sequence).toEqual(['ready to ship', 'done', 'shipped']);
     expect(normaliseFigure({ kind: 'table', cells: [['a', 'b'], ['', ''], ['c', 'd']] })!.cells).toEqual([['a', 'b'], ['', ''], ['c', 'd']]);
     expect(normaliseFigure({ kind: 'graph', nodes: [{ id: 'n1', label: 'x' }, { id: 'n2', label: 'x' }, { label: 'x' }] })!.nodes).toHaveLength(2);
+    expect(normaliseFigure({ kind: 'graph', nodes: [{ id: 'n1', label: 'x', group: 'unknown' }, { id: 'n2', label: 'y', group: 'group 4' }] })!.nodes).toEqual([{ id: 'n1', label: 'x' }, { id: 'n2', label: 'y', group: 4 }]);
   });
 });

@@ -379,11 +379,15 @@ describe('reconcileFigureBlocks', () => {
     const fig = mergeWithGeometry(prior, hint, ['topic', 'a'], geo);
     expect(fig.edges).toEqual([{ from: 'topic', to: 'a', kind: 'line', inferred: true }]);
     expect(fig.nodes).toEqual([{ id: 'n1', label: 'topic', shape: 'circle', group: 8 }, { id: 'n2', label: 'a', shape: 'circle', group: 1 }]);
+    // A wrong group number on the model side still lets the hint id name the node.
+    const byId = mergeWithGeometry({ ...prior, nodes: [{ id: 'n1', label: 'top', group: 99 }, { id: 'n2', label: 'side', group: 98 }] }, hint, [], geo);
+    expect(byId.edges[0]).toMatchObject({ from: 'side', to: 'top' });
   });
 
   it('keeps differently labelled edges when folding diagram blocks, and leaves a far-away stroke-less diagram alone', () => {
     const merged = mergeFigures({ kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'yes' }] }, { kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'no' }, { from: 'a', to: 'b', label: 'yes' }] });
     expect(merged.edges).toEqual([{ from: 'a', to: 'b', label: 'yes' }, { from: 'a', to: 'b', label: 'no' }]);
+    expect(mergeFigures({ kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b' }] }, { kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'yes' }] }).edges).toEqual([{ from: 'a', to: 'b', label: 'yes' }]);
     const { groups, strokes } = scene();
     const far: DigitalBlock = { id: 'far', kind: 'diagram', text: 'Shape: a sun.', bbox: { left: 2000, top: 2000, right: 2100, bottom: 2100 }, strokeIds: [], confidence: 0.5, figure: { kind: 'sketch', shapes: ['sun'], labels: [], edges: [] } };
     const out = reconcileFigureBlocks([far], groups, strokes);
