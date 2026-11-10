@@ -8,9 +8,7 @@ import { db, isIndexedDbAvailable } from './store/db';
 import { DigitalView } from './views/DigitalView';
 import { useTranscription } from './transcribe/useTranscription';
 import { OpenRouterTranscriber } from './transcribe/openrouter';
-import { DEFAULT_OLLAMA_MODEL, OLLAMA_VISION_MODELS, OllamaTranscriber, probeOllama, type OllamaStatus } from './transcribe/ollama';
-
-const OLLAMA_REPROBE_MS = 5000;
+import { OllamaTranscriber } from './transcribe/ollama';
 import { MockTranscriber } from './transcribe/mock';
 import type { Transcriber } from './transcribe/types';
 import { renderStrokesToPng } from './transcribe/render';
@@ -18,35 +16,59 @@ import { buildProfile, type Correction } from './profile/handwritingProfile';
 import { pageToMarkdown } from './export/markdown';
 import { loadSettings, saveSettings, type AppSettings } from './settings';
 import { strokesBounds } from './transcribe/regions';
+import { Toolbar, type ViewMode } from './ui/Toolbar';
+import { PagesDrawer } from './ui/PagesDrawer';
+import { SettingsDrawer } from './ui/SettingsDrawer';
+import { SplitPane } from './ui/SplitPane';
+import { Onboarding } from './ui/Onboarding';
+import { dismissOnboarding, shouldShowOnboarding } from './ui/onboarding';
+import { useTheme } from './ui/theme';
+import { COMPACT_QUERY, useMediaQuery } from './ui/useMediaQuery';
+import { isEditableTarget, matchesShortcut, SHORTCUTS } from './ui/shortcuts';
+import { stepBrushSize } from './ui/brush';
+import { Icon } from './ui/icons';
 
 // Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
 const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
 const SIM_ENABLED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim');
-
-type ViewMode = 'ink' | 'digital' | 'split';
 
 interface HistoryEntry {
   strokes: InkStroke[];
   blocks: DigitalBlock[];
 }
 
+const PROVIDER_LABEL: Record<AppSettings['provider'], string> = { mock: 'Mock transcriber', ollama: 'Ollama', openrouter: 'OpenRouter' };
+
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [pages, setPages] = useState<Page[]>([]);
   const [page, setPage] = useState<Page | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [view, setView] = useState<ViewMode>(() => (window.innerWidth > 900 ? 'split' : 'ink'));
   const [tool, setTool] = useState<InkTool>('pen');
   const [brushColor, setBrushColor] = useState('#1b1b1f');
   const [brushSize, setBrushSize] = useState(2.5);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPages, setShowPages] = useState(false);
+  const [showTips, setShowTips] = useState(() => shouldShowOnboarding());
+  const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ panX: 24, panY: 24, zoom: 1 });
+  const [historyLen, setHistoryLen] = useState({ undo: 0, redo: 0 });
   const undoStack = useRef<HistoryEntry[]>([]);
   const redoStack = useRef<HistoryEntry[]>([]);
+  const { pref: themePref, theme, setPref: setThemePref, toggle: toggleTheme } = useTheme();
+  const compact = useMediaQuery(COMPACT_QUERY);
 
   useEffect(() => saveSettings(settings), [settings]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
 
   // Load pages + corrections once.
   useEffect(() => {
@@ -63,6 +85,7 @@ export default function App() {
         setPages(list);
         setPage(list[0]);
       }
+      setLoaded(true);
     })();
   }, []);
 
@@ -102,11 +125,18 @@ export default function App() {
     onBlocks,
   });
 
+  const syncHistoryLen = () => setHistoryLen({ undo: undoStack.current.length, redo: redoStack.current.length });
   const pushHistory = useCallback((p: Page) => {
     undoStack.current.push({ strokes: p.strokes, blocks: p.blocks });
     if (undoStack.current.length > 100) undoStack.current.shift();
     redoStack.current = [];
+    syncHistoryLen();
   }, []);
+  const resetHistory = () => {
+    undoStack.current = [];
+    redoStack.current = [];
+    syncHistoryLen();
+  };
 
   const onStrokeComplete = useCallback(
     (stroke: InkStroke) => {
@@ -169,6 +199,7 @@ export default function App() {
     const entry = undoStack.current.pop();
     if (!entry) return;
     redoStack.current.push({ strokes: page.strokes, blocks: page.blocks });
+    syncHistoryLen();
     applyHistory(page, entry);
   }, [page, applyHistory]);
 
@@ -177,6 +208,7 @@ export default function App() {
     const entry = redoStack.current.pop();
     if (!entry) return;
     undoStack.current.push({ strokes: page.strokes, blocks: page.blocks });
+    syncHistoryLen();
     applyHistory(page, entry);
   }, [page, applyHistory]);
 
@@ -200,15 +232,17 @@ export default function App() {
       if (!block.userEdited || block.text !== newText) {
         setCorrections((c) => [...c, correction]);
         void db.putCorrection(correction);
+        setToast({ text: 'Correction saved to your handwriting profile.' });
       }
       updatePage(page.id, (p) => ({ ...p, blocks: p.blocks.map((b) => (b.id === block.id ? { ...b, text: newText, userEdited: true, confidence: 1 } : b)) }));
     },
     [page, updatePage],
   );
 
-  const selectedBlock = page?.blocks.find((b) => b.id === selectedBlockId) ?? null;
-  const highlighted = useMemo(() => new Set(selectedBlock?.strokeIds ?? []), [selectedBlock]);
-  const outlines = useMemo(() => page?.blocks.map((b) => ({ bbox: b.bbox, active: b.id === selectedBlockId })) ?? [], [page?.blocks, selectedBlockId]);
+  const linkedBlockId = hoveredBlockId ?? selectedBlockId;
+  const linkedBlock = page?.blocks.find((b) => b.id === linkedBlockId) ?? null;
+  const highlighted = useMemo(() => new Set(linkedBlock?.strokeIds ?? []), [linkedBlock]);
+  const outlines = useMemo(() => page?.blocks.map((b) => ({ bbox: b.bbox, active: b.id === linkedBlockId })) ?? [], [page?.blocks, linkedBlockId]);
 
   const onTapStroke = useCallback(
     (strokeId: string | null) => {
@@ -219,15 +253,19 @@ export default function App() {
     [page],
   );
 
+  const openPage = (p: Page) => {
+    setPage(p);
+    setSelectedBlockId(null);
+    setHoveredBlockId(null);
+    resetHistory();
+    setShowPages(false);
+  };
+
   const newPage = async () => {
     const p = createPage(`Page ${pages.length + 1}`);
     await db.putPage(p);
     setPages((l) => [p, ...l]);
-    setPage(p);
-    setSelectedBlockId(null);
-    undoStack.current = [];
-    redoStack.current = [];
-    setShowPages(false);
+    openPage(p);
   };
 
   const importStrokes = async (file: File) => {
@@ -235,32 +273,40 @@ export default function App() {
     try {
       imported = pagesFromStrokeExport(JSON.parse(await file.text()) as StrokeExport, file.name);
     } catch (e) {
-      window.alert(`Could not read ${file.name}: ${(e as Error).message}`);
+      setToast({ text: `Could not read ${file.name}: ${(e as Error).message}` });
       return;
     }
     if (!imported.length) {
-      window.alert('No strokes found in that file.');
+      setToast({ text: 'No strokes found in that file.' });
       return;
     }
     for (const p of imported) await db.putPage(p);
     setPages((l) => [...imported, ...l]);
     openPage(imported[0]);
+    setToast({ text: `Imported ${imported.length === 1 ? '1 page' : `${imported.length} pages`}.` });
   };
 
-  const openPage = (p: Page) => {
-    setPage(p);
-    setSelectedBlockId(null);
-    undoStack.current = [];
-    redoStack.current = [];
-    setShowPages(false);
+  const renamePage = (id: string, title: string) => {
+    if (page?.id === id) updatePage(id, (p) => ({ ...p, title }));
+    else {
+      setPages((list) => {
+        const target = list.find((p) => p.id === id);
+        if (target) void db.putPage({ ...target, title, updatedAt: Date.now() });
+        return list.map((p) => (p.id === id ? { ...p, title, updatedAt: Date.now() } : p));
+      });
+    }
   };
 
   const deletePage = async (p: Page) => {
-    if (!confirm(`Delete "${p.title}"?`)) return;
+    if (!window.confirm(`Delete “${p.title || 'Untitled'}”? Its ink and transcription are removed from this browser.`)) return;
     await db.deletePage(p.id);
     const rest = pages.filter((x) => x.id !== p.id);
     setPages(rest);
-    if (page?.id === p.id) setPage(rest[0] ?? null);
+    if (page?.id === p.id) {
+      setPage(rest[0] ?? null);
+      setSelectedBlockId(null);
+      resetHistory();
+    }
   };
 
   const exportMarkdown = () => {
@@ -271,342 +317,249 @@ export default function App() {
     a.download = `${page.title.replace(/[^\w\- ]+/g, '').trim() || 'page'}.md`;
     a.click();
     URL.revokeObjectURL(a.href);
+    setToast({ text: `Exported ${a.download}` });
   };
 
-  if (!page) {
-    return <div className="app-loading">{isIndexedDbAvailable() ? 'Loading…' : 'This browser has no IndexedDB; InkMind needs it to store pages.'}</div>;
+  const transcribeNow = useCallback(() => void flushNow(), [flushNow]);
+  const retranscribe = () => {
+    if (!page?.strokes.length) return;
+    if (window.confirm('Discard the digital page and transcribe everything again? Your corrections are kept as examples.')) retranscribeAll();
+  };
+
+  // Global shortcuts (single letters are ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (showTips) return;
+      const typing = isEditableTarget(e.target);
+      const fire = (fn: () => void) => {
+        e.preventDefault();
+        fn();
+      };
+      if (matchesShortcut(e, SHORTCUTS.settings)) return fire(() => setShowSettings((v) => !v));
+      if (matchesShortcut(e, SHORTCUTS.pages)) return fire(() => setShowPages((v) => !v));
+      if (matchesShortcut(e, SHORTCUTS.toggleTheme)) return fire(toggleTheme);
+      if (matchesShortcut(e, SHORTCUTS.transcribe) && !typing) return fire(transcribeNow);
+      if (typing || showSettings || showPages) return;
+      if (matchesShortcut(e, SHORTCUTS.pen)) return fire(() => setTool('pen'));
+      if (matchesShortcut(e, SHORTCUTS.eraser)) return fire(() => setTool('eraser'));
+      if (matchesShortcut(e, SHORTCUTS.pan)) return fire(() => setTool('pan'));
+      if (matchesShortcut(e, SHORTCUTS.viewInk)) return fire(() => setView('ink'));
+      if (matchesShortcut(e, SHORTCUTS.viewSplit)) return fire(() => setView('split'));
+      if (matchesShortcut(e, SHORTCUTS.viewDigital)) return fire(() => setView('digital'));
+      if (matchesShortcut(e, SHORTCUTS.smaller)) return fire(() => setBrushSize((s) => stepBrushSize(s, -1)));
+      if (matchesShortcut(e, SHORTCUTS.larger)) return fire(() => setBrushSize((s) => stepBrushSize(s, 1)));
+      if (matchesShortcut(e, SHORTCUTS.escape) && selectedBlockId) return fire(() => setSelectedBlockId(null));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showTips, showSettings, showPages, selectedBlockId, toggleTheme, transcribeNow]);
+
+  const closeTips = () => {
+    dismissOnboarding();
+    setShowTips(false);
+  };
+
+  if (!loaded && !page) {
+    return (
+      <div className="app-loading" role="status">
+        {isIndexedDbAvailable() ? (
+          <>
+            <Icon name="spinner" /> Loading your pages…
+          </>
+        ) : (
+          'This browser has no IndexedDB; InkMind needs it to store pages.'
+        )}
+      </div>
+    );
   }
 
-  const statusLabel =
-    status.state === 'running'
-      ? `Transcribing ${status.pendingRegions} region${status.pendingRegions === 1 ? '' : 's'}…`
-      : status.state === 'waiting'
-        ? 'Waiting for pen to pause…'
-        : status.state === 'error'
-          ? `Error: ${status.lastError}`
+  const inkPane = page && (
+    <InkCanvas
+      strokes={page.strokes}
+      tool={tool}
+      brushColor={brushColor}
+      brushSize={brushSize}
+      highlightedStrokeIds={highlighted}
+      outlines={outlines}
+      onStrokeComplete={onStrokeComplete}
+      onStrokesErased={onStrokesErased}
+      onTapStroke={onTapStroke}
+      viewport={viewport}
+      onViewportChange={setViewport}
+    />
+  );
+  const digitalPane = page && (
+    <DigitalView
+      blocks={page.blocks}
+      strokes={page.strokes}
+      selectedBlockId={selectedBlockId}
+      onSelectBlock={setSelectedBlockId}
+      onHoverBlock={setHoveredBlockId}
+      onEditBlock={onEditBlock}
+      emptyHint={
+        page.strokes.length === 0
+          ? 'Write on the ink page. Pause for a second and the digital version appears here.'
           : settings.liveTranscription
-            ? `Up to date${status.lastModel ? ` · ${status.lastModel}` : ''}`
-            : 'Live transcription off';
+            ? status.state === 'error'
+              ? 'The last transcription failed. Use Retry in the status pill or Transcribe now.'
+              : 'Waiting for the model… pause the pen and the text will appear here.'
+            : 'Live transcription is off. Use Transcribe now (Ctrl+Enter) or turn it on in Settings.'
+      }
+    />
+  );
+  const zoomChip = page && view !== 'digital' && (
+    <div className="zoom-chip" aria-label="Zoom">
+      <button type="button" onClick={() => setViewport((v) => ({ ...v, zoom: Math.max(0.25, v.zoom / 1.25) }))} aria-label="Zoom out">
+        −
+      </button>
+      <button type="button" onClick={() => setViewport({ panX: 24, panY: 24, zoom: 1 })} aria-label="Reset zoom" data-tip="Reset view" data-tip-placement="top">
+        {Math.round(viewport.zoom * 100)}%
+      </button>
+      <button type="button" onClick={() => setViewport((v) => ({ ...v, zoom: Math.min(8, v.zoom * 1.25) }))} aria-label="Zoom in">
+        +
+      </button>
+    </div>
+  );
 
   return (
-    <div className="app">
-      <header className="toolbar">
-        <button className="icon" onClick={() => setShowPages((v) => !v)} title="Pages">
-          ☰
-        </button>
-        <input className="title" value={page.title} onChange={(e) => updatePage(page.id, (p) => ({ ...p, title: e.target.value }))} />
-        <div className="seg">
-          {(['ink', 'split', 'digital'] as ViewMode[]).map((m) => (
-            <button key={m} className={view === m ? 'active' : ''} onClick={() => setView(m)}>
-              {m === 'ink' ? 'Ink' : m === 'digital' ? 'Digital' : 'Split'}
-            </button>
-          ))}
-        </div>
-        <div className="seg">
-          <button className={tool === 'pen' ? 'active' : ''} onClick={() => setTool('pen')} title="Pen">
-            ✎
-          </button>
-          <button className={tool === 'eraser' ? 'active' : ''} onClick={() => setTool('eraser')} title="Eraser">
-            ◻
-          </button>
-          <button className={tool === 'pan' ? 'active' : ''} onClick={() => setTool('pan')} title="Pan">
-            ✋
-          </button>
-        </div>
-        <input type="color" value={brushColor} onChange={(e) => setBrushColor(e.target.value)} title="Ink colour" />
-        <input type="range" min={1} max={8} step={0.5} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} title="Pen size" />
-        <button className="icon" onClick={undo} title="Undo (Ctrl+Z)">
-          ↶
-        </button>
-        <button className="icon" onClick={redo} title="Redo (Ctrl+Shift+Z)">
-          ↷
-        </button>
-        <span className="spacer" />
-        <span className={`status ${status.state}`}>{statusLabel}</span>
-        <button onClick={() => void flushNow()} title="Transcribe pending ink now">
-          Transcribe now
-        </button>
-        <button onClick={retranscribeAll} title="Discard the digital page and transcribe everything again">
-          Redo all
-        </button>
-        <button onClick={exportMarkdown} title="Download as Markdown">
-          Export .md
-        </button>
-        <button className="icon" onClick={() => setShowSettings(true)} title="Settings">
-          ⚙
-        </button>
-      </header>
+    <div className="app" data-view={view}>
+      <Toolbar
+        title={page?.title ?? ''}
+        onTitle={(t) => page && updatePage(page.id, (p) => ({ ...p, title: t }))}
+        view={view}
+        onView={setView}
+        tool={tool}
+        onTool={setTool}
+        brushColor={brushColor}
+        brushSize={brushSize}
+        onBrushColor={setBrushColor}
+        onBrushSize={setBrushSize}
+        canUndo={historyLen.undo > 0}
+        canRedo={historyLen.redo > 0}
+        onUndo={undo}
+        onRedo={redo}
+        status={status}
+        live={settings.liveTranscription}
+        providerLabel={PROVIDER_LABEL[transcriber.name === 'mock' ? 'mock' : settings.provider]}
+        onTranscribeNow={transcribeNow}
+        onRetranscribeAll={retranscribe}
+        onExport={exportMarkdown}
+        onOpenPages={() => setShowPages(true)}
+        onOpenSettings={() => setShowSettings(true)}
+        onShowTips={() => setShowTips(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        compact={compact}
+      />
 
       {transcriber.name === 'mock' && (
-        <div className="banner">
-          Running the <strong>mock</strong> transcriber (placeholder text, so you can try the ink ↔ digital flow). Pick a local Ollama model or add an OpenRouter key to get real transcription.{' '}
-          <button onClick={() => setShowSettings(true)}>Choose transcriber</button>
+        <div className="banner" role="note">
+          <Icon name="info" size={18} />
+          <span className="banner-text">
+            <strong>Mock transcriber</strong> — placeholder text so you can try the ink ↔ digital flow. Pick a free local Ollama model or an OpenRouter <code>:free</code> model for real transcription.
+          </span>
+          <button type="button" className="btn" onClick={() => setShowSettings(true)}>
+            Choose model
+          </button>
         </div>
       )}
 
-      <main className={`workspace view-${view}`}>
-        {view !== 'digital' && (
-          <section className="pane ink-pane">
-            <InkCanvas
-              strokes={page.strokes}
-              tool={tool}
-              brushColor={brushColor}
-              brushSize={brushSize}
-              highlightedStrokeIds={highlighted}
-              outlines={outlines}
-              onStrokeComplete={onStrokeComplete}
-              onStrokesErased={onStrokesErased}
-              onTapStroke={onTapStroke}
-              viewport={viewport}
-              onViewportChange={setViewport}
-            />
+      <main className="workspace">
+        {!page ? (
+          <div className="workspace-empty">
+            <div className="card empty">
+              <div className="empty-art">
+                <Icon name="pen" size={28} />
+              </div>
+              <h3>No pages yet</h3>
+              <p>Start a blank page, or import strokes extracted from a PDF with scripts/pdf_to_strokes.py.</p>
+              <div className="empty-actions">
+                <button type="button" className="btn tone-primary" onClick={() => void newPage()}>
+                  <Icon name="plus" size={16} /> New page
+                </button>
+                <label className="btn">
+                  <Icon name="upload" size={16} /> Import strokes
+                  <input type="file" accept="application/json,.json" className="visually-hidden" onChange={(e) => e.target.files?.[0] && void importStrokes(e.target.files[0])} />
+                </label>
+              </div>
+            </div>
+          </div>
+        ) : view === 'split' ? (
+          <SplitPane
+            vertical={compact}
+            a={
+              <>
+                <span className="pane-label">Ink</span>
+                {inkPane}
+                {zoomChip}
+              </>
+            }
+            b={
+              <>
+                <span className="pane-label">Digital</span>
+                {digitalPane}
+              </>
+            }
+          />
+        ) : view === 'ink' ? (
+          <section className="pane single ink-pane" aria-label="Ink">
+            {inkPane}
+            {zoomChip}
           </section>
-        )}
-        {view !== 'ink' && (
-          <section className="pane digital-pane">
-            <DigitalView
-              blocks={page.blocks}
-              strokes={page.strokes}
-              selectedBlockId={selectedBlockId}
-              onSelectBlock={setSelectedBlockId}
-              onEditBlock={onEditBlock}
-              emptyHint={settings.liveTranscription ? 'Write on the ink page; pause for a second and the digital version appears here.' : 'Live transcription is off. Use "Transcribe now".'}
-            />
+        ) : (
+          <section className="pane single digital-pane" aria-label="Digital">
+            {digitalPane}
           </section>
         )}
       </main>
 
-      {SIM_ENABLED && (
+      {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={() => void flushNow()} onBeforeDraw={() => setTool('pen')} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} />
         </Suspense>
       )}
 
-      {showPages && (
-        <aside className="drawer" onClick={() => setShowPages(false)}>
-          <div className="drawer-body" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-head">
-              <strong>Pages</strong>
-              <span className="row-actions">
-                <label className="button" title="Import strokes exported with scripts/pdf_to_strokes.py">
-                  Import…
-                  <input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && void importStrokes(e.target.files[0])} />
-                </label>
-                <button onClick={() => void newPage()}>+ New page</button>
-              </span>
-            </div>
-            {pages.map((p) => (
-              <div key={p.id} className={`page-row ${p.id === page.id ? 'active' : ''}`}>
-                <button className="page-open" onClick={() => openPage(p)}>
-                  <span>{p.title || 'Untitled'}</span>
-                  <small>
-                    {p.strokes.length} strokes · {p.blocks.length} blocks · {new Date(p.updatedAt).toLocaleString()}
-                  </small>
-                </button>
-                <button className="icon" onClick={() => void deletePage(p)} title="Delete">
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </aside>
-      )}
+      <PagesDrawer open={showPages} pages={pages} currentId={page?.id ?? null} onClose={() => setShowPages(false)} onOpen={openPage} onNew={() => void newPage()} onImport={(f) => void importStrokes(f)} onRename={renamePage} onDelete={(p) => void deletePage(p)} />
 
-      {showSettings && (
-        <SettingsPanel
-          settings={settings}
-          corrections={corrections}
-          onChange={setSettings}
-          onClose={() => setShowSettings(false)}
-          onClearCorrections={async () => {
-            await db.clearCorrections();
-            setCorrections([]);
+      <SettingsDrawer
+        open={showSettings}
+        settings={settings}
+        corrections={corrections}
+        themePref={themePref}
+        onThemePref={setThemePref}
+        onChange={setSettings}
+        onClose={() => setShowSettings(false)}
+        onClearCorrections={async () => {
+          await db.clearCorrections();
+          setCorrections([]);
+        }}
+        onShowTips={() => {
+          setShowSettings(false);
+          setShowTips(true);
+        }}
+      />
+
+      {showTips && (
+        <Onboarding
+          onClose={closeTips}
+          onChooseModel={() => {
+            closeTips();
+            setShowSettings(true);
           }}
         />
       )}
+
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button type="button" onClick={() => (toast.action!.run(), setToast(null))}>
+              {toast.action.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
-  );
-}
-
-function SettingsPanel({
-  settings,
-  corrections,
-  onChange,
-  onClose,
-  onClearCorrections,
-}: {
-  settings: AppSettings;
-  corrections: Correction[];
-  onChange: (s: AppSettings) => void;
-  onClose: () => void;
-  onClearCorrections: () => Promise<void>;
-}) {
-  const [habits, setHabits] = useState(settings.habits.join('\n'));
-  const [glossary, setGlossary] = useState(settings.glossary.join(', '));
-  const [probed, setProbed] = useState<{ url: string; status: OllamaStatus } | null>(null);
-  const [probeTick, setProbeTick] = useState(0);
-  useEffect(() => {
-    if (settings.provider !== 'ollama') return;
-    const ctrl = new AbortController();
-    const url = settings.ollamaUrl;
-    const run = () => void probeOllama(url, ctrl.signal).then((status) => !ctrl.signal.aborted && setProbed({ url, status }));
-    const t = window.setTimeout(run, 300);
-    const every = window.setInterval(run, OLLAMA_REPROBE_MS);
-    return () => {
-      window.clearTimeout(t);
-      window.clearInterval(every);
-      ctrl.abort();
-    };
-  }, [settings.provider, settings.ollamaUrl, probeTick]);
-  const ollama = probed?.url === settings.ollamaUrl ? probed.status : undefined;
-  const commitText = () =>
-    onChange({
-      ...settings,
-      habits: habits.split('\n').map((s) => s.trim()).filter(Boolean),
-      glossary: glossary.split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
-    });
-
-  return (
-    <aside className="drawer right" onClick={onClose}>
-      <div className="drawer-body" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head">
-          <strong>Settings</strong>
-          <button onClick={onClose}>Close</button>
-        </div>
-
-        <h4>Transcriber</h4>
-        <div className="segmented">
-          {(['mock', 'ollama', 'openrouter'] as const).map((p) => (
-            <button key={p} className={settings.provider === p ? 'active' : ''} onClick={() => onChange({ ...settings, provider: p })}>
-              {p === 'mock' ? 'Mock' : p === 'ollama' ? 'Ollama (local)' : 'OpenRouter'}
-            </button>
-          ))}
-        </div>
-
-        {settings.provider === 'ollama' && (
-          <>
-            <label>
-              Ollama URL
-              <input value={settings.ollamaUrl} onChange={(e) => onChange({ ...settings, ollamaUrl: e.target.value.trim() })} placeholder="http://localhost:11434" />
-            </label>
-            <label>
-              Vision model
-              <input list="ollama-models" value={settings.ollamaModel} onChange={(e) => onChange({ ...settings, ollamaModel: e.target.value.trim() })} />
-              <datalist id="ollama-models">
-                {[...new Set([...(ollama?.models ?? []), ...OLLAMA_VISION_MODELS])].map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </label>
-            <p className="probe">
-              {ollama === undefined ? (
-                'Checking Ollama…'
-              ) : ollama.reachable ? (
-                ollama.models.includes(settings.ollamaModel) ? (
-                  <>Connected · {ollama.models.length} vision model{ollama.models.length === 1 ? '' : 's'} available.</>
-                ) : ollama.textOnly.includes(settings.ollamaModel) ? (
-                  <>
-                    <code>{settings.ollamaModel}</code> is text-only and can't read ink. Pick a vision model{ollama.models.length ? <> ({ollama.models.join(', ')})</> : null} or run <code>ollama pull {DEFAULT_OLLAMA_MODEL}</code>.
-                  </>
-                ) : (
-                  <>
-                    Connected, but <code>{settings.ollamaModel}</code> is not pulled. Run <code>ollama pull {settings.ollamaModel}</code>
-                    {ollama.models.length ? <> or pick one of: {ollama.models.join(', ')}</> : null}.
-                  </>
-                )
-              ) : (
-                <>
-                  Can't reach Ollama at <code>{settings.ollamaUrl}</code> ({ollama.error}). Install from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com</a>, then <code>ollama pull {settings.ollamaModel}</code>.
-                  If the app is not on localhost, start Ollama with <code>OLLAMA_ORIGINS="{window.location.origin}"</code>.
-                </>
-              )}{' '}
-              <button className="link" onClick={() => setProbeTick((n) => n + 1)}>
-                Re-check
-              </button>
-            </p>
-          </>
-        )}
-
-        {settings.provider === 'openrouter' && (
-          <>
-            <label>
-              OpenRouter API key
-              <input type="password" value={settings.openRouterApiKey} onChange={(e) => onChange({ ...settings, openRouterApiKey: e.target.value.trim() })} placeholder="sk-or-…" autoComplete="off" />
-              <small>
-                Stored only in this browser. Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">openrouter.ai/keys</a>; models ending in <code>:free</code> cost nothing.
-              </small>
-            </label>
-            <label>
-              Vision model
-              <input list="models" value={settings.visionModel} onChange={(e) => onChange({ ...settings, visionModel: e.target.value.trim() })} />
-              <datalist id="models">
-                <option value="dots-studio/dots-3-note-preview:free" />
-                <option value="nvidia/nemotron-3.5-super-vl:free" />
-                <option value="google/gemma-4-31b-it:free" />
-                <option value="google/gemma-4-26b-a4b-it:free" />
-                <option value="google/gemini-2.5-flash" />
-                <option value="google/gemini-2.5-pro" />
-                <option value="openai/gpt-4o" />
-                <option value="anthropic/claude-sonnet-4" />
-              </datalist>
-            </label>
-          </>
-        )}
-
-        <label className="row">
-          <input type="checkbox" checked={settings.liveTranscription} onChange={(e) => onChange({ ...settings, liveTranscription: e.target.checked })} />
-          Transcribe live while I write
-        </label>
-        <label>
-          What gets sent after a pause
-          <select value={settings.scope} onChange={(e) => onChange({ ...settings, scope: e.target.value as AppSettings['scope'] })}>
-            <option value="page">Whole page (best accuracy — models need the context)</option>
-            <option value="region">Only the lines I changed (cheaper, worse on messy writing)</option>
-          </select>
-        </label>
-
-        <h4>Your handwriting profile</h4>
-        <label>
-          Habits (one per line — sent with every transcription)
-          <textarea rows={4} value={habits} onChange={(e) => setHabits(e.target.value)} onBlur={commitText} placeholder={'I write footnotes with * and define them at the bottom of the page\nMy 7s have a cross bar\nI use → to mean "leads to"'} />
-        </label>
-        <label>
-          Glossary (terms you write often)
-          <textarea rows={3} value={glossary} onChange={(e) => setGlossary(e.target.value)} onBlur={commitText} placeholder="RLHF, PPO, minimax, backprop" />
-        </label>
-        <p>
-          <strong>{corrections.length}</strong> corrections captured. Each time you fix a block in the Digital view, the ink crop + your text is saved; the most recent ones are sent as examples with every transcription, and the words
-          the model got wrong become glossary hints. This dataset is also what a future per-user fine-tune will train on.
-        </p>
-        {corrections.length > 0 && (
-          <div className="corrections">
-            {[...corrections]
-              .sort((a, b) => b.createdAt - a.createdAt)
-              .slice(0, 8)
-              .map((c) => (
-                <div key={c.id} className="correction">
-                  {c.imageDataUrl && <img src={c.imageDataUrl} alt="" />}
-                  <div>
-                    <s>{c.modelText}</s>
-                    <div>{c.userText}</div>
-                  </div>
-                </div>
-              ))}
-            <button
-              onClick={() => {
-                const blob = new Blob([JSON.stringify(corrections, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'inkmind-corrections.json';
-                a.click();
-              }}
-            >
-              Export dataset (.json)
-            </button>
-            <button onClick={() => void onClearCorrections()}>Clear corrections</button>
-          </div>
-        )}
-      </div>
-    </aside>
   );
 }

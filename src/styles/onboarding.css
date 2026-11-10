@@ -1,0 +1,16 @@
+.onboarding-scrim { position: fixed; inset: 0; z-index: 55; background: var(--scrim); display: grid; place-items: center; padding: var(--s-4); animation: fade-in var(--t-med) var(--ease); }
+.onboarding {
+  width: min(560px, 100%); background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-3);
+  padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); animation: rise var(--t-med) var(--ease);
+}
+.onboarding header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.onboarding h2 { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -0.02em; }
+.onboarding header p { color: var(--fg-3); font-size: var(--fs-sm); margin-top: 2px; }
+.onboarding ol { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s-2); }
+.onboarding li { display: grid; grid-template-columns: 40px 1fr; gap: var(--s-3); align-items: start; padding: var(--s-3); border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); }
+.onboarding li .step-icon { width: 40px; height: 40px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.onboarding li strong { display: block; font-weight: 600; margin-bottom: 2px; }
+.onboarding li p { font-size: var(--fs-sm); color: var(--fg-2); }
+.onboarding footer { display: flex; gap: var(--s-2); justify-content: flex-end; flex-wrap: wrap; }
+.onboarding footer .btn { min-height: 40px; }
+@media (max-width: 520px) { .onboarding { padding: var(--s-4); } .onboarding li { grid-template-columns: 32px 1fr; } .onboarding li .step-icon { width: 32px; height: 32px; } }

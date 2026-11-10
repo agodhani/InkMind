@@ -2,35 +2,49 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { renderStrokesToPng } from '../transcribe/render';
+import { Icon } from '../ui/icons';
+import { Kbd } from '../ui/primitives';
 
 export interface DigitalViewProps {
   blocks: DigitalBlock[];
   strokes: InkStroke[];
   selectedBlockId: string | null;
   onSelectBlock: (id: string | null) => void;
+  /** Pointer hover over a block (null on leave) so the ink pane can light up its strokes. */
+  onHoverBlock?: (id: string | null) => void;
   onEditBlock: (block: DigitalBlock, newText: string) => void;
   emptyHint?: string;
 }
 
-export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onEditBlock, emptyHint }: DigitalViewProps) {
+export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onEditBlock, emptyHint }: DigitalViewProps) {
   const ordered = useMemo(() => sortBlocksForReading(blocks), [blocks]);
   const strokeById = useMemo(() => new Map(strokes.map((s) => [s.id, s])), [strokes]);
   const footnotes = ordered.filter((b) => b.kind === 'footnote_def');
   const main = ordered.filter((b) => b.kind !== 'footnote_def');
 
   if (blocks.length === 0) {
-    return <div className="digital-view empty">{emptyHint ?? 'Write on the ink page; the digital version appears here.'}</div>;
+    return (
+      <div className="digital-view empty">
+        <div className="empty">
+          <div className="empty-art">
+            <Icon name="digital" size={28} />
+          </div>
+          <h3>Nothing transcribed yet</h3>
+          <p>{emptyHint ?? 'Write on the ink page; the digital version appears here.'}</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="digital-view" onClick={() => onSelectBlock(null)}>
       {main.map((b) => (
-        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onEdit={onEditBlock} />
+        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onEdit={onEditBlock} />
       ))}
       {footnotes.length > 0 && (
         <div className="footnotes">
           {footnotes.map((b) => (
-            <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onEdit={onEditBlock} />
+            <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onEdit={onEditBlock} />
           ))}
         </div>
       )}
@@ -43,10 +57,11 @@ interface BlockViewProps {
   strokeById: Map<string, InkStroke>;
   selected: boolean;
   onSelect: (id: string | null) => void;
+  onHover?: (id: string | null) => void;
   onEdit: (block: DigitalBlock, newText: string) => void;
 }
 
-function BlockView({ block, strokeById, selected, onSelect, onEdit }: BlockViewProps) {
+function BlockView({ block, strokeById, selected, onSelect, onHover, onEdit }: BlockViewProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(block.text);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -89,8 +104,26 @@ function BlockView({ block, strokeById, selected, onSelect, onEdit }: BlockViewP
         e.stopPropagation();
         startEditing();
       }}
-      title={`${block.kind} · confidence ${Math.round(block.confidence * 100)}%${block.userEdited ? ' · edited by you' : ''}\nDouble-tap to correct`}
+      onPointerEnter={(e) => e.pointerType === 'mouse' && onHover?.(block.id)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && onHover?.(null)}
+      onKeyDown={(e) => {
+        if (editing) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          startEditing();
+        }
+      }}
+      tabIndex={0}
+      aria-label={`${block.kind.replace('_', ' ')} block${block.userEdited ? ', corrected by you' : block.confidence < 0.5 ? ', low confidence' : ''}`}
     >
+      {selected && !editing && (
+        <div className="block-tools" onClick={(e) => e.stopPropagation()}>
+          <span className={`block-meta ${block.userEdited ? 'edited' : block.confidence < 0.5 ? 'low' : ''}`}>{block.userEdited ? 'Corrected by you' : `${block.kind.replace('_', ' ')} · ${Math.round(block.confidence * 100)}%`}</span>
+          <button type="button" className="btn tone-primary" onClick={startEditing} data-tip="Double-tap the block also works" data-tip-placement="top">
+            <Icon name="edit" size={14} /> Correct
+          </button>
+        </div>
+      )}
       {block.kind === 'diagram' && <DiagramCrop block={block} strokeById={strokeById} />}
       {editing ? (
         <textarea
@@ -103,7 +136,9 @@ function BlockView({ block, strokeById, selected, onSelect, onEdit }: BlockViewP
             e.target.style.height = `${e.target.scrollHeight}px`;
           }}
           onBlur={commit}
+          aria-label="Correct the transcription"
           onKeyDown={(e) => {
+            e.stopPropagation();
             if (e.key === 'Escape') {
               setDraft(block.text);
               setEditing(false);
@@ -114,6 +149,17 @@ function BlockView({ block, strokeById, selected, onSelect, onEdit }: BlockViewP
         />
       ) : (
         <BlockText block={block} />
+      )}
+      {editing && (
+        <div className="editor-hint">
+          <span>
+            <Kbd>Ctrl</Kbd>+<Kbd>↵</Kbd> save
+          </span>
+          <span>
+            <Kbd>Esc</Kbd> cancel
+          </span>
+          <span>Saved as an example of your handwriting.</span>
+        </div>
       )}
     </div>
   );
