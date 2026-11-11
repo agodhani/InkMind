@@ -84,7 +84,7 @@ describe('analyseInk', () => {
     expect(a.figures[0].kind).toBe('flowchart');
     expect(a.figures[0].groupIndices).toEqual(groups.map((g) => g.index));
     expect(a.figures[0].edges).toHaveLength(1);
-    expect(a.figures[0].summary).toMatch(/arrows: group \d → group \d/);
+    expect(a.figures[0].summary).toMatch(/edges: n1 → n2/);
     const arrowGroup = groups.find((g) => g.strokeIds.includes(strokes[1].id))!;
     expect(a.hints.get(arrowGroup.index)).toMatch(/arrow → right/);
   });

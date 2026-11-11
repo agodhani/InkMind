@@ -34,4 +34,32 @@ describe('pageToMarkdown', () => {
     expect(md.trimEnd().endsWith('[^star]: proximal policy optimisation')).toBe(true);
     expect(md.indexOf('## PPO step')).toBeLessThan(md.indexOf('![[page_1/g.png]]'));
   });
+
+  it('writes a diagram\'s table, nested shapes, step order and relations under its embed', () => {
+    const page: Page = {
+      id: 'p',
+      title: 'T',
+      strokes: [],
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: [
+        {
+          id: 'f', kind: 'diagram', text: 'Shape: flow.', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1,
+          figure: {
+            kind: 'flowchart', shapes: [], labels: ['start', 'end'],
+            edges: [{ from: 'start', to: 'end', label: 'yes' }, { from: 'end', to: 'end', kind: 'self-loop' }, { from: 'end', to: 'start', kind: 'arrow', inferred: true }],
+            sequence: ['start', 'end'],
+            nodes: [{ id: 'n1', label: 'system', shape: 'rectangle' }, { id: 'n2', label: 'start', parent: 'n1' }, { id: 'n3', label: 'end', parent: 'n1' }],
+          },
+        },
+        {
+          id: 't', kind: 'diagram', text: '', bbox: { left: 0, top: 100, right: 10, bottom: 110 }, strokeIds: [], confidence: 1,
+          figure: { kind: 'table', shapes: [], labels: [], edges: [], cells: [['name', 'qty'], ['nut', '12']] },
+        },
+      ],
+    };
+    const md = pageToMarkdown(page);
+    expect(md).toContain('![[p/f.png]]\n*Shape: flow.*\nLabels: `start`, `end`\n- system (rectangle)\n  - start\n  - end\n1. start\n2. end\n\n- start → end (yes)\n- end ↺\n- end → start *(from ink geometry)*');
+    expect(md).toContain('![[p/t.png]]\n\n| name | qty |\n| --- | --- |\n| nut | 12 |');
+  });
 });
