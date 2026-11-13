@@ -11,7 +11,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   if (!obj) return undefined;
   const kind = normaliseFigureKind(firstString(obj, ['kind', 'type', 'figure_kind', 'figureKind', 'category']), fallbackKind);
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
-  const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices']);
+  const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
   const byRef = (ref: string) => ref.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);

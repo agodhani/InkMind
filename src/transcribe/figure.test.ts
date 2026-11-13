@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, stringList } from './figure';
 
 describe('normaliseFigure', () => {
+  it('normalises compact names without invented geometry', () => {
+    expect(normaliseFigure({ kind: 'flowchart', labels: ['start'], names: { n1: 'start', n2: 'end' } })).toEqual({ kind: 'flowchart', shapes: [], labels: ['start', 'end'], edges: [], nodes: [{ id: 'n1', label: 'start' }, { id: 'n2', label: 'end' }] });
+    expect(normaliseFigure({ names: {} })).toBeUndefined();
+    expect(normaliseFigure({ names: null })).toBeUndefined();
+  });
   it('does not split edge names on "to" inside a word', () => {
     expect(normaliseFigure({ kind: 'flowchart', edges: 'motor -> stop' })?.edges).toEqual([{ from: 'motor', to: 'stop' }]);
     expect(normaliseFigure({ kind: 'flowchart', edges: 'start to stop' })?.edges).toEqual([{ from: 'start', to: 'stop' }]);

@@ -39,6 +39,7 @@ export interface Args {
   dataset: string;
   provider: 'ollama' | 'openrouter';
   model: string;
+  prompt?: 'compact' | 'full';
   pages?: number[];
   /** pdf = raster of the original page; strokes = the app's own rendering of the extracted ink. */
   image: 'pdf' | 'strokes';
@@ -67,6 +68,7 @@ export function parseArgs(): Args {
     provider,
     model: a.model ?? (provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
+    prompt: a.prompt === 'compact' || a.prompt === 'full' ? a.prompt : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),
     context: Number(a.context ?? 0),
@@ -236,7 +238,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
 
   const transcriber: Transcriber =
     args.provider === 'ollama'
-      ? new OllamaTranscriber({ url: args.url, model: args.model })
+      ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt })
       : new OpenRouterTranscriber({ apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY ?? '', model: args.model, siteName: 'InkMind eval' });
 
   const rows: string[] = [];

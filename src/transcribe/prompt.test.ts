@@ -118,6 +118,11 @@ describe('buildUserPrompt shape hints', () => {
       { index: 2, strokeIds: ['d'], bbox: { left: 0, top: 200, right: 300, bottom: 220 }, writtenOrder: 2 },
     ];
     const prompt = buildUserPrompt({ ...base, groups } as never);
+    const compact = buildUserPrompt({ ...base, groups } as never, 'compact');
+    expect(compact).toContain('Figure 0: groupIndices=[0,1]');
+    expect(compact).toContain('label groups=[1]');
+    expect(compact).not.toContain('rectangle 100×80');
+    expect(compact).not.toContain('keep every listed edge');
     expect(prompt).toContain('0: [0,0,100,80] n=1 order=0 — closed shape: rectangle 100×80 px — part of Figure A (drawing)');
     expect(prompt).toContain('2: [0,200,300,220] n=1 order=2\n');
     expect(prompt.match(/Figure A \(flowchart/g)).toHaveLength(1);
