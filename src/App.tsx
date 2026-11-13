@@ -169,6 +169,12 @@ export default function App() {
     if (ids.length) markStrokesDeleted(ids);
   }, [page, pushHistory, updatePage, markStrokesDeleted]);
 
+  const onSimSetBlocks = useCallback((blocks: DigitalBlock[], strokes: InkStroke[]) => {
+    if (!page) return;
+    pushHistory(page);
+    updatePage(page.id, p => ({ ...p, strokes, blocks }));
+  }, [page, pushHistory, updatePage]);
+
   const onStrokesErased = useCallback(
     (ids: string[]) => {
       if (!page) return;
@@ -534,7 +540,7 @@ export default function App() {
 
       {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
         </Suspense>
       )}
 

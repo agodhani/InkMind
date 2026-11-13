@@ -12,13 +12,16 @@ import { MESSINESS_LEVELS, type Messiness } from './ink';
 import { SCENE_KINDS, buildScene, type Scene, type SceneKind } from './scenes';
 import { diagramMetrics, edgeMatches, pct, predictedEdges, relationMetrics, type FigureExpectation } from './metrics';
 import { alignStrokes, replayStrokes } from './replay';
-import { suiteMarkdown, suitePlan, summariseSuite, type SuiteResult } from './suite';
+import { suiteMarkdown, suitePlan, type SuiteResult } from './suite';
+import { expectedBlocks } from './expectedBlocks';
+import { SuiteResults } from './SuiteResults';
 
 export interface SimulatorPanelProps {
   page: Page;
   viewport: Viewport;
   onViewportChange: (v: Viewport) => void;
   onInjectStrokes: (strokes: InkStroke[]) => void;
+  onSetBlocks: (blocks: DigitalBlock[], strokes: InkStroke[]) => void;
   onClearPage: () => void;
   onTranscribeNow: () => void;
   /** Called before a replay so the canvas is in pen mode (an eraser would erase instead of draw). */
@@ -26,13 +29,6 @@ export interface SimulatorPanelProps {
   /** Live transcription state; lets "Run suite" wait for each scene's transcription to settle. */
   transcriptionState?: 'idle' | 'waiting' | 'running' | 'error';
 }
-
-const SPEEDS = [
-  { value: 1, label: '1× (real time)' },
-  { value: 3, label: '3×' },
-  { value: 10, label: '10×' },
-  { value: 40, label: '40×' },
-];
 
 const SUITE_SIZES = [4, 8, 15, 30];
 const SUITE_TIMEOUT_MS = 6 * 60_000;
@@ -69,7 +65,7 @@ function scoreScene(drawn: Drawn, pageStrokes: InkStroke[], blocks: DigitalBlock
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle' }: SimulatorPanelProps) {
+export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onSetBlocks, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle' }: SimulatorPanelProps) {
   const [kind, setKind] = useState<SceneKind>('flowchart-complex');
   const [seed, setSeed] = useState(1);
   const [messiness, setMessiness] = useState<Messiness>('normal');
@@ -147,13 +143,16 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     abortRef.current = null;
   };
 
-  const inject = (target: Scene, startIndex = pageRef.current.strokes.length) => {
+  const inject = (target: Scene, startIndex = pageRef.current.strokes.length, expected = false) => {
     setError(null);
     fitView(target);
-    setDrawn({ scene: target, startIndex });
+    setDrawn({ scene: target, startIndex: expected ? 0 : startIndex });
     setProgress([target.strokes.length, target.strokes.length]);
     const run = newId('sim');
-    onInjectStrokes(target.strokes.map((s) => ({ ...s, id: `${run}-${s.id}` })));
+    const idMap = new Map(target.strokes.map(s => [s.id, `${run}-${s.id}`]));
+    const strokes = target.strokes.map(s => ({ ...s, id: idMap.get(s.id)! }));
+    if (expected) onSetBlocks(expectedBlocks(target, idMap), strokes);
+    else onInjectStrokes(strokes);
   };
 
   const stop = () => abortRef.current?.abort();
@@ -240,6 +239,21 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     }
   };
 
+  const openScene = async (item: SuiteResult) => {
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setRunning(true);
+    setKind(item.kind); setSeed(item.seed); setMessiness(item.messiness);
+    onClearPage();
+    await nextFrame();
+    inject(buildScene(item.kind, item.seed, item.messiness), 0);
+    await sleep(300);
+    onTranscribeNow();
+    await waitSettled(ctrl.signal);
+    setRunning(false);
+    abortRef.current = null;
+  };
+
   // Map the scene's stroke ids onto the ids the page actually got (InkCanvas assigns fresh ids in Draw mode).
   const result = useMemo(() => (drawn ? scoreScene(drawn, page.strokes, page.blocks) : null), [drawn, page.strokes, page.blocks]);
   const claimed = useMemo(() => predictedEdges(page.blocks), [page.blocks]);
@@ -251,13 +265,14 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
     return [...m.entries()];
   }, []);
 
-  const summary = suite ? summariseSuite(suite.results) : null;
   const frac = (a: number, b: number) => (b ? `${a}/${b}` : '—');
 
   return (
     <aside className={`sim-panel${collapsed ? ' collapsed' : ''}`} data-testid="sim-panel">
+      <div className="sim-title"><strong>Simulator</strong><span>Scene · Run · Suite</span><button aria-expanded={!collapsed} aria-controls="sim-content" aria-label={collapsed ? 'Expand simulator' : 'Collapse simulator'} onClick={() => setCollapsed(v => !v)}>{collapsed ? 'Expand ▴' : 'Collapse ▾'}</button></div>
+      {!collapsed && <div className="sim-scroll" id="sim-content">
       <div className="sim-head">
-        <strong>Simulator</strong>
+        <fieldset><legend>Scene</legend>
         <label>
           Scene
           <select value={kind} onChange={(e) => setKind(e.target.value as SceneKind)} disabled={running}>
@@ -292,15 +307,10 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
             </button>
           ))}
         </span>
+        </fieldset><fieldset><legend>Run</legend>
         <label>
           Speed
-          <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))} disabled={running}>
-            {SPEEDS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          <input type="range" min={0} max={100} value={Math.log(speed) / Math.log(40) * 100} onChange={e => setSpeed(Math.pow(40, Number(e.target.value) / 100))} aria-valuetext={`${speed.toFixed(1)}×`} disabled={running} /><output>{speed.toFixed(1)}×</output>
         </label>
         {running ? (
           <button onClick={stop}>Stop</button>
@@ -312,11 +322,13 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         <button onClick={() => inject(scene)} disabled={running} title="Add the strokes to the page directly">
           Instant
         </button>
+        <button onClick={() => inject(scene, 0, true)} disabled={running} title="Replace page ink and digital blocks with the scene ground truth; no model call">Instant + expected blocks</button>
         <button onClick={onTranscribeNow} disabled={running}>
           Transcribe now
         </button>
-        <button onClick={clear}>Clear page</button>
-        <button onClick={() => fitView()}>Fit view</button>
+        <button onClick={clear} disabled={running}>Clear page</button>
+        <button onClick={() => fitView()} disabled={running}>Fit view</button>
+        </fieldset><fieldset><legend>Suite</legend>
         <label title="Replay N relation-bearing scenes back-to-back (normal, then messy), transcribe each and summarise">
           Suite
           <select value={suiteSize} onChange={(e) => setSuiteSize(Number(e.target.value))} disabled={running}>
@@ -331,6 +343,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         <button className="primary" onClick={() => void runSuite()} disabled={running} data-testid="sim-run-suite">
           Run suite
         </button>
+        </fieldset>
         {progress && (
           <span className="progress">
             {progress[0]}/{progress[1]} strokes
@@ -343,12 +356,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         )}
         {error && <span className="warn">{error}</span>}
         {!running && result && result.missing > 0 && <span className="warn">{result.missing} stroke(s) were not captured</span>}
-        <span className="spacer" />
-        <button className="icon" onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Expand' : 'Collapse'}>
-          {collapsed ? '▴' : '▾'}
-        </button>
       </div>
-      {!collapsed && (
         <div className="sim-body">
           <div className="sim-col">
             <h4>Scene</h4>
@@ -479,79 +487,10 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
                 ))}
               </div>
             )}
-            {suite && summary && (
-              <div className="sim-suite" data-testid="sim-suite">
-                <h4>
-                  Suite {suite.running ? `· running ${suite.current + 1}/${suite.plan.length}` : `· ${summary.scenes} scene(s), ${summary.seconds.toFixed(0)}s`}
-                </h4>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>scene</th>
-                      <th>mess</th>
-                      <th>figures</th>
-                      <th>labels</th>
-                      <th>edges</th>
-                      <th>prec.</th>
-                      <th>order</th>
-                      <th>nesting</th>
-                      <th>count</th>
-                      <th>time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suite.results.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.kind}</td>
-                        <td>{r.messiness}</td>
-                        <td>{frac(r.diagrams.detected, r.diagrams.figures)}</td>
-                        <td>{frac(r.diagrams.labelsFound, r.diagrams.labels)}</td>
-                        <td>{frac(r.relations.edgesFound, r.relations.edges)}</td>
-                        <td>{frac(r.relations.predictedMatched, r.relations.predicted)}</td>
-                        <td>{frac(r.relations.sequencesExact, r.relations.sequences)}</td>
-                        <td>{frac(r.relations.containsFound, r.relations.contains)}</td>
-                        <td>{r.relations.figureCountExact ? '✓' : '✗'}</td>
-                        <td>
-                          {r.seconds.toFixed(0)}s{r.timedOut ? ' ⏱' : ''}
-                        </td>
-                      </tr>
-                    ))}
-                    {suite.running && suite.current >= 0 && (
-                      <tr className="current">
-                        <td>{suite.plan[suite.current]?.kind}</td>
-                        <td>{suite.plan[suite.current]?.messiness}</td>
-                        <td colSpan={8}>{transcriptionState === 'running' ? 'transcribing…' : transcriptionState === 'waiting' ? 'waiting for idle…' : 'drawing…'}</td>
-                      </tr>
-                    )}
-                    {suite.results.length > 0 && (
-                      <tr className="total">
-                        <td>total</td>
-                        <td>{summary.scenes}</td>
-                        <td>{frac(summary.detected, summary.figures)}</td>
-                        <td>{frac(summary.labelsFound, summary.labels)}</td>
-                        <td>{frac(summary.edgesFound, summary.edges)}</td>
-                        <td>{frac(summary.predictedMatched, summary.predicted)}</td>
-                        <td>{frac(summary.sequencesExact, summary.sequences)}</td>
-                        <td>{frac(summary.containsFound, summary.contains)}</td>
-                        <td>
-                          {summary.countExact}/{summary.scenes}
-                        </td>
-                        <td>{summary.seconds.toFixed(0)}s</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                {!suite.running && suite.results.length > 0 && (
-                  <div className="actions">
-                    <button onClick={() => void copySuite()}>{copied ? 'Copied' : 'Copy as Markdown'}</button>
-                    <span>Seeds {suite.plan[0]?.seed}–{suite.plan[suite.plan.length - 1]?.seed}; change the seed field for a different draw.</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
-      )}
+        {suite && <SuiteResults results={suite.results} running={running} onOpen={r => void openScene(r)} onCopy={() => void copySuite()} copied={copied} />}
+      </div>}
     </aside>
   );
 }
