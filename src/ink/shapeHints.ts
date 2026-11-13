@@ -1625,7 +1625,7 @@ export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'se
   unnamed: string[];
 }
 
-export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined): GeometryFigure {
+export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined, groups?: Pick<GroupLike, 'index' | 'strokeIds'>[]): GeometryFigure {
   const names = new Map<string, string>();
   const used = new Map<string, number>();
   const unnamed: string[] = [];
@@ -1642,6 +1642,7 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
     const node: FigureNode = { id: n.id, label: names.get(n.id)!, shape: n.decision ? 'decision diamond' : n.shape };
     if (n.parent !== undefined) node.parent = n.parent;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
+    if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {

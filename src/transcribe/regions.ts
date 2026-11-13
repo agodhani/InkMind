@@ -4,7 +4,7 @@ import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
 import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
-import { cellGrid, figureCaption, resolveNodeRefs, stringList } from './figure';
+import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
@@ -191,7 +191,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     // The model may have answered with several diagram blocks for one figure: fold them into one.
     const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
-    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor));
+    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups));
     // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
     if (figure.kind === 'table' && !prior?.cells?.length) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
@@ -234,8 +234,12 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
     if (!same) out.edges.push(e);
     else if (!same.label && e.label) same.label = e.label;
   }
-  const nodes = [...(a.nodes ?? [])];
-  for (const n of b.nodes ?? []) if (!nodes.some((x) => sameText(x.label, n.label))) nodes.push(n);
+  const nodes = (a.nodes ?? []).map((n) => ({ ...n }));
+  for (const n of b.nodes ?? []) {
+    const same = nodes.find((x) => sameText(x.label, n.label));
+    if (!same) nodes.push({ ...n });
+    else if (same.strokeIds || n.strokeIds) same.strokeIds = dedupe([...(same.strokeIds ?? []), ...(n.strokeIds ?? [])]);
+  }
   if (nodes.length) out.nodes = nodes;
   const sequence = (a.sequence?.length ?? 0) >= (b.sequence?.length ?? 0) ? a.sequence : b.sequence;
   if (sequence?.length) out.sequence = sequence;
@@ -253,7 +257,7 @@ function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureN
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
 
-function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): ReturnType<typeof figureFromGeometry> {
+function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[]): ReturnType<typeof figureFromGeometry> {
   const rename = new Map<string, string>();
   for (const g of geo.nodes ?? []) {
     if (!geo.unnamed.includes(g.label)) continue;
@@ -262,6 +266,21 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
+  }
+  const pending = (geo.nodes ?? []).filter((n) => geo.unnamed.includes(n.label) && !rename.has(n.label));
+  const attached = new Set([
+    ...(geo.nodes ?? []).filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label),
+    ...(prior?.nodes?.map((n) => n.label) ?? []), ...rename.values(),
+    ...[...geo.edges, ...(prior?.edges ?? [])].flatMap((e) => e.label ? [e.label] : []),
+    ...(geo.cells?.flat() ?? []), ...(prior?.cells?.flat() ?? []),
+    ...(geo.sequence ?? []), ...(prior?.sequence ?? []),
+  ].map((s) => s.trim().toLowerCase()));
+  const unused = [...new Map(labels.flatMap(stringList).filter((s) => s.trim() && !attached.has(s.toLowerCase()) && !geo.unnamed.includes(s) && !isGroupRef(s)).map((s) => [s.toLowerCase(), s])).values()];
+  if (pending.length && unused.length === pending.length) {
+    const spatialOrder = ['left→right', 'top→bottom'].includes(fig.orderBasis) ? fig.order : [];
+    const order = dedupe([...spatialOrder, ...fig.nodes.map((n) => n.id), ...pending.map((n) => n.id)]);
+    pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
@@ -283,7 +302,7 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
  */
 export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
   const kind = fig.kind;
-  const geo = nameGeometryNodes(geoIn, prior);
+  const geo = nameGeometryNodes(geoIn, prior, fig, labels);
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
   const aliases = new Map<string, string>();
@@ -373,6 +392,65 @@ export function rawToDigitalBlock(
   };
 }
 
+function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo {
+  const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
+  const matches = new Map<string, FigureNode>();
+  const used = new Set<FigureNode>();
+  for (const basis of ['id', 'group', 'label'] as const) for (const node of newNodes) {
+    if (matches.has(node.id)) continue;
+    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'id' ? sameText(old.id, node.id)
+      : basis === 'label' ? sameText(old.label, node.label)
+      : node.group !== undefined && old.group === node.group && newNodes.filter((n) => n.group === node.group).length === 1));
+    if (candidates.length === 1) { matches.set(node.id, candidates[0]); used.add(candidates[0]); }
+  }
+  const nodeFor = (nodes: FigureNode[], ref: string) => nodes.find((n) => sameText(n.id, ref)) ?? nodes.find((n) => sameText(n.label, ref));
+  const newNodeForOld = (ref: string) => {
+    const old = nodeFor(oldNodes, ref);
+    return old && newNodes.find((n) => matches.get(n.id) === old);
+  };
+  const renamed = (ref: string) => {
+    const node = nodeFor(newNodes, ref);
+    return node ? matches.get(node.id)?.label ?? node.label : ref;
+  };
+  const edges = fresh.edges.map((edge) => {
+    const match = edited.edges.find((old) => {
+      const from = newNodeForOld(old.from), to = newNodeForOld(old.to);
+      const a = nodeFor(newNodes, edge.from), b = nodeFor(newNodes, edge.to);
+      return from && to && a && b && ((from.id === a.id && to.id === b.id) || (from.id === b.id && to.id === a.id));
+    });
+    return { ...edge, from: renamed(edge.from), to: renamed(edge.to), ...(match?.label !== undefined ? { label: match.label } : {}) };
+  });
+  const sequenceWords = new Map<string, string>();
+  for (const word of edited.sequence ?? []) {
+    const old = nodeFor(oldNodes, word);
+    if (old) sequenceWords.set(old.id, sameText(word, old.id) ? old.label : word);
+  }
+  if (edited.sequence?.length === oldNodes.length) oldNodes.forEach((node, i) => {
+    if (!sequenceWords.has(node.id) && !nodeFor(oldNodes, edited.sequence![i])) sequenceWords.set(node.id, edited.sequence![i]);
+  });
+  const sequence = fresh.sequence?.map((word, i) => {
+    const node = nodeFor(newNodes, word), old = node && matches.get(node.id);
+    if (old) return sequenceWords.get(old.id) ?? old.label;
+    if (!node && edited.sequence && edited.sequence.length === fresh.sequence?.length) return edited.sequence[i];
+    return renamed(word);
+  }) ?? edited.sequence?.filter((word) => !nodeFor(oldNodes, word) || !!newNodeForOld(word)).map((word) => nodeFor(oldNodes, word)?.label ?? word);
+  return {
+    ...fresh, labels: [...edited.labels], edges,
+    ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
+      const old = matches.get(n.id);
+      return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
+    }) } : {}),
+    ...(sequence ? { sequence } : {}),
+  };
+}
+
+function preserveEditedBlock(edited: DigitalBlock, fresh: DigitalBlock): DigitalBlock {
+  return {
+    ...fresh, id: edited.id, text: edited.text, userEdited: true,
+    ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure) : edited.figure } : {}),
+  };
+}
+
 /**
  * Replace the region's old blocks with the new ones. Keeps ids (and user edits)
  * for blocks whose text is unchanged, so the digital view stays stable.
@@ -388,9 +466,9 @@ export function mergeBlocks(existing: DigitalBlock[], replacedIds: string[], inc
   };
   const matched = incoming.map((nb) => {
     const same = take((ob) => ob.text.trim() === nb.text.trim() && ob.kind === nb.kind);
-    if (same) return { ...nb, id: same.id, userEdited: same.userEdited };
+    if (same) return same.userEdited ? preserveEditedBlock(same, nb) : { ...nb, id: same.id, userEdited: same.userEdited };
     const edited = take((ob) => !!ob.userEdited && overlapRatio(ob.bbox, nb.bbox) > 0.6);
-    if (edited) return { ...nb, id: edited.id, text: edited.text, userEdited: true };
+    if (edited) return preserveEditedBlock(edited, nb);
     return nb;
   });
   return sortBlocksForReading([...kept, ...matched]);
@@ -411,7 +489,8 @@ export function protectEditedBlocks(
   incoming: DigitalBlock[],
   changedStrokeIds: Set<string>,
 ): { replacedIds: string[]; incoming: DigitalBlock[] } {
-  const protectedBlocks = existing.filter((b) => b.userEdited && b.strokeIds.length > 0 && !b.strokeIds.some((id) => changedStrokeIds.has(id)));
+  const protectedBlocks = existing.filter((b) => b.userEdited && b.strokeIds.length > 0 && !b.strokeIds.some((id) => changedStrokeIds.has(id)) &&
+    !(b.kind === 'diagram' && incoming.some((next) => next.kind === 'diagram' && next.strokeIds.some((id) => b.strokeIds.includes(id)) && next.strokeIds.some((id) => changedStrokeIds.has(id)))));
   if (protectedBlocks.length === 0) return { replacedIds: existing.map((b) => b.id), incoming };
   const strokeOwner = new Map(protectedBlocks.flatMap((b) => b.strokeIds.map((id) => [id, b] as const)));
   const protectedIds = new Set(protectedBlocks.map((b) => b.id));

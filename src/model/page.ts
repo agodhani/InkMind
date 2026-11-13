@@ -44,6 +44,8 @@ export interface FigureEdge {
 export interface FigureNode {
   id: string;
   label: string;
+  /** Ink belonging to the node's shape and label groups. */
+  strokeIds?: string[];
   shape?: string;
   /** id of the enclosing node when this shape is drawn inside another one. */
   parent?: string;

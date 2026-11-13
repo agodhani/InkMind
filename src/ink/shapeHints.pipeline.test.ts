@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyseInk, figureFromGeometry } from './shapeHints';
+import { analyseInk, figureFromGeometry, type FigureHint } from './shapeHints';
 import { buildStrokeGroups, figuresOf, reconcileFigureBlocks } from '../transcribe/regions';
 import { buildScene } from '../sim/scenes';
 import { DEFAULT_INK_STYLE, InkWriter, MESS_PROFILES, inkStyleFor, type Messiness } from '../sim/ink';
@@ -13,6 +13,28 @@ function pen(messiness: Messiness): Pen {
 }
 
 describe('geometry pipeline regressions', () => {
+  it('records the union of shape and label group strokes without duplicates', () => {
+    const fig: FigureHint = { id: 0, kind: 'shape', shapes: ['rectangle'], groupIndices: [0, 1, 2], labelGroups: [1], labelInside: { 1: 0 }, labelHostGroups: [], edges: [], relations: [], order: [], orderBasis: '', summary: '', nodes: [
+      { id: 'n1', shape: 'rectangle', groupIndex: 0, labelGroup: 1, bbox: { left: 0, top: 0, right: 100, bottom: 100 } },
+      { id: 'n2', shape: 'rectangle', groupIndex: 2, labelGroup: 2, parent: 'n1', bbox: { left: 20, top: 20, right: 80, bottom: 80 } },
+    ] };
+    const groups = [{ index: 0, strokeIds: ['shape', 'shared'] }, { index: 1, strokeIds: ['label', 'shared'] }, { index: 2, strokeIds: ['inner'] }, { index: 3, strokeIds: ['arrow'] }];
+    const figure = figureFromGeometry(fig, () => undefined, groups);
+    expect(figure.nodes!.map((n) => n.strokeIds)).toEqual([['shape', 'shared', 'label'], ['inner']]);
+    expect(figureFromGeometry(fig, () => undefined, []).nodes!.map((n) => n.strokeIds)).toEqual([[], []]);
+    expect(figureFromGeometry({ ...fig, nodes: [] }, () => undefined, groups).nodes).toEqual([]);
+  });
+  it('keeps node ink membership through geometry reconciliation and JSON persistence', () => {
+    const scene = buildScene('nested-boxes', 201, 'neat');
+    const groups = buildStrokeGroups(scene.strokes), hint = figuresOf(groups)[0];
+    const figure = reconcileFigureBlocks([], groups, scene.strokes)[0].figure!;
+    for (const node of hint.nodes) {
+      const expected = [...new Set(groups.filter((g) => g.index === node.groupIndex || g.index === node.labelGroup).flatMap((g) => g.strokeIds))];
+      expect(figure.nodes!.find((n) => n.id === node.id)!.strokeIds).toEqual(expected);
+      expect(expected.length).toBeGreaterThan(0);
+    }
+    expect(JSON.parse(JSON.stringify(figure)).nodes).toEqual(figure.nodes);
+  });
   it.each(['neat', 'messy'] as const)('recovers nested multi-stroke rectangles instead of a table (%s)', (messiness) => {
     const scene = buildScene('nested-boxes', 201, messiness);
     const fig = figuresOf(buildStrokeGroups(scene.strokes))[0];
