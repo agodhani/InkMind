@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { FigureInfo } from '../model/page';
-import { edgeMarks, figureCorrectionText, figureToMermaid, mindMapLayout, renameFigureLabel, shapeGlyph, stepNode } from './figureView';
+import { edgeMarks, figureCorrectionText, figureToMermaid, mindMapLayout, renameFigureLabel, shapeGlyph, stepNode, uncoveredFigureLabels } from './figureView';
 import { glossaryFromCorrections } from '../profile/handwritingProfile';
 
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('deduplicates uncovered annotations without losing legacy or empty-label fallbacks', () => {
+    expect(uncoveredFigureLabels(figure())).toEqual([]);
+    expect(uncoveredFigureLabels(figure({ labels: ['  ', 'Note', ' note '] }))).toEqual(['Note']);
+    expect(uncoveredFigureLabels(figure({ kind: 'mindmap', labels: ['Hub', 'Other'] }))).toEqual([]);
+    const labels = ['cell', 'Node', 'next', 'YES', 'finish', 'Note'];
+    expect(uncoveredFigureLabels(figure({ labels, cells: [['Cell']], nodes: [{ id: 'n', label: 'node' }], sequence: ['Next'], edges: [{ from: 'n', to: 'Finish', label: 'yes' }] }))).toEqual(['Note']);
+    expect(labels).toEqual(['cell', 'Node', 'next', 'YES', 'finish', 'Note']);
+  });
   it('lays out every depth, disconnected component and cycle of H-A-B-C-D plus X-Y', () => {
     const fig = figure({ kind: 'mindmap', nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'D', parent: 'c' }, { id: 'x', label: 'X' }, { id: 'y', label: 'Y', parent: 'x' }], edges: [{ from: 'h', to: 'a' }, { from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'c', to: 'a', label: 'cycle' }, { from: 'x', to: 'y' }] });
     const map = mindMapLayout(fig)!;

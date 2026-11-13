@@ -3,6 +3,13 @@ import { figureLines, pageToMarkdown } from './markdown';
 import type { Page } from '../model/page';
 
 describe('pageToMarkdown', () => {
+  it('exports only uncovered free annotations when nodes, cells or Mermaid cover other labels', () => {
+    const base = { id: 'f', kind: 'diagram' as const, text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1 };
+    const flow = figureLines({ ...base, figure: { kind: 'flowchart', shapes: [], labels: [' start ', 'YES', 'step', 'Finish', 'Free note', 'free NOTE'], nodes: [{ id: 'n', label: 'Start' }], sequence: ['Step'], edges: [{ from: 'Start', to: 'Finish', label: 'yes' }] } });
+    expect(flow[0]).toBe('Labels: `Free note`');
+    const table = figureLines({ ...base, figure: { kind: 'table', shapes: [], labels: [' cell ', 'Free note'], cells: [['Cell']], edges: [] } });
+    expect(table[0]).toBe('Labels: `Free note`');
+  });
   it('exports deep mind-map descendants, disconnected branches and leftover links', () => {
     const lines = figureLines({ id: 'map', kind: 'diagram', text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1, figure: { kind: 'mindmap', shapes: [], labels: [], nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'D', parent: 'c' }, { id: 'x', label: 'X' }, { id: 'y', label: 'Y', parent: 'x' }], edges: [{ from: 'x', to: 'y', label: 'detached' }] } }).join('\n');
     expect(lines).toContain('- H\n  - A\n    - B\n      - C\n        - D');

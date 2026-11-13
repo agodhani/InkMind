@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type { DigitalBlock, FigureNode, InkStroke } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
 import { renderStrokesToPng } from '../transcribe/render';
-import { edgeMarks, mindMapLayout, shapeGlyph, stepNode, type MindMapBranch } from './figureView';
+import { edgeMarks, mindMapLayout, shapeGlyph, stepNode, uncoveredFigureLabels, type MindMapBranch } from './figureView';
 import { nodeInkStrokes } from './figureInk';
 import { FigureEditor, type FigureEdit } from './FigureEditor';
 
@@ -47,6 +47,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
   const marks = fig ? edgeMarks(fig) : [];
   const mindMap = fig?.kind === 'mindmap' ? mindMapLayout(fig) : null;
   const linkIndices = mindMap?.remainingEdges ?? fig?.edges.map((_, i) => i) ?? [];
+  const annotations = fig ? uncoveredFigureLabels(fig) : [];
   const stepInk = useMemo(() => new Map((fig?.sequence ?? []).map(step => [step, nodeInkStrokes(block, stepNode(fig!, step), [...strokeById.values()])])), [block, fig, strokeById]);
   useEffect(() => () => onHighlightStrokes?.(null), [onHighlightStrokes]);
   const highlight = (step: string | null) => {
@@ -102,7 +103,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
               {fig.cells.slice(1).map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && fig.cells![0][0] === '' ? <th scope="row" key={j}>{cell}</th> : <td key={j}>{cell}</td>)}</tr>)}
             </tbody></table>
           </div></section>}
-          {!fig.nodes?.length && !fig.cells?.length && !!fig.labels.length && <section aria-label="Labels"><h4>Labels</h4><div className="diagram-labels">{fig.labels.map((label, i) => <span className="chip chip-label" key={i}>{label}</span>)}</div></section>}
+          {!!annotations.length && <section aria-label="Labels"><h4>Labels</h4><div className="diagram-labels">{annotations.map((label, i) => <span className="chip chip-label" key={i}>{label}</span>)}</div></section>}
         </div>
       </>}
     </div>

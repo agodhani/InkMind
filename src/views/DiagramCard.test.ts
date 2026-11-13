@@ -29,6 +29,12 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('shows only uncovered free annotations beside nodes, cells, links and steps', () => {
+    render(block({ labels: [' start ', 'CELL', 'YES', 'step', 'Finish', 'Free note', 'free NOTE'], nodes: [{ id: 'n', label: 'Start' }], cells: [['Cell']], sequence: ['Step'], edges: [{ from: 'Start', to: 'Finish', label: 'yes' }] }));
+    const labels = container.querySelector('[aria-label="Labels"]');
+    expect(labels?.textContent).toBe('LabelsFree note');
+    expect(labels?.querySelectorAll('.chip')).toHaveLength(1);
+  });
   it('renders deep and disconnected mind-map descendants and leftover cycle links', () => {
     render(block({ kind: 'mindmap', nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'Deep D', parent: 'c' }, { id: 'x', label: 'Orphan X' }, { id: 'y', label: 'Orphan Y', parent: 'x' }], edges: [{ from: 'c', to: 'a', label: 'cycle' }, { from: 'x', to: 'y' }] }));
     expect(container.querySelector('[aria-label="Mind map"]')!.textContent).toContain('Deep D');

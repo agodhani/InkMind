@@ -2,6 +2,20 @@ import type { FigureInfo, FigureNode } from '../model/page';
 
 const key = (value: string) => value.trim().toLowerCase();
 
+export function uncoveredFigureLabels(fig: FigureInfo): string[] {
+  if (fig.kind === 'mindmap' && !fig.nodes?.length && !fig.edges.length) return [];
+  const covered = new Set([
+    ...(fig.nodes ?? []).map(node => node.label), ...(fig.cells ?? []).flat(), ...(fig.sequence ?? []),
+    ...fig.edges.flatMap(edge => [edge.from, edge.to, edge.label ?? '']),
+  ].map(key));
+  return fig.labels.filter(label => {
+    const normalized = key(label);
+    if (!normalized || covered.has(normalized)) return false;
+    covered.add(normalized);
+    return true;
+  });
+}
+
 export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<string, string>): FigureInfo {
   if (!labelsById.size) return fig;
   const nodes = fig.nodes ?? [];
