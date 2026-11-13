@@ -3,17 +3,23 @@ import type { DigitalBlock, FigureNode, InkStroke } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
 import { renderStrokesToPng } from '../transcribe/render';
 import { edgeMarks, mindMapLayout, shapeGlyph, stepNode } from './figureView';
+import { nodeInkStrokes } from './figureInk';
+import { FigureEditor, type FigureEdit } from './FigureEditor';
 
 export interface DiagramCardProps {
   block: DigitalBlock;
   strokeById: Map<string, InkStroke>;
   onHighlightStrokes?: (ids: string[] | null) => void;
   caption?: ReactNode;
+  editing?: boolean;
+  onEditFigure?: (next: FigureEdit) => void;
+  onCancelEdit?: () => void;
 }
 
 function NodeHierarchy({ nodes }: { nodes: FigureNode[] }) {
   interface Entry { node: FigureNode; children: Entry[] }
   const roots: Entry[] = [], stack: Entry[] = [];
+  const variedShapes = new Set(nodes.map(node => node.shape?.trim().toLowerCase()).filter(Boolean)).size > 1;
   for (const { node, depth } of nodeTree(nodes)) {
     const entry: Entry = { node, children: [] };
     if (depth > 0 && stack[depth - 1]) stack[depth - 1].children.push(entry);
@@ -21,13 +27,13 @@ function NodeHierarchy({ nodes }: { nodes: FigureNode[] }) {
     stack[depth] = entry;
   }
   const list = (entries: Entry[]): ReactNode => <ul>{entries.map(({ node, children }) => <li key={node.id}>
-    <div><span aria-hidden="true" className="node-glyph">{shapeGlyph(node.shape)}</span><span>{node.label}</span>{node.shape && <small title={node.shape}>{node.shape}</small>}</div>
+    <div title={node.shape}><span aria-hidden="true" className="node-glyph">{shapeGlyph(node.shape)}</span><span aria-label={node.shape ? `${node.label}, ${node.shape}` : undefined}>{node.label}</span>{variedShapes && node.shape && <small>{node.shape}</small>}</div>
     {!!children.length && list(children)}
   </li>)}</ul>;
   return <div className="card-nodes">{list(roots)}</div>;
 }
 
-export function DiagramCard({ block, strokeById, onHighlightStrokes, caption }: DiagramCardProps) {
+export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, editing, onEditFigure, onCancelEdit }: DiagramCardProps) {
   const panelId = useId();
   const [expanded, setExpanded] = useState(true);
   const [active, setActive] = useState<string | null>(null);
@@ -36,12 +42,16 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption }: 
   const fig = block.figure;
   const marks = fig ? edgeMarks(fig) : [];
   const mindMap = fig?.kind === 'mindmap' ? mindMapLayout(fig) : null;
+  const stepInk = useMemo(() => new Map((fig?.sequence ?? []).map(step => [step, nodeInkStrokes(block, stepNode(fig!, step), [...strokeById.values()])])), [block, fig, strokeById]);
   useEffect(() => () => onHighlightStrokes?.(null), [onHighlightStrokes]);
   const highlight = (step: string | null) => {
-    // Group indices refer to an unstored transcription request, not this block's local ink groups.
-    onHighlightStrokes?.(step === null ? null : block.strokeIds);
+    onHighlightStrokes?.(step === null ? null : stepInk.get(step) ?? block.strokeIds);
   };
   const summary = fig ? [fig.sequence?.length ? `${fig.sequence.length} steps` : '', fig.nodes?.length ? `${fig.nodes.length} nodes` : '', fig.edges.length ? `${fig.edges.length} links` : ''].filter(Boolean).join(' · ') : '';
+  if (editing) return <div className="diagram-card">
+    <div className="diagram-preview">{rendered && <img className="diagram-thumbnail" src={rendered.dataUrl} alt={`Ink: ${block.text || 'diagram'}`} />}</div>
+    <FigureEditor block={block} onSave={next => onEditFigure?.(next)} onCancel={() => onCancelEdit?.()} />
+  </div>;
   return (
     <div className="diagram-card" onDoubleClick={e => { if ((e.target as HTMLElement).closest('button')) e.stopPropagation(); }}>
       <div className="diagram-preview">
@@ -69,7 +79,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption }: 
               </button></li>)}
             </ol>
           </section>}
-          {!!fig.nodes?.length && <section aria-label="Nodes"><h4>Nodes</h4>
+          {!mindMap && !!fig.nodes?.length && <section aria-label="Nodes"><h4>Nodes</h4>
             <NodeHierarchy nodes={fig.nodes} />
           </section>}
           {mindMap && <section aria-label="Mind map"><h4>Mind map</h4><div className="mindmap-hub">{mindMap.hub}</div>

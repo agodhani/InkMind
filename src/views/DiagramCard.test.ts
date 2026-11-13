@@ -13,6 +13,11 @@ const highlight = vi.fn();
 const block = (figure?: Partial<FigureInfo>): DigitalBlock => ({ id: 'demo', kind: 'diagram', text: 'A useful diagram', bbox: { left: 0, top: 0, right: 100, bottom: 100 }, strokeIds: ['s1', 's2'], confidence: 1, ...(figure ? { figure: { kind: 'flowchart', shapes: [], labels: [], edges: [], ...figure } } : {}) });
 const render = (b: DigitalBlock) => act(() => root.render(createElement(DiagramCard, { block: b, strokeById: new Map(), onHighlightStrokes: highlight })));
 const click = (element: Element) => act(() => { element.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+const change = (element: HTMLInputElement | HTMLTextAreaElement, value: string) => act(() => {
+  const prototype = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+  Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value);
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+});
 
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -55,8 +60,9 @@ describe('DiagramCard', () => {
     act(() => root.render(createElement(DigitalView, { blocks: [block()], strokes: [], selectedBlockId: 'demo', onSelectBlock: vi.fn(), onEditBlock: vi.fn() })));
     const correct = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Correct'))!;
     click(correct);
-    expect(container.querySelector('.diagram-preview textarea')?.getAttribute('aria-label')).toBe('Correct the transcription');
-    expect(container.querySelector('.diagram-missing')).not.toBeNull();
+    expect(container.querySelector('form[aria-label="Edit diagram"]')).not.toBeNull();
+    expect(container.querySelector('textarea')?.value).toBe('A useful diagram');
+    expect(container.querySelector('.diagram-preview')).not.toBeNull();
   });
   it('renders all nodes with accessible nesting depths and glyphs', () => {
     render(block({ nodes: [{ id: 'a', label: 'System', shape: 'rectangle' }, { id: 'b', label: 'API', parent: 'a', shape: 'rounded' }, { id: 'c', label: 'Store', parent: 'b', shape: 'database' }] }));
@@ -83,6 +89,13 @@ describe('DiagramCard', () => {
     expect(container.querySelector('.mindmap-hub')?.textContent).toBe('Trip');
     expect(container.querySelector('.mindmap-branches')?.textContent).toContain('FlightsTickets');
     expect(container.querySelector('[aria-label="Links"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Nodes"]')).toBeNull();
+  });
+  it('hides repetitive shape names while retaining accessible shape descriptions', () => {
+    render(block({ nodes: [{ id: 'a', label: 'A', shape: 'box' }, { id: 'b', label: 'B', shape: 'box' }] }));
+    expect(container.querySelectorAll('.card-nodes small')).toHaveLength(0);
+    expect(container.querySelector('[aria-label="A, box"]')).not.toBeNull();
+    expect(container.querySelector('.card-nodes [title="box"]')).not.toBeNull();
   });
   it('collapses its structured panel and clears ink highlights', () => {
     render(block({ sequence: ['First'] }));
@@ -112,5 +125,49 @@ describe('DiagramCard', () => {
     render(block({ labels: ['Legacy label'] }));
     expect(container.querySelector('.chip-label')?.textContent).toBe('Legacy label');
     expect(container.querySelectorAll('.diagram-panel section')).toHaveLength(1);
+  });
+  it('renames a node across steps and links, then saves the updated figure', () => {
+    const b = block({ labels: ['First', 'Next'], sequence: ['First', 'Next'], nodes: [{ id: 'a', label: 'First' }, { id: 'b', label: 'Next' }], edges: [{ from: 'First', to: 'Next', label: 'continue' }] });
+    const save = vi.fn();
+    act(() => root.render(createElement(DigitalView, { blocks: [b], strokes: [], selectedBlockId: 'demo', onSelectBlock: vi.fn(), onEditBlock: vi.fn(), onEditFigure: save })));
+    click(container.querySelector('.block-tools button')!);
+    change(container.querySelector('.figure-edit-grid input')!, 'Synapse');
+    expect(container.querySelector<HTMLInputElement>('.figure-edit-steps input')!.value).toBe('Synapse');
+    expect(container.textContent).toContain('Synapse → Next');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).toHaveBeenCalledWith(b, expect.objectContaining({ figure: expect.objectContaining({ labels: ['Synapse', 'Next'], sequence: ['Synapse', 'Next'], edges: [{ from: 'Synapse', to: 'Next', label: 'continue' }] }) }));
+    expect(container.querySelector('.figure-editor')).toBeNull();
+  });
+  it('reorders/removes steps and edits caption, edge labels and table cells', () => {
+    const save = vi.fn();
+    act(() => root.render(createElement(DiagramCard, { block: block({ sequence: ['One', 'Two', 'Three'], edges: [{ from: 'One', to: 'Two' }], cells: [['Old']] }), strokeById: new Map(), editing: true, onEditFigure: save })));
+    click(container.querySelector('[aria-label="Move step 1 down"]')!);
+    expect([...container.querySelectorAll<HTMLInputElement>('.figure-edit-steps input')].map(e => e.value)).toEqual(['Two', 'One', 'Three']);
+    click(container.querySelector('[aria-label="Remove step 3"]')!);
+    change(container.querySelector('textarea')!, 'New caption');
+    change(container.querySelector('[aria-label="Link 1 label"]')!, 'ready');
+    change(container.querySelector('.figure-edit-cells input')!, 'New cell');
+    act(() => { container.querySelector('form')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ text: 'New caption', figure: expect.objectContaining({ sequence: ['Two', 'One'], cells: [['New cell']], edges: [{ from: 'One', to: 'Two', label: 'ready' }] }) }));
+  });
+  it('cancels with Escape without saving and skips unchanged saves', () => {
+    const save = vi.fn(), b = block({ sequence: ['One'] });
+    act(() => root.render(createElement(DigitalView, { blocks: [b], strokes: [], selectedBlockId: 'demo', onSelectBlock: vi.fn(), onEditBlock: vi.fn(), onEditFigure: save })));
+    click(container.querySelector('.block-tools button')!);
+    change(container.querySelector('textarea')!, 'Discard');
+    act(() => { container.querySelector('textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(container.querySelector('.figure-editor')).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    click(container.querySelector('.block-tools button')!);
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).not.toHaveBeenCalled();
+  });
+  it('does not save an unchanged legacy diagram with no figure data', () => {
+    const save = vi.fn(), cancel = vi.fn();
+    act(() => root.render(createElement(DiagramCard, { block: block(), strokeById: new Map(), editing: true, onEditFigure: save, onCancelEdit: cancel })));
+    expect(container.querySelectorAll('fieldset')).toHaveLength(0);
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

@@ -2,6 +2,25 @@ import type { FigureInfo, FigureNode } from '../model/page';
 
 const key = (value: string) => value.trim().toLowerCase();
 
+export function renameFigureLabel(fig: FigureInfo, old: string, next: string): FigureInfo {
+  const matches = (value: string) => key(value) === key(old);
+  const rename = (value: string) => matches(value) ? next : value;
+  return {
+    ...fig,
+    labels: fig.labels.map(rename),
+    sequence: fig.sequence?.map(rename),
+    nodes: fig.nodes?.map(node => ({ ...node, label: rename(node.label) })),
+    edges: fig.edges.map(edge => ({ ...edge, from: rename(edge.from), to: rename(edge.to) })),
+  };
+}
+
+export function figureCorrectionText(text: string, fig: FigureInfo): string {
+  return [text, fig.kind, ...(fig.sequence ?? []).map((step, i) => `${i + 1}. ${step}`),
+    ...(fig.nodes ?? []).map(node => `${node.label}${node.shape ? ` (${node.shape})` : ''}`),
+    ...fig.edges.map(edge => `${edge.from} ${edge.kind === 'line' ? '—' : '→'} ${edge.to}${edge.label ? ` (${edge.label})` : ''}`),
+    ...(fig.cells ?? []).map(row => row.join(' | ')), ...fig.labels].filter(Boolean).join('\n');
+}
+
 export function shapeGlyph(shape?: string): string {
   switch (key(shape ?? '')) {
     case 'rectangle': case 'box': return '▭';

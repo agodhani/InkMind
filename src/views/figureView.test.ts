@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import type { FigureInfo } from '../model/page';
-import { edgeMarks, figureToMermaid, mindMapLayout, shapeGlyph, stepNode } from './figureView';
+import { edgeMarks, figureCorrectionText, figureToMermaid, mindMapLayout, renameFigureLabel, shapeGlyph, stepNode } from './figureView';
+import { glossaryFromCorrections } from '../profile/handwritingProfile';
 
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('renames labels case-insensitively without mutating stable node IDs or geometry groups', () => {
+    const original = figure({ labels: [' Alpha ', 'Beta'], sequence: ['ALPHA', 'Beta'], nodes: [{ id: 'n1', label: 'alpha', group: 2 }, { id: 'n2', label: 'Beta', parent: 'n1' }], edges: [{ from: ' alpha ', to: 'Beta' }, { from: 'n1', to: 'ALPHA', label: 'alpha' }] });
+    const next = renameFigureLabel(original, 'alpha', 'Synapse');
+    expect(next.labels).toEqual(['Synapse', 'Beta']);
+    expect(next.sequence).toEqual(['Synapse', 'Beta']);
+    expect(next.nodes![0]).toEqual({ id: 'n1', label: 'Synapse', group: 2 });
+    expect(next.edges).toEqual([{ from: 'Synapse', to: 'Beta' }, { from: 'n1', to: 'Synapse', label: 'alpha' }]);
+    expect(original.nodes![0].label).toBe('alpha');
+    expect(renameFigureLabel(figure(), 'missing', '').labels).toEqual([]);
+  });
+  it('serializes corrected labels for corrections and glossary extraction', () => {
+    const before = figure({ labels: ['wrong'], nodes: [{ id: 'x', label: 'wrong' }], sequence: ['wrong'], edges: [{ from: 'wrong', to: 'Done', label: 'yes' }], cells: [['Value'], ['One']] });
+    const modelText = figureCorrectionText('Caption', before);
+    const userText = figureCorrectionText('Caption', renameFigureLabel(before, 'wrong', 'Synapse'));
+    expect(userText).toContain('Synapse');
+    expect(userText).toContain('1. Synapse');
+    expect(userText).toContain('Synapse → Done (yes)');
+    expect(userText).toContain('Value\nOne');
+    expect(glossaryFromCorrections([{ id: 'c', pageId: 'p', blockId: 'b', imageDataUrl: '', createdAt: 0, modelText, userText }])).toContain('Synapse');
+  });
   it('maps shape glyphs and unknown values', () => {
     expect(['rectangle', 'box', 'rounded', 'circle', 'ellipse', 'oval', 'diamond', 'decision', 'parallelogram', 'triangle', 'cylinder', 'database', 'unknown', undefined].map(shapeGlyph)).toEqual(['▭', '▭', '▢', '◯', '◯', '◯', '◇', '◇', '▱', '△', '⛁', '⛁', '•', '•']);
   });

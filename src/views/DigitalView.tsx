@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { DiagramCard } from './DiagramCard';
+import type { FigureEdit } from './FigureEditor';
 import { Icon } from '../ui/icons';
 import { Kbd } from '../ui/primitives';
 
@@ -14,10 +15,11 @@ export interface DigitalViewProps {
   onHoverBlock?: (id: string | null) => void;
   onHighlightStrokes?: (strokeIds: string[] | null) => void;
   onEditBlock: (block: DigitalBlock, newText: string) => void;
+  onEditFigure?: (block: DigitalBlock, next: FigureEdit) => void;
   emptyHint?: string;
 }
 
-export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onHighlightStrokes, onEditBlock, emptyHint }: DigitalViewProps) {
+export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onHighlightStrokes, onEditBlock, onEditFigure, emptyHint }: DigitalViewProps) {
   const ordered = useMemo(() => sortBlocksForReading(blocks), [blocks]);
   const strokeById = useMemo(() => new Map(strokes.map((s) => [s.id, s])), [strokes]);
   const footnotes = ordered.filter((b) => b.kind === 'footnote_def');
@@ -40,7 +42,7 @@ export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, o
   return (
     <div className="digital-view" onClick={() => onSelectBlock(null)}>
       {main.map((b) => (
-        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onHighlightStrokes={onHighlightStrokes} onEdit={onEditBlock} />
+        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onHighlightStrokes={onHighlightStrokes} onEdit={onEditBlock} onEditFigure={onEditFigure} />
       ))}
       {footnotes.length > 0 && (
         <div className="footnotes">
@@ -61,9 +63,10 @@ interface BlockViewProps {
   onHover?: (id: string | null) => void;
   onHighlightStrokes?: (strokeIds: string[] | null) => void;
   onEdit: (block: DigitalBlock, newText: string) => void;
+  onEditFigure?: (block: DigitalBlock, next: FigureEdit) => void;
 }
 
-function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlightStrokes, onEdit }: BlockViewProps) {
+function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlightStrokes, onEdit, onEditFigure }: BlockViewProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(block.text);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -152,8 +155,11 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlight
           </button>
         </div>
       )}
-      {block.kind === 'diagram' ? <DiagramCard block={block} strokeById={strokeById} onHighlightStrokes={onHighlightStrokes} caption={editing ? content : undefined} /> : content}
-      {editing && (
+      {block.kind === 'diagram' ? <DiagramCard block={block} strokeById={strokeById} onHighlightStrokes={onHighlightStrokes} editing={editing} onCancelEdit={() => setEditing(false)} onEditFigure={next => {
+        if (next.text !== block.text || JSON.stringify(next.figure) !== JSON.stringify(block.figure)) onEditFigure?.(block, next);
+        setEditing(false);
+      }} /> : content}
+      {editing && block.kind !== 'diagram' && (
         <div className="editor-hint">
           <span>
             <Kbd>Ctrl</Kbd>+<Kbd>↵</Kbd> save

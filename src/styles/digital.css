@@ -127,3 +127,24 @@
 .block .mindmap-branches ul { padding-inline-start: 20px; }
 .diagram-card button:focus-visible, .card-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .kind-diagram .block-tools .btn { min-height: 44px; height: auto; }
+
+.figure-editor { padding: 0 16px 16px; display: grid; gap: 20px; font-size: var(--fs-md); }
+.figure-editor-heading h4 { margin: 0; font-size: var(--fs-lg); }
+.figure-editor-heading span { color: var(--fg-3); font-size: var(--fs-sm); }
+.figure-editor label { display: grid; gap: 6px; min-width: 0; color: var(--fg-2); font-size: var(--fs-sm); }
+.figure-editor input, .figure-editor textarea { min-height: 44px; width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); font: inherit; font-size: var(--fs-md); padding: 10px; }
+.figure-editor textarea { resize: vertical; min-height: 84px; }
+.figure-editor fieldset { display: grid; gap: 12px; min-width: 0; border: 0; padding: 0; margin: 0; }
+.figure-editor legend { font-weight: 650; color: var(--fg); margin-bottom: 8px; padding: 0; }
+.block .figure-edit-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.figure-edit-steps li { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+.figure-edit-steps label { flex: 1 1 180px; }
+.figure-step-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.figure-editor button { min-width: 44px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.figure-editor button:disabled { opacity: .4; cursor: default; }
+.figure-edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; }
+.figure-edit-cells { display: grid; gap: 16px; }
+.figure-editor-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.figure-editor-actions small { color: var(--fg-3); }
+.figure-editor .figure-save { color: var(--fg-inv); background: var(--accent); border-color: var(--accent); }
+.figure-editor :is(button,input,textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
