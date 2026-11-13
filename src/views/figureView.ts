@@ -16,8 +16,9 @@ export function uncoveredFigureLabels(fig: FigureInfo): string[] {
   });
 }
 
-export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<string, string>): FigureInfo {
-  if (!labelsById.size) return fig;
+export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<string, string>, labelsByStep: ReadonlyMap<string, string> = new Map()): FigureInfo {
+  if (!labelsById.size && !labelsByStep.size) return fig;
+  const stepLabels = new Map([...labelsByStep].map(([old, next]) => [key(old), next]));
   const nodes = fig.nodes ?? [];
   const labelNode = (value: string) => {
     const matches = nodes.filter(node => key(node.label) === key(value));
@@ -26,13 +27,13 @@ export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<strin
   const label = (node: FigureNode) => labelsById.get(node.id) ?? node.label;
   const renameLabel = (value: string) => {
     const node = labelNode(value);
-    return node && label(node) !== node.label ? label(node) : value;
+    return node ? label(node) !== node.label ? label(node) : value : stepLabels.get(key(value)) ?? value;
   };
   const endpoint = (value: string) => {
     const byId = nodes.find(node => key(node.id) === key(value));
     if (byId) return value;
     const node = labelNode(value);
-    if (!node) return value;
+    if (!node) return stepLabels.get(key(value)) ?? value;
     const next = label(node);
     const ambiguous = nodes.some(other => other.id !== node.id && (key(label(other)) === key(next) || key(other.id) === key(next)));
     return ambiguous ? node.id : next !== node.label ? next : value;

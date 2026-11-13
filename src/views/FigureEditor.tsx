@@ -9,7 +9,8 @@ export function FigureEditor({ block, onSave, onCancel }: { block: DigitalBlock;
   const initialFigure: FigureInfo = block.figure ?? { kind: 'other', shapes: [], labels: [], edges: [] };
   const [figure, setFigure] = useState<FigureInfo>(() => structuredClone(initialFigure));
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
-  const draft = renameFigureNodes(figure, nodeLabels);
+  const [stepLabels, setStepLabels] = useState<Map<string, string>>(() => new Map());
+  const draft = renameFigureNodes(figure, nodeLabels, stepLabels);
   const setNodeLabel = (id: string, value: string) => setNodeLabels(current => new Map(current).set(id, value));
   const save = () => {
     if (text === block.text && JSON.stringify(draft) === JSON.stringify(initialFigure)) onCancel();
@@ -34,7 +35,12 @@ export function FigureEditor({ block, onSave, onCancel }: { block: DigitalBlock;
       <label>Step {i + 1}<input value={draft.sequence![i]} onChange={e => {
         const matches = figure.nodes?.filter(node => node.label.trim().toLowerCase() === step.trim().toLowerCase()) ?? [];
         if (matches.length === 1) setNodeLabel(matches[0].id, e.target.value);
-        else setFigure(current => ({ ...current, sequence: current.sequence!.map((value, index) => index === i ? e.target.value : value) }));
+        else setStepLabels(current => {
+          const next = new Map(current);
+          if (e.target.value === step) next.delete(step);
+          else next.set(step, e.target.value);
+          return next;
+        });
       }} /></label>
       <div className="figure-step-actions">
         <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>

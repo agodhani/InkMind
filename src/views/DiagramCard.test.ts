@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DigitalBlock, FigureInfo } from '../model/page';
 import { DiagramCard } from './DiagramCard';
 import { DigitalView } from './DigitalView';
+import { figureToMermaid } from './figureView';
 
 vi.mock('../transcribe/render', () => ({ renderStrokesToPng: () => null }));
 
@@ -29,6 +30,20 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('renames node-less step B through A, Al, Alpha without stale or cascaded endpoints', () => {
+    const save = vi.fn();
+    act(() => root.render(createElement(DiagramCard, { block: block({ labels: ['A', 'B'], sequence: ['A', 'B'], edges: [{ from: 'A', to: 'B' }] }), strokeById: new Map(), editing: true, onEditFigure: save })));
+    const steps = container.querySelectorAll<HTMLInputElement>('.figure-edit-steps input');
+    for (const value of ['A', 'Al', 'Alpha']) change(steps[1], value);
+    expect(steps[0].value).toBe('A');
+    click(container.querySelector('[type="submit"]')!);
+    const saved = save.mock.calls[0][0].figure;
+    expect(saved).toMatchObject({ labels: ['A', 'Alpha'], sequence: ['A', 'Alpha'], edges: [{ from: 'A', to: 'Alpha' }] });
+    expect(figureToMermaid(saved)).toBe('flowchart TD\n  n1["A"]\n  n2["Alpha"]\n  n1 --> n2');
+    change(steps[0], 'Alpha'); change(steps[1], 'A');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save.mock.calls[1][0].figure).toMatchObject({ labels: ['Alpha', 'A'], sequence: ['Alpha', 'A'], edges: [{ from: 'Alpha', to: 'A' }] });
+  });
   it('preserves original references when a node rename is undone', () => {
     const save = vi.fn(), cancel = vi.fn();
     act(() => root.render(createElement(DiagramCard, { block: block({ labels: [' beta '], sequence: ['BETA'], nodes: [{ id: 'n', label: 'Beta' }], edges: [{ from: ' beta ', to: 'End' }] }), strokeById: new Map(), editing: true, onEditFigure: save, onCancelEdit: cancel })));
