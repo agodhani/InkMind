@@ -71,7 +71,7 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
           onBlocks(current.id, (blocks) => mergeBlocks(blocks, region.replacedBlockIds, []));
           continue;
         }
-        const rendered = renderStrokesToPng(region.strokes, region.bounds, MODEL_RENDER);
+        const rendered = renderStrokesToPng(region.strokes, region.bounds, { ...MODEL_RENDER, maxEdge: transcriber.maxImageEdge });
         if (!rendered) continue;
         const groups = buildStrokeGroups(region.strokes);
         const contextText = current.blocks

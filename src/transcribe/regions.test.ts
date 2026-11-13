@@ -15,6 +15,20 @@ describe('geometry-first structure', () => {
     edges: [{ from: 'rectangle 1', to: 'rectangle 2', kind: 'arrow' as const }, { from: 'rectangle 2', to: 'rectangle 3', kind: 'line' as const }],
     sequence: ['rectangle 1', 'rectangle 2', 'rectangle 3'], unnamed: ['rectangle 1', 'rectangle 2', 'rectangle 3'],
   };
+  it('uses hint ids when several geometry nodes share a label group', () => {
+    const prior = normaliseFigure({ nodes: [{ id: 'n1', group: 0, label: 'outer' }, { id: 'n2', group: 0, label: 'inner' }, { id: 'n3', group: 0, label: 'core' }] })!;
+    const out = mergeWithGeometry(prior, hint, prior.labels, { ...geo, nodes: geo.nodes.map((n) => ({ ...n, group: 0 })) });
+    expect(out.nodes!.map((n) => n.label)).toEqual(['outer', 'inner', 'core']);
+    expect(out.nodes![1].parent).toBe('n1');
+    expect(out.edges[0]).toMatchObject({ from: 'outer', to: 'inner', kind: 'arrow' });
+  });
+  it('keeps model words as labels when text-group naming or a smaller geometry grid wins', () => {
+    const prior = normaliseFigure({ names: { n1: 'model word' }, cells: [['header', 'extra column'], ['last row']] })!;
+    const out = mergeWithGeometry(prior, { ...hint, kind: 'table' }, prior.labels, { ...geo, nodes: [{ ...geo.nodes[0], label: 'group word' }], unnamed: [], cells: [['']] });
+    expect(out.nodes![0].label).toBe('group word');
+    expect(out.cells).toEqual([['header']]);
+    expect(out.labels).toEqual(expect.arrayContaining(['model word', 'group word', 'header', 'extra column', 'last row']));
+  });
   it('keeps geometry nodes, directions, kinds, missing edges, order and nesting', () => {
     const prior = normaliseFigure({ kind: 'flowchart', names: { n1: 'start', n2: 'work', n3: 'end', n9: 'extra' }, edges: [{ from: 'n2', to: 'n1', label: 'yes', kind: 'line' }, { from: 'n1', to: 'n3' }], sequence: ['n3', 'n1', 'n2'] })!;
     const out = mergeWithGeometry(prior, hint, prior.labels, geo);

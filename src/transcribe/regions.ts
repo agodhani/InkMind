@@ -249,8 +249,8 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
 function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[]): FigureNode | undefined {
-  return (g.group !== undefined ? modelNodes.find((n) => n.group === g.group) : undefined) ??
-    modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || !geoNodes.some((o) => o.group === n.group)));
+  return (g.group !== undefined && geoNodes.filter((n) => n.group === g.group).length === 1 ? modelNodes.find((n) => n.group === g.group) : undefined) ??
+    modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
 
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): ReturnType<typeof figureFromGeometry> {
@@ -320,7 +320,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     cells = geo.cells.map((row, r) => row.map((value, c) => value || prior.cells?.[r]?.[c] || ''));
   }
   // Words written on arrows are labels of the figure too.
-  const allLabels = dedupe([...labels.flatMap((s) => stringList(s).map(resolve)), ...nodes.filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label), ...edges.flatMap((e) => e.label ? [e.label] : [])]);
+  const allLabels = dedupe([...labels.flatMap((s) => stringList(s).flatMap((word) => /^n\d+$/i.test(word) ? [resolve(word)] : [word, resolve(word)])), ...(prior?.cells?.flat().filter(Boolean) ?? []), ...(prior?.nodes?.map((n) => n.label) ?? []), ...nodes.filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label), ...edges.flatMap((e) => e.label ? [e.label] : [])]);
   const figure: FigureInfo = { kind, shapes: dedupe([...fig.shapes, ...(prior?.shapes ?? [])]), labels: allLabels, edges };
   if (nodes?.length) figure.nodes = nodes;
   if (sequence) figure.sequence = sequence;

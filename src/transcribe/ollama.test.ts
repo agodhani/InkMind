@@ -50,6 +50,19 @@ describe('probeOllama', () => {
 });
 
 describe('OllamaTranscriber', () => {
+  it('preserves repeated compact name values as labels before JSON decoding', async () => {
+    vi.stubGlobal('fetch', async () => streamReply(['{"blocks":[{"kind":"diagram","figure":{"names":{"size":"3b","size":"7b","size":"72b"}}}]}']));
+    const result = await new OllamaTranscriber().transcribe(request);
+    expect(result.blocks[0].figure!.labels).toEqual(['size', '3b', '7b', '72b']);
+  });
+  it('caps only compact requests, with an override for resolution experiments', () => {
+    expect(new OllamaTranscriber({ model: 'qwen2.5vl:3b' }).maxImageEdge).toBe(1024);
+    expect(new OllamaTranscriber({ model: 'qwen2.5vl:3b', maxImageEdge: 1280 }).maxImageEdge).toBe(1280);
+    expect(new OllamaTranscriber({ model: 'qwen2.5vl:7b', maxImageEdge: 1024 }).maxImageEdge).toBeUndefined();
+    expect(new OllamaTranscriber({ promptStyle: 'full' }).maxImageEdge).toBeUndefined();
+    expect(() => new OllamaTranscriber({ maxImageEdge: 0 })).toThrow('positive integer');
+    expect(() => new OllamaTranscriber({ maxImageEdge: NaN })).toThrow('positive integer');
+  });
   it('records prompt and generation counters from the final stream chunk', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ message: { content: '{"blocks":[]}' } }) + '\n' + JSON.stringify({ done: true, prompt_eval_count: 200, prompt_eval_duration: 3000000000, eval_count: 40, eval_duration: 5000000000 }) + '\n'));
     const result = await new OllamaTranscriber().transcribe(request);

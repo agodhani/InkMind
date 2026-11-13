@@ -2,6 +2,7 @@ import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { COMPACT_SYSTEM_PROMPT, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
 import { looksDegenerate, normaliseBlocks, pickSaner } from './openaiCompat';
 import { closeJsonPrefix, detectLoop } from './loopGuard';
+import { preserveCompactNameWords } from './figure';
 
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_OLLAMA_MODEL = 'qwen2.5vl:3b';
@@ -14,6 +15,7 @@ export interface OllamaOptions {
   /** Context window to request; Ollama's default 4k is too small for a page image + prompt. */
   numCtx?: number;
   promptStyle?: 'full' | 'compact';
+  maxImageEdge?: number;
 }
 
 export function ollamaPromptStyle(model: string): 'full' | 'compact' {
@@ -37,6 +39,7 @@ const MAX_EXAMPLES = 2;
  */
 export class OllamaTranscriber implements Transcriber {
   readonly name: string;
+  readonly maxImageEdge?: number;
   private readonly url: string;
   private readonly model: string;
   private readonly numCtx: number;
@@ -47,6 +50,8 @@ export class OllamaTranscriber implements Transcriber {
     this.model = opts.model ?? DEFAULT_OLLAMA_MODEL;
     this.numCtx = opts.numCtx ?? OLLAMA_NUM_CTX;
     this.promptStyle = opts.promptStyle ?? ollamaPromptStyle(this.model);
+    this.maxImageEdge = this.promptStyle === 'compact' ? opts.maxImageEdge ?? 1024 : undefined;
+    if (this.maxImageEdge !== undefined && (!Number.isInteger(this.maxImageEdge) || this.maxImageEdge <= 0)) throw new RangeError('maxImageEdge must be a positive integer');
     this.name = `ollama:${this.model}`;
   }
 
@@ -138,9 +143,9 @@ export class OllamaTranscriber implements Transcriber {
       }
       signal?.throwIfAborted();
       const parsed = closeJsonPrefix(raw);
-      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '');
+      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
       let blocks: TranscribeResult['blocks'];
-      try { blocks = normaliseBlocks(extractJson(parsed)); } catch (e) {
+      try { blocks = normaliseBlocks(extractJson(this.promptStyle === 'compact' ? preserveCompactNameWords(parsed) : parsed)); } catch (e) {
         if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
         throw e;
       }

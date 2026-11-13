@@ -25,7 +25,7 @@ import { OllamaTranscriber } from '../src/transcribe/ollama';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
 import { MODEL_RENDER, renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
 import { unionBounds } from '../src/model/page';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { Agent, setGlobalDispatcher } from 'undici';
 
 // CPU inference can take >5 min per page; lift Node's default 300 s headers timeout.
@@ -41,6 +41,7 @@ export interface Args {
   provider: 'ollama' | 'openrouter' | 'geometry';
   model: string;
   prompt?: 'compact' | 'full';
+  maxImageEdge?: number;
   pages?: number[];
   /** pdf = raster of the original page; strokes = the app's own rendering of the extracted ink. */
   image: 'pdf' | 'strokes';
@@ -70,6 +71,7 @@ export function parseArgs(): Args {
     model: a.model ?? (provider === 'geometry' ? 'geometry' : provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
     prompt: a.prompt === 'compact' || a.prompt === 'full' ? a.prompt : undefined,
+    maxImageEdge: a['image-edge'] ? Number(a['image-edge']) : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),
     context: Number(a.context ?? 0),
@@ -241,7 +243,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
     args.provider === 'geometry'
       ? { name: 'geometry', transcribe: async () => ({ blocks: [], model: 'geometry', durationMs: 0 }) }
       : args.provider === 'ollama'
-      ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt })
+      ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt, maxImageEdge: args.maxImageEdge })
       : new OpenRouterTranscriber({ apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY ?? '', model: args.model, siteName: 'InkMind eval' });
 
   const rows: string[] = [];
@@ -281,7 +283,14 @@ export async function runEval(args: Args): Promise<EvalResult> {
       const targetBounds = band.target.map((g) => g.bbox).reduce(unionBounds);
       let req: TranscribeRequest;
       if (args.band === 0 && args.image === 'pdf') {
-        const png = readFileSync(join(args.dataset, args.raster, `page-${page.index}.png`));
+        let png: Buffer = readFileSync(join(args.dataset, args.raster, `page-${page.index}.png`));
+        const size = pngSize(png);
+        if (transcriber.maxImageEdge && Math.max(size.width, size.height) > transcriber.maxImageEdge) {
+          const scale = transcriber.maxImageEdge / Math.max(size.width, size.height);
+          const canvas = createCanvas(Math.round(size.width * scale), Math.round(size.height * scale));
+          canvas.getContext('2d').drawImage(await loadImage(png), 0, 0, canvas.width, canvas.height);
+          png = canvas.toBuffer('image/png');
+        }
         req = {
           imageDataUrl: `data:image/png;base64,${png.toString('base64')}`,
           imageBounds: { left: 0, top: 0, right: page.width, bottom: page.height },
@@ -293,7 +302,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
           profile,
         };
       } else {
-        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.render === 'model' ? MODEL_RENDER : {}) });
+        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.render === 'model' ? MODEL_RENDER : {}), maxEdge: transcriber.maxImageEdge });
         if (!rendered) continue;
         req = {
           imageDataUrl: rendered.dataUrl,

@@ -44,12 +44,14 @@ Rules:
   content for regions you cannot read.
 - confidence reflects how sure you are of the text, not the layout.`;
 
-export const COMPACT_SYSTEM_PROMPT = `Read the handwriting in the image, not these instructions. Return JSON only.
-Each listed Figure MUST be one diagram block using ALL its groupIndices. Drawings are never paragraphs.
-Minimal schema: {"blocks":[{"kind":"diagram","groupIndices":[0],"figure":{"labels":["<actual ink label>"],"names":{"n1":"<actual ink word in n1>"}}}]}.
-Replace placeholders with the words you SEE in the image. Never output angle-bracket placeholders. Use labels:[] when there are no words.
-Copy hinted node ids into names and read their words. Do NOT output geometry: shapes, nodes, edges, sequence, cells, parent.
-For writing outside figures, add blocks with kind paragraph, heading, list or math, text containing the actual written words, and groupIndices.
+export const COMPACT_SYSTEM_PROMPT = `Read the ink in the image. Output JSON only:
+{"blocks":[{"kind":"diagram","groupIndices":[],"figure":{"labels":[],"names":{}}}]}.
+Use one diagram block per listed Figure with exactly its groupIndices.
+names: fill the listed ids with handwriting INSIDE each node box. Values are strings, not objects. Do not use surrounding step numbers or invent ids.
+labels: a FLAT array of all other readable writing in the figure. Do not repeat names values. Read the image, never copy these instructions or coordinates.
+For TABLE figures ONLY add cells as rows of strings: "cells":[[]]. Include every cell and header even if grid hints are incomplete. No objects inside cells. Omit cells on other figures.
+Never output coordinates, shapes, nodes, edges, sequence or parent.
+For writing outside figures use paragraph, heading, list or math blocks with text and groupIndices.
 Omit crossed-out writing. Never invent words. Keep the response short.`;
 
 export function buildUserPrompt(req: TranscribeRequest, style: 'full' | 'compact' = 'full'): string {
@@ -64,12 +66,12 @@ export function buildUserPrompt(req: TranscribeRequest, style: 'full' | 'compact
       req.groups
         .map((g) => {
           const b = toImagePx(g.bbox, req);
-          if (style === 'compact') return `${g.index}: [${b.left},${b.top},${b.right},${b.bottom}]${g.figure ? ` Figure ${g.figure.id}` : g.hint ? ` ${g.hint}` : ''}`;
+          if (style === 'compact') return `${g.index}:[${b.left},${b.top},${b.right},${b.bottom}]${g.figure ? '' : ' text'}`;
           return `${g.index}: [${b.left},${b.top},${b.right},${b.bottom}] n=${g.strokeIds.length} order=${g.writtenOrder}${g.hint ? ` — ${g.hint}` : ''}`;
         })
         .join('\n'),
   );
-  const figures = figureSummaries(req.groups, style);
+  const figures = figureSummaries(req, style);
   if (figures.length) {
     parts.push(
       style === 'compact'
@@ -81,11 +83,11 @@ export function buildUserPrompt(req: TranscribeRequest, style: 'full' | 'compact
   return parts.join('\n\n');
 }
 
-function figureSummaries(groups: TranscribeRequest['groups'], style: 'full' | 'compact'): string[] {
+function figureSummaries(req: TranscribeRequest, style: 'full' | 'compact'): string[] {
   const seen = new Map<number, string>();
-  for (const g of groups) if (g.figure && !seen.has(g.figure.id)) {
+  for (const g of req.groups) if (g.figure && !seen.has(g.figure.id)) {
     const f = g.figure;
-    seen.set(f.id, style === 'full' ? f.summary : `Figure ${f.id}: groupIndices=[${f.groupIndices.join(',')}]; names: ${f.nodes.filter((n) => n.labelGroup !== undefined).map((n) => `${n.id}=word in group ${n.labelGroup}`).join('; ')}; label groups=[${[...new Set([...f.labelGroups, ...f.labelHostGroups])].join(',')}]`);
+    seen.set(f.id, style === 'full' ? f.summary : `Figure ${f.id} ${f.kind}: groupIndices=[${f.groupIndices.join(',')}]; names=${JSON.stringify(Object.fromEntries(f.nodes.map((n) => [n.id, ''])))}; node boxes: ${f.nodes.map((n) => { const b = toImagePx(n.bbox, req); return `${n.id}:[${b.left},${b.top},${b.right},${b.bottom}]`; }).join(' ')}; read ALL labels${f.kind === 'table' ? ' and cells' : ''}.`);
   }
   return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s);
 }

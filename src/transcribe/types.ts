@@ -68,6 +68,8 @@ export interface TranscribeResult {
 
 export interface Transcriber {
   readonly name: string;
+  /** Optional model-specific render budget, shared by app and evaluator. */
+  readonly maxImageEdge?: number;
   transcribe(request: TranscribeRequest, signal?: AbortSignal): Promise<TranscribeResult>;
 }
 

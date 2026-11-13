@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, resolveFigureRefs, stringList } from './figure';
+import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserveCompactNameWords, resolveFigureRefs, stringList } from './figure';
 import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it('uses model words keyed by hint ids without importing their predicted boxes', () => {
+    const figure = normaliseFigure({ names: { n1: '' }, 'node boxes': [{ n1: { bbox: [12, 20, 40, 60], labels: ['plan'] } }, { n2: { label: 'build' } }] })!;
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'plan' }, { id: 'n2', label: 'build' }]);
+    expect(figure.labels).toEqual(['plan', 'build']);
+    expect(normaliseFigure({ 'node boxes': [{ n1: { bbox: [1, 2, 3, 4] }, nope: { label: 'ignored' } }, null] })).toBeUndefined();
+    expect(normaliseFigure({ 'node boxes': null })).toBeUndefined();
+  });
+  it('retains every word when compact name keys repeat, without changing node ids', () => {
+    const raw = '{"names":{"n1":"first","n1":"last","n2":"a } b\\\" c"}}';
+    const figure = normaliseFigure(JSON.parse(preserveCompactNameWords(raw)))!;
+    expect(figure.labels).toEqual(['first', 'last', 'a } b" c']);
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'last' }, { id: 'n2', label: 'a } b" c' }]);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{"score":41,"score":58}}')))!.labels).toEqual(['score', '41', '58']);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{"A":"3b","B":"7b"}}')))!.labels).toEqual(['A', '3b', 'B', '7b']);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{}}')))).toBeUndefined();
+    expect(preserveCompactNameWords('{"names":{"n1":{}}}')).toBe('{"names":{"n1":{}}}');
+    expect(() => JSON.parse(preserveCompactNameWords('{"names":{"n1":'))).toThrow();
+  });
+  it('retains words in text detections alongside labels and compact names', () => {
+    const figure = normaliseFigure({ labels: ['axis'], names: { n1: 'node' }, text: [{ bbox_2d: [1, 2, 3, 4], label: 'outer' }, { label: 'inner' }, { label: 'core' }] })!;
+    expect(figure.labels).toEqual(['axis', 'outer', 'inner', 'core', 'node']);
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'node' }]);
+    expect(normaliseFigure({ text: [] })).toBeUndefined();
+    expect(normaliseFigure({ text: null })).toBeUndefined();
+  });
+  it('preserves all table words as labels even without a labels list', () => {
+    const figure = normaliseFigure({ kind: 'table', cells: [['heading', 'value'], ['row', '12']] })!;
+    expect(figure.labels).toEqual(['heading', 'value', 'row', '12']);
+    expect(figure.cells).toEqual([['heading', 'value'], ['row', '12']]);
+  });
   it('resolves case-insensitive ids and comma lists through compact names or model nodes', () => {
     for (const data of [{ names: { n1: 'start', n3: 'end' } }, { nodes: [{ id: 'n1', label: 'start' }, { id: 'n3', label: 'end' }] }]) {
       const figure = normaliseFigure({ ...data, labels: ['n1, N3'], sequence: ['n1', 'N3'], edges: [{ from: 'N1', to: 'n3' }] })!;

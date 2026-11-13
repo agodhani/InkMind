@@ -109,6 +109,15 @@ describe('normaliseBlocks', () => {
 });
 
 describe('buildUserPrompt shape hints', () => {
+  it('includes ids without label groups and asks tables for every cell without ink examples', () => {
+    const figure = { id: 0, groupIndices: [0], kind: 'table', nodes: [{ id: 'n1', bbox: { left: 0, top: 0, right: 100, bottom: 80 } }, { id: 'n2', bbox: { left: 20, top: 30, right: 60, bottom: 50 } }] };
+    const req = { imageBounds: { left: 0, top: 0, right: 400, bottom: 300 }, imageSize: { width: 200, height: 150 }, groups: [{ index: 0, bbox: figure.nodes[0].bbox, strokeIds: [], writtenOrder: 0, figure }], pageTitle: '', contextText: '', profile: { glossary: [], habits: [], examples: [] } };
+    const prompt = buildUserPrompt(req as never, 'compact');
+    expect(prompt).toContain('names={"n1":"","n2":""}');
+    expect(prompt).toContain('n2:[10,15,30,25]');
+    expect(prompt).toContain('read ALL labels and cells');
+    expect(prompt).not.toContain('<actual ink');
+  });
   it('lists group hints and the figures found by geometry', () => {
     const base = { imageDataUrl: '', imageBounds: { left: 0, top: 0, right: 400, bottom: 300 }, imageSize: { width: 400, height: 300 }, strokes: [], contextText: '', pageTitle: 't', profile: { glossary: [], habits: [], examples: [] } };
     const figure = { id: 0, groupIndices: [0, 1], kind: 'flowchart' as const, shapes: ['rectangle'], labelGroups: [1], labelInside: { 1: 0 }, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: 'Figure A (flowchart; groups 0, 1): rectangle (group 0); labels written inside shapes: group 1 inside group 0' };
@@ -119,8 +128,8 @@ describe('buildUserPrompt shape hints', () => {
     ];
     const prompt = buildUserPrompt({ ...base, groups } as never);
     const compact = buildUserPrompt({ ...base, groups } as never, 'compact');
-    expect(compact).toContain('Figure 0: groupIndices=[0,1]');
-    expect(compact).toContain('label groups=[1]');
+    expect(compact).toContain('Figure 0 flowchart: groupIndices=[0,1]');
+    expect(compact).toContain('read ALL labels');
     expect(compact).not.toContain('rectangle 100×80');
     expect(compact).not.toContain('keep every listed edge');
     expect(prompt).toContain('0: [0,0,100,80] n=1 order=0 — closed shape: rectangle 100×80 px — part of Figure A (drawing)');

@@ -24,6 +24,13 @@ can be loaded into the app via Pages → Import… to see and correct the transc
 WER/CER are computed on lower-cased text with punctuation, bullets, arrows and Markdown stripped,
 so they measure *reading* accuracy, not formatting.
 
+Ollama's compact prompt (auto-selected for models up to 4b) caps the image long edge at 1024 px,
+in both the app and evaluator. `--image-edge 1280` overrides that budget for resolution comparisons;
+it applies to PDF rasters and stroke renders. Full prompts, 7b+ defaults and OpenRouter keep their
+existing render settings. Raw Ollama outputs include input dimensions and prompt/generation counters.
+For cold comparisons run `ollama stop <model>` before each page; subsecond prompt evaluations on
+repeated requests should not be treated as cold performance.
+
 ## Synthetic shape / diagram datasets
 
 For an offline detector-only pass over all 14 datasets (58 pages), run

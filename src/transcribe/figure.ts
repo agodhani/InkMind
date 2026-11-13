@@ -1,5 +1,13 @@
 import { FIGURE_KINDS, type FigureEdge, type FigureEdgeKind, type FigureInfo, type FigureKind, type FigureNode } from '../model/page';
 
+/** Keep every compact name value before JSON.parse overwrites repeated keys. */
+export function preserveCompactNameWords(text: string): string {
+  return text.replace(/"names"\s*:\s*\{((?:[^{}"]|"(?:\\.|[^"\\])*")*)\}/g, (map, contents: string) => {
+    const words = [...contents.matchAll(/("(?:\\.|[^"\\])*")\s*:\s*("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/g)].flatMap((m) => /^n\d+$/i.test(JSON.parse(m[1])) ? [m[2]] : [m[1], m[2]]);
+    return `${map},"_nameWords":[${words.join(',')}]`;
+  });
+}
+
 /**
  * Lenient parser for the optional `figure` object on diagram blocks. Small vision models produce
  * messy JSON: strings where arrays were asked for, objects for labels, "a -> b" strings for edges,
@@ -13,18 +21,31 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  const boxedWords: FigureNode[] = [];
+  for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
+    for (const [id, value] of Object.entries(box)) {
+      if (!/^n\d+$/i.test(id) || !value || typeof value !== 'object') continue;
+      const label = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      if (!label || isGroupRef(label)) continue;
+      boxedWords.push({ id, label });
+      if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
+    }
+  }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
   const byRef = (ref: string) => resolveNodeRefs(ref, nodes);
   const unwantedRef = (ref: string) => isGroupRef(ref) && !(nodes.length === 0 && /^n\d+$/i.test(ref));
   const labels = dedupeText([
-    ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])).map(byRef),
+    ...['labels', 'label', 'texts', 'text_labels', 'annotations', 'text', '_nameWords'].flatMap((key) => stringList(obj[key])).map(byRef),
     ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
+    ...boxedWords.map((n) => n.label),
   ]).filter((l) => !unwantedRef(l));
   const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef, nodes.length === 0);
   // "a → b" written as a step is two steps (arrow glyphs only: "ready to ship" is one step).
   const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !unwantedRef(l));
   // Cells only describe tables; small models echo the placeholder grid onto every figure.
   const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
+  labels.push(...cells.flat().filter((word) => word && !labels.includes(word)));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
   if (sequence.length) fig.sequence = sequence;
