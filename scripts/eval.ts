@@ -102,15 +102,19 @@ export interface Agg {
   stepsFound: number;
   tauSum: number;
   tauN: number;
+  /** Sequences scored against the structured `figure.sequence` rather than caption text. */
+  sequencesStructured: number;
   contains: number;
   containsFound: number;
+  /** Pages whose containment was scored against structured `figure.nodes` parents. */
+  containsStructuredPages: number;
   /** Pages with expected figures, and how many had exactly that many diagram blocks. */
   countPages: number;
   countExact: number;
 }
 
 export function emptyAgg(): Agg {
-  return { pages: 0, textPages: 0, wer: 0, cer: 0, figures: 0, detected: 0, figureStrokes: 0, leaked: 0, labels: 0, labelsFound: 0, spurious: 0, edges: 0, edgesFound: 0, predicted: 0, predictedMatched: 0, sequences: 0, sequencesExact: 0, steps: 0, stepsFound: 0, tauSum: 0, tauN: 0, contains: 0, containsFound: 0, countPages: 0, countExact: 0 };
+  return { pages: 0, textPages: 0, wer: 0, cer: 0, figures: 0, detected: 0, figureStrokes: 0, leaked: 0, labels: 0, labelsFound: 0, spurious: 0, edges: 0, edgesFound: 0, predicted: 0, predictedMatched: 0, sequences: 0, sequencesExact: 0, steps: 0, stepsFound: 0, tauSum: 0, tauN: 0, sequencesStructured: 0, contains: 0, containsFound: 0, containsStructuredPages: 0, countPages: 0, countExact: 0 };
 }
 
 export function addAgg(into: Agg, from: Agg): Agg {
@@ -127,7 +131,9 @@ function accumulate(a: Agg, s: { wer: number; cer: number } | null, figures: { s
   a.edges += rm.edges; a.edgesFound += rm.edgesFound; a.predicted += rm.predicted; a.predictedMatched += rm.predictedMatched;
   a.sequences += rm.sequences; a.sequencesExact += rm.sequencesExact; a.steps += rm.steps; a.stepsFound += rm.stepsFound;
   if (rm.sequenceTau !== null) { a.tauSum += rm.sequenceTau; a.tauN++; }
+  a.sequencesStructured += rm.sequencesStructured;
   a.contains += rm.contains; a.containsFound += rm.containsFound;
+  if (rm.contains && rm.containsStructured) a.containsStructuredPages++;
   if (figures.length) { a.countPages++; if (rm.figureCountExact) a.countExact++; }
 }
 

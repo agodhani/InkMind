@@ -4,7 +4,7 @@ import { glyphFor, layoutText, measureText, parseJhf } from './font';
 import { DEFAULT_INK_STYLE, InkWriter, resample } from './ink';
 import { drawCircle, drawRect, writeText, type Pen } from './shapes';
 import { DATASETS, SCENE_KINDS, buildScene, sceneReference } from './scenes';
-import { captionHasLabel, containmentFromCaption, diagramMetrics, edgesFromCaption, formatReferencePage, kendallTau, normLabel, parseReferencePage, relationMetrics, stepPositions, type FigureExpectation } from './metrics';
+import { captionHasLabel, containmentFromCaption, containmentFromNodes, diagramMetrics, edgesFromCaption, formatReferencePage, kendallTau, normLabel, parseReferencePage, relationMetrics, stepPositions, stepPositionsInSequence, type FigureExpectation } from './metrics';
 import { strokesBounds } from '../transcribe/regions';
 import type { DigitalBlock } from '../model/page';
 import { SUITE_KINDS, suiteMarkdown, suitePlan, summariseSuite } from './suite';
@@ -307,6 +307,51 @@ describe('relation metrics', () => {
     expect(partial.sequencesExact).toBe(0);
   });
 
+  it('scores order against the structured figure.sequence when present, caption text otherwise', () => {
+    expect(stepPositionsInSequence(['collect', 'clean', 'eval'], ['Collect data', 'clean', 'train', 'eval'])).toEqual([0, 1, 3]);
+    expect(stepPositionsInSequence(['1', '2', '10'], ['10', '2'])).toEqual([null, 1, 0]);
+    const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
+    const info = (sequence: string[]): DigitalBlock['figure'] => ({ kind: 'sequence', shapes: [], labels: [], edges: [], sequence });
+    // Caption order is wrong but the structured sequence is right: the structured one wins.
+    const structured = relationMetrics([f], [block('Pipeline: eval, train, clean, collect', info(['collect', 'clean', 'train', 'eval']))]);
+    expect(structured.sequencesStructured).toBe(1);
+    expect(structured.sequencesExact).toBe(1);
+    expect(structured.sequenceTau).toBe(1);
+    expect(structured.perSequence).toEqual([{ id: 'fig1', positions: [0, 1, 2, 3], structured: true }]);
+    const swapped = relationMetrics([f], [block('Pipeline', info(['collect', 'train', 'clean', 'eval']))]);
+    expect(swapped.sequencesExact).toBe(0);
+    expect(swapped.sequenceTau).toBeCloseTo(4 / 6);
+    // A structured sequence that names none of the steps falls back to the caption.
+    const useless = relationMetrics([f], [block('Pipeline: collect → clean → train → eval', info(['a', 'b']))]);
+    expect(useless.sequencesStructured).toBe(0);
+    expect(useless.sequencesExact).toBe(1);
+    expect(useless.perSequence[0].structured).toBe(false);
+    const none = relationMetrics([f], [block('Pipeline: collect → clean → train → eval')]);
+    expect(none.sequencesStructured).toBe(0);
+    expect(none.sequencesExact).toBe(1);
+  });
+
+  it('scores containment from structured figure.nodes parents, caption phrases otherwise', () => {
+    const nodes = [
+      { id: 'n1', label: 'system' },
+      { id: 'n2', label: 'frontend', parent: 'n1' },
+      { id: 'n3', label: 'ui', parent: 'frontend' },
+      { id: 'n4', label: 'backend', parent: 'nope' },
+    ];
+    expect(containmentFromNodes(nodes)).toEqual([
+      { inner: 'frontend', outer: 'system' },
+      { inner: 'ui', outer: 'frontend' },
+    ]);
+    const f = fig({ type: 'nested-boxes', contains: [{ outer: 'system', inner: 'frontend' }, { outer: 'frontend', inner: 'ui' }, { outer: 'system', inner: 'backend' }] });
+    // Caption claims are ignored once a block carries structured nesting.
+    const m = relationMetrics([f], [block('system contains backend', { kind: 'shape', shapes: [], labels: [], edges: [], nodes })]);
+    expect(m.containsStructured).toBe(true);
+    expect(m.containsFound).toBe(2);
+    const c = relationMetrics([f], [block('system contains backend', { kind: 'shape', shapes: [], labels: [], edges: [], nodes: [{ id: 'n1', label: 'system' }] })]);
+    expect(c.containsStructured).toBe(false);
+    expect(c.containsFound).toBe(1);
+  });
+
   it('scores containment from caption phrases and figure count', () => {
     expect(containmentFromCaption('ui inside frontend; backend contains api')).toEqual([
       { inner: 'ui', outer: 'frontend' },
@@ -317,6 +362,7 @@ describe('relation metrics', () => {
     expect(m.contains).toBe(3);
     expect(m.containsFound).toBe(2);
     expect(m.containmentRecall).toBeCloseTo(2 / 3);
+    expect(m.containsStructured).toBe(false);
     expect(m.figureCountExact).toBe(true);
     const two = relationMetrics([f, fig({ id: 'fig2', strokeIds: ['s3'] })], [block('x')]);
     expect(two.figureCountExact).toBe(false);

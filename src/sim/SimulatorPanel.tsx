@@ -10,7 +10,7 @@ import { renderStrokesToPng } from '../transcribe/render';
 import { strokesBounds } from '../transcribe/regions';
 import { MESSINESS_LEVELS, type Messiness } from './ink';
 import { SCENE_KINDS, buildScene, type Scene, type SceneKind } from './scenes';
-import { diagramMetrics, edgeMatches, pct, predictedEdges, relationMetrics, stepPositions, type FigureExpectation } from './metrics';
+import { diagramMetrics, edgeMatches, pct, predictedEdges, relationMetrics, type FigureExpectation } from './metrics';
 import { alignStrokes, replayStrokes } from './replay';
 import { suiteMarkdown, suitePlan, summariseSuite, type SuiteResult } from './suite';
 
@@ -243,7 +243,6 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
   // Map the scene's stroke ids onto the ids the page actually got (InkCanvas assigns fresh ids in Draw mode).
   const result = useMemo(() => (drawn ? scoreScene(drawn, page.strokes, page.blocks) : null), [drawn, page.strokes, page.blocks]);
   const claimed = useMemo(() => predictedEdges(page.blocks), [page.blocks]);
-  const captionAll = useMemo(() => page.blocks.filter((b) => b.kind === 'diagram').map((b) => b.text).join('\n'), [page.blocks]);
   const scored = !!result && page.blocks.length > 0;
 
   const groups = useMemo(() => {
@@ -365,7 +364,8 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
               {scene.figures.map((f) => {
                 const score = result?.metrics.perFigure.find((p) => p.id === f.id);
                 const cls = !score || !scored ? '' : score.detected ? 'ok' : 'miss';
-                const positions = f.sequence && scored ? stepPositions(f.sequence, score?.caption || captionAll) : null;
+                const seq = scored ? result?.relations.perSequence.find((p) => p.id === f.id) : undefined;
+                const positions = seq?.positions ?? null;
                 return (
                   <li key={f.id} className={cls}>
                     <span className="tag">{f.type}</span>
@@ -386,7 +386,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
                     )}
                     {f.sequence && (
                       <div className="sim-seq" aria-label="expected order">
-                        order:{' '}
+                        order{seq ? (seq.structured ? ' (structured)' : ' (caption)') : ''}:{' '}
                         {f.sequence.map((s, i) => (
                           <span key={i} className={positions ? (positions[i] === null ? 'miss' : 'ok') : ''}>
                             {i > 0 && ' › '}

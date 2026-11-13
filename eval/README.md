@@ -86,8 +86,12 @@ plain lines, an ordered `sequence`, and `contains {outer,inner}` pairs). Page me
   endpoint label: case-insensitive, `->`/`=>`/`→` are equivalent, extra words around a label are tolerated,
   either direction counts for undirected figures (trees, mind maps, plain graphs);
 * **sequence exact / τ** — for ordered step lists (pipeline stages, numbered messages, table headers, bar order):
-  whether every step appears in the caption in the right order, and the Kendall tau of the steps that were found;
-* **nesting** — expected "inner inside outer" pairs stated in the caption ("ui inside frontend", "system contains backend");
+  whether every step appears in the right order, and the Kendall tau of the steps that were found. Steps are
+  looked up in the structured `figure.sequence` when the model/reconciler produced one that names at least one
+  step, otherwise in the caption text (`summary.json` reports how many sequences were scored structurally);
+* **nesting** — expected "inner inside outer" pairs vs the structured `figure.nodes` parents (`parent` = id of the
+  enclosing node); when no block carries nesting data the caption phrases are used instead ("ui inside frontend",
+  "system contains backend");
 * **figure count ok** — pages whose number of `diagram` blocks equals the number of expected figures (notes pages
   with 2–3 figures and arrows between them test that neighbouring figures are not merged);
 * WER/CER are unchanged and cover the text parts only (`diagram` blocks are excluded).

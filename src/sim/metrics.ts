@@ -1,5 +1,5 @@
 import type { BoundingBox } from '../types';
-import type { DigitalBlock, FigureEdge } from '../model/page';
+import type { DigitalBlock, FigureEdge, FigureNode } from '../model/page';
 
 export interface ContainmentExpectation {
   outer: string;
@@ -294,6 +294,55 @@ export function stepPositions(steps: string[], text: string): (number | null)[] 
   });
 }
 
+/** Position of each step in a structured `figure.sequence` (first entry matching the step after the previous one), or null when absent. */
+export function stepPositionsInSequence(steps: string[], sequence: string[]): (number | null)[] {
+  let cursor = 0;
+  return steps.map((s) => {
+    const find = (from: number) => sequence.findIndex((x, i) => i >= from && labelsMatch(x, s));
+    let idx = find(cursor);
+    if (idx < 0) idx = find(0);
+    if (idx < 0) return null;
+    cursor = idx + 1;
+    return idx;
+  });
+}
+
+export interface SequencePositions {
+  positions: (number | null)[];
+  /** True when the steps were looked up in the structured `figure.sequence` rather than the caption text. */
+  structured: boolean;
+}
+
+/**
+ * Where each expected step sits in what a block says: the structured `figure.sequence` when the model /
+ * reconciler produced one that names at least one of the steps, otherwise the caption text.
+ */
+export function stepPositionsFor(steps: string[], source: { text: string; figure?: { sequence?: string[] } }): SequencePositions {
+  const seq = source.figure?.sequence;
+  if (seq?.length) {
+    const positions = stepPositionsInSequence(steps, seq);
+    if (positions.some((p) => p !== null)) return { positions, structured: true };
+  }
+  return { positions: stepPositions(steps, source.text), structured: false };
+}
+
+/** "inner inside outer" pairs stated by structured `figure.nodes` (`parent` is the id — or label — of the enclosing node). */
+export function containmentFromNodes(nodes: FigureNode[]): ContainmentExpectation[] {
+  const out: ContainmentExpectation[] = [];
+  for (const n of nodes) {
+    const parent = n.parent;
+    if (!parent) continue;
+    const p = nodes.find((x) => x.id === parent) ?? nodes.find((x) => x !== n && labelsMatch(x.label, parent));
+    if (p && p !== n) out.push({ inner: n.label, outer: p.label });
+  }
+  return out;
+}
+
+export interface SequenceScore extends SequencePositions {
+  /** Figure id. */
+  id: string;
+}
+
 export interface RelationMetrics {
   /** Expected edges across all figures on the page. */
   edges: number;
@@ -310,6 +359,11 @@ export interface RelationMetrics {
   stepsFound: number;
   /** Mean Kendall tau over figures with a sequence (null when none scored). */
   sequenceTau: number | null;
+  /** Figures whose order was scored against a structured `figure.sequence` (the rest fell back to caption text). */
+  sequencesStructured: number;
+  perSequence: SequenceScore[];
+  /** True when containment was scored against structured `figure.nodes` parents rather than caption phrases. */
+  containsStructured: boolean;
   contains: number;
   containsFound: number;
   containmentRecall: number | null;
@@ -322,8 +376,9 @@ export interface RelationMetrics {
 /**
  * Score relations on a page: edge recall/precision by endpoint labels (case-insensitive, `→` == `->`,
  * either direction for undirected figures), sequence order (Kendall tau + exact order of the step list
- * as it appears in the caption), containment recall (caption phrases such as "ui inside frontend")
- * and whether the number of diagram blocks equals the number of expected figures.
+ * in the structured `figure.sequence`, else as it appears in the caption), containment recall (structured
+ * `figure.nodes` parents, else caption phrases such as "ui inside frontend") and whether the number of
+ * diagram blocks equals the number of expected figures.
  */
 export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLike[]): RelationMetrics {
   const diagrams = blocks.filter((b) => b.kind === 'diagram');
@@ -331,8 +386,9 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
   const captionAll = diagrams.map((b) => b.text).join('\n');
   const strokeIndex = new Map<string, RelBlockLike>();
   for (const b of diagrams) for (const id of b.strokeIds) strokeIndex.set(id, b);
-  // Caption of the diagram block holding most of a figure's strokes; all captions when none does.
-  const captionFor = (f: FigureExpectation): string => {
+  // The diagram block holding most of a figure's strokes; all diagram blocks pooled when none does.
+  const pooled: RelBlockLike = { kind: 'diagram', text: captionAll, strokeIds: [], figure: { kind: 'other', shapes: [], labels: [], edges: [], sequence: diagrams.flatMap((b) => b.figure?.sequence ?? []) } };
+  const blockFor = (f: FigureExpectation): RelBlockLike => {
     const counts = new Map<RelBlockLike, number>();
     for (const id of f.strokeIds) {
       const b = strokeIndex.get(id);
@@ -340,7 +396,7 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
     }
     let best: RelBlockLike | null = null, bestN = 0;
     for (const [b, n] of counts) if (n > bestN) { best = b; bestN = n; }
-    return best && bestN >= f.strokeIds.length * 0.5 ? best.text : captionAll;
+    return best && bestN >= f.strokeIds.length * 0.5 ? best : pooled;
   };
 
   let edges = 0, edgesFound = 0;
@@ -359,12 +415,15 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
     }
   }
 
-  let sequences = 0, sequencesExact = 0, steps = 0, stepsFound = 0;
+  let sequences = 0, sequencesExact = 0, steps = 0, stepsFound = 0, sequencesStructured = 0;
   const taus: number[] = [];
+  const perSequence: SequenceScore[] = [];
   for (const f of figures) {
     if (!f.sequence?.length) continue;
     sequences++;
-    const pos = stepPositions(f.sequence, captionFor(f));
+    const { positions: pos, structured } = stepPositionsFor(f.sequence, blockFor(f));
+    perSequence.push({ id: f.id, positions: pos, structured });
+    if (structured) sequencesStructured++;
     steps += f.sequence.length;
     const found = pos.filter((p) => p !== null).length;
     stepsFound += found;
@@ -374,7 +433,9 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
   }
 
   let contains = 0, containsFound = 0;
-  const claimed = containmentFromCaption(captionAll);
+  const fromNodes = diagrams.flatMap((b) => containmentFromNodes(b.figure?.nodes ?? []));
+  const containsStructured = fromNodes.length > 0;
+  const claimed = containsStructured ? fromNodes : containmentFromCaption(captionAll);
   for (const b of diagrams) for (const e of b.figure?.edges ?? []) {
     if (e.label && /contain|inside|within|nested/i.test(e.label)) claimed.push({ outer: e.from, inner: e.to });
   }
@@ -397,7 +458,10 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
     steps,
     stepsFound,
     sequenceTau: taus.length ? round(taus.reduce((a, b) => a + b, 0) / taus.length) : null,
+    sequencesStructured,
+    perSequence,
     contains,
+    containsStructured,
     containsFound,
     containmentRecall: contains ? round(containsFound / contains) : null,
     expectedFigures: figures.length,
