@@ -50,6 +50,11 @@ describe('probeOllama', () => {
 });
 
 describe('OllamaTranscriber', () => {
+  it('keeps compact table words spilled into a table block instead of a diagram figure', async () => {
+    vi.stubGlobal('fetch', async () => streamReply(['{"blocks":[{"kind":"table","groupIndices":[1,2],"table":{"labels":["day","am","pm"]}}]}']));
+    const result = await new OllamaTranscriber().transcribe(request);
+    expect(result.blocks[0]).toMatchObject({ kind: 'diagram', groupIndices: [1, 2], figure: { kind: 'table', labels: ['day', 'am', 'pm'] } });
+  });
   it('preserves repeated compact name values as labels before JSON decoding', async () => {
     vi.stubGlobal('fetch', async () => streamReply(['{"blocks":[{"kind":"diagram","figure":{"names":{"size":"3b","size":"7b","size":"72b"}}}]}']));
     const result = await new OllamaTranscriber().transcribe(request);

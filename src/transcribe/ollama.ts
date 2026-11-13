@@ -31,6 +31,15 @@ export function ollamaTokenBudget(groups: number): number {
 export const OLLAMA_NUM_CTX = 16384;
 const MAX_EXAMPLES = 2;
 
+function compactBlocks(json: unknown): TranscribeResult['blocks'] {
+  const root = (json ?? {}) as { blocks?: unknown };
+  const blocks = Array.isArray(root.blocks) ? root.blocks : Array.isArray(json) ? json : [];
+  return normaliseBlocks({ blocks: blocks.map((block) => {
+    if (!block || typeof block !== 'object' || block.kind !== 'table' || block.figure || !block.table || typeof block.table !== 'object') return block;
+    return { ...block, kind: 'diagram', figure: { kind: 'table', ...block.table } };
+  }) });
+}
+
 /**
  * Local transcriber via Ollama's native `/api/chat` (not the OpenAI shim) so we can set
  * `num_ctx`: with the default 4096 a full page image plus the prompt is rejected with 400.
@@ -145,7 +154,10 @@ export class OllamaTranscriber implements Transcriber {
       const parsed = closeJsonPrefix(raw);
       const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
       let blocks: TranscribeResult['blocks'];
-      try { blocks = normaliseBlocks(extractJson(this.promptStyle === 'compact' ? preserveCompactNameWords(parsed) : parsed)); } catch (e) {
+      try {
+        const json = extractJson(this.promptStyle === 'compact' ? preserveCompactNameWords(parsed) : parsed);
+        blocks = this.promptStyle === 'compact' ? compactBlocks(json) : normaliseBlocks(json);
+      } catch (e) {
         if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
         throw e;
       }
