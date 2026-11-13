@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { renderStrokesToPng } from '../transcribe/render';
+import { hasNesting, nodeTree } from '../transcribe/figure';
 import { Icon } from '../ui/icons';
 import { Kbd } from '../ui/primitives';
 
@@ -267,13 +268,46 @@ function DiagramDetails({ block, text }: { block: DigitalBlock; text: string }) 
           ))}
         </div>
       )}
+      {fig?.cells && fig.cells.length > 0 && (
+        <table className="diagram-table" aria-label="table cells">
+          <tbody>
+            {fig.cells.map((row, r) => (
+              <tr key={r}>{row.map((cell, c) => (r === 0 ? <th key={c}>{cell}</th> : <td key={c}>{cell}</td>))}</tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {fig && hasNesting(fig) && (
+        <ul className="diagram-nodes" aria-label="nested shapes">
+          {nodeTree(fig.nodes!).map(({ node, depth }) => (
+            <li key={node.id} style={{ paddingLeft: `${depth * 16}px` }}>
+              <span className="edge-node">{node.label}</span>
+              {node.shape && <span className="diagram-node-shape"> {node.shape}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {fig?.sequence && fig.sequence.length > 1 && (
+        <ol className="diagram-sequence" aria-label="step order">
+          {fig.sequence.map((step, i) => (
+            <li key={`${step}-${i}`}>{step}</li>
+          ))}
+        </ol>
+      )}
       {fig && fig.edges.length > 0 && (
         <ul className="diagram-edges" aria-label="relations">
           {fig.edges.map((e, i) => (
-            <li key={`${e.from}-${e.to}-${i}`}>
+            <li key={`${e.from}-${e.to}-${i}`} className={e.inferred ? 'edge-inferred' : undefined} title={e.inferred ? 'from the ink geometry (not read by the model)' : undefined}>
               <span className="edge-node">{e.from}</span>
-              <span className="edge-arrow">{e.label ? ` —${e.label}→ ` : ' → '}</span>
-              <span className="edge-node">{e.to}</span>
+              {e.kind === 'self-loop' || e.from === e.to ? (
+                <span className="edge-arrow">{e.label ? ` ↺ (${e.label})` : ' ↺'}</span>
+              ) : (
+                <>
+                  <span className="edge-arrow">{e.kind === 'line' ? ' — ' : ' → '}</span>
+                  <span className="edge-node">{e.to}</span>
+                  {e.label && <span className="edge-label"> ({e.label})</span>}
+                </>
+              )}
             </li>
           ))}
         </ul>

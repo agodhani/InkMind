@@ -48,6 +48,13 @@ describe('looksDegenerate / pickSaner', () => {
 });
 
 describe('normaliseBlocks', () => {
+  it('treats a figure kind given as the block kind as a diagram of that kind, but not a null figure field', () => {
+    const blocks = normaliseBlocks({ blocks: [{ kind: 'flowchart', text: 'Shape: boxes.', bbox: {}, groupIndices: [0], figure: { labels: ['a'] } }, { kind: 'weird', text: 'note', bbox: {}, figure: null }] });
+    expect(blocks[0]).toMatchObject({ kind: 'diagram', figure: { kind: 'flowchart', labels: ['a'] } });
+    expect(blocks[1].kind).toBe('unknown');
+    expect(normaliseBlocks({ blocks: [{ kind: 'drawing', text: '', bbox: {}, figure: 'tree' }] })[0]).toMatchObject({ kind: 'diagram', figure: { kind: 'tree' } });
+  });
+
   it('coerces unknown kinds, drops empty text, keeps empty diagrams', () => {
     const blocks = normaliseBlocks({
       blocks: [
@@ -104,7 +111,7 @@ describe('normaliseBlocks', () => {
 describe('buildUserPrompt shape hints', () => {
   it('lists group hints and the figures found by geometry', () => {
     const base = { imageDataUrl: '', imageBounds: { left: 0, top: 0, right: 400, bottom: 300 }, imageSize: { width: 400, height: 300 }, strokes: [], contextText: '', pageTitle: 't', profile: { glossary: [], habits: [], examples: [] } };
-    const figure = { id: 0, groupIndices: [0, 1], kind: 'flowchart' as const, shapes: ['rectangle'], labelGroups: [1], labelInside: { 1: 0 }, edges: [], summary: 'Figure A (flowchart; groups 0, 1): rectangle (group 0); labels written inside shapes: group 1 inside group 0' };
+    const figure = { id: 0, groupIndices: [0, 1], kind: 'flowchart' as const, shapes: ['rectangle'], labelGroups: [1], labelInside: { 1: 0 }, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: 'Figure A (flowchart; groups 0, 1): rectangle (group 0); labels written inside shapes: group 1 inside group 0' };
     const groups = [
       { index: 0, strokeIds: ['a'], bbox: { left: 0, top: 0, right: 100, bottom: 80 }, writtenOrder: 0, hint: 'closed shape: rectangle 100×80 px — part of Figure A (drawing)', figure },
       { index: 1, strokeIds: ['b', 'c'], bbox: { left: 20, top: 30, right: 60, bottom: 50 }, writtenOrder: 1, hint: 'looks like text (2 short strokes on a baseline) — part of Figure A (label inside group 0)', figure },

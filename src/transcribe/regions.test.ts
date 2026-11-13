@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
-import { arrowTwoStrokes, rect, resetSynthetic, textLine } from '../__tests__/shapes';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
+import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
@@ -224,7 +224,7 @@ describe('reconcileFigureBlocks', () => {
     expect(diagram.strokeIds.sort()).toEqual([box1, ...arrow, box2, ...label].map((s) => s.id).sort());
     expect(diagram.figure!.kind).toBe('flowchart');
     expect(diagram.figure!.labels).toEqual(['go']);
-    expect(diagram.figure!.edges).toEqual([{ from: 'go', to: `shape (group ${groupOf(box2).index})` }]);
+    expect(diagram.figure!.edges).toEqual([{ from: 'go', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
     expect(diagram.text).toMatch(/^Shape: .*Labels: go/);
   });
 
@@ -242,7 +242,10 @@ describe('reconcileFigureBlocks', () => {
     const diagram = out.find((b) => b.kind === 'diagram')!;
     expect(diagram.id).toBe(incoming[0].id);
     expect(diagram.text).toMatch(/^Shape: two boxes/);
-    expect(diagram.figure).toEqual({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
+    expect(diagram.figure).toMatchObject({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
+    // Geometry knows the second box but not its word: no placeholder edge is added next to the model's.
+    expect(diagram.figure!.edges).toHaveLength(1);
+    expect(diagram.figure!.nodes?.map((n) => n.label)).toEqual(['go', 'rectangle 2']);
     expect(diagram.strokeIds).toContain(label[0].id);
   });
 
@@ -280,7 +283,7 @@ describe('reconcileFigureBlocks', () => {
     const out = reconcileFigureBlocks([block('start', groupOf(box1)), block('end', groupOf(box2))], groups, strokes);
     const diagram = out.find((b) => b.kind === 'diagram');
     expect(diagram?.figure?.labels).toEqual(['start', 'end']);
-    expect(diagram?.figure?.edges).toEqual([{ from: 'start', to: 'end' }]);
+    expect(diagram?.figure?.edges).toEqual([{ from: 'start', to: 'end', kind: 'arrow', inferred: true }]);
   });
 
   it('keeps every digit of a numeric label', () => {
@@ -295,6 +298,101 @@ describe('reconcileFigureBlocks', () => {
     expect(out).toHaveLength(1);
     expect(out[0].kind).toBe('diagram');
     expect(out[0].strokeIds).not.toContain(note[0].id);
+  });
+
+  it('fills in an edge the arrow clearly draws but the model left out, marked as inferred, and keeps the model edges', () => {
+    const { groups, strokes, groupOf, block, box1, arrow, box2, label } = scene();
+    const second = textLine(270, 50, 3, 16, 40000);
+    const all = [...strokes, ...second];
+    const groups2 = buildStrokeGroups(all);
+    const g = (s: InkStroke) => groups2.find((x) => x.strokeIds.includes(s.id))!;
+    void groups;
+    void groupOf;
+    const diagram = block('diagram', 'Shape: two boxes.', [g(box1), g(arrow[0]), g(box2)], {
+      figure: { kind: 'flowchart', shapes: ['box', 'box'], labels: ['go', 'stop'], edges: [{ from: 'stop', to: 'elsewhere' }] },
+    });
+    const out = reconcileFigureBlocks([diagram, block('paragraph', 'go', [g(label[0])]), block('paragraph', 'stop', [g(second[0])])], groups2, all);
+    const fig = out.find((b) => b.kind === 'diagram')!.figure!;
+    expect(fig.edges).toEqual([{ from: 'stop', to: 'elsewhere' }, { from: 'go', to: 'stop', kind: 'arrow', inferred: true }]);
+    expect(fig.nodes?.map((n) => n.label)).toEqual(['go', 'stop']);
+    expect(fig.sequence).toEqual(['go', 'stop']);
+  });
+
+  it('folds two diagram blocks the model returned for one figure into one, keeping both their labels and edges', () => {
+    const { groups, strokes, groupOf, block, box1, arrow, box2, label } = scene();
+    const d1 = block('diagram', 'Shape: a box.', [groupOf(box1), groupOf(label[0])], { figure: { kind: 'flowchart', shapes: ['box'], labels: ['go'], edges: [] } });
+    const d2 = block('diagram', '', [groupOf(arrow[0]), groupOf(box2)], { figure: { kind: 'other', shapes: ['box', 'arrow'], labels: ['B'], edges: [{ from: 'go', to: 'B' }] } });
+    const out = reconcileFigureBlocks([d1, d2], groups, strokes);
+    const diagrams = out.filter((b) => b.kind === 'diagram');
+    expect(diagrams).toHaveLength(1);
+    expect(diagrams[0].text).toBe('Shape: a box.');
+    expect(diagrams[0].figure).toMatchObject({ kind: 'flowchart', shapes: ['box', 'arrow'], labels: ['go', 'B'], edges: [{ from: 'go', to: 'B' }] });
+  });
+
+  it('completes a model edge with the label and kind the geometry read for it', () => {
+    const geo = { nodes: [{ id: 'n1', label: 'a' }, { id: 'n2', label: 'b' }], edges: [{ from: 'a', to: 'b', kind: 'arrow' as const, label: 'yes' }], sequence: ['a', 'b'], unnamed: [] };
+    const hint = { id: 0, groupIndices: [0], kind: 'flowchart' as const, shapes: [], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
+    const fig = mergeWithGeometry({ kind: 'flowchart', shapes: [], labels: ['a', 'b'], edges: [{ from: 'A', to: 'b' }] }, hint, ['a', 'b'], geo);
+    expect(fig.edges).toEqual([{ from: 'A', to: 'b', label: 'yes', kind: 'arrow' }]);
+    expect(fig.sequence).toEqual(['a', 'b']);
+    expect(fig.nodes).toEqual(geo.nodes);
+  });
+
+  it('does not add geometry edges to unnamed shapes next to the model edges, but uses them when the model gave none', () => {
+    const geo = { nodes: [{ id: 'n1', label: 'a' }, { id: 'n2', label: 'rectangle 2' }], edges: [{ from: 'a', to: 'rectangle 2', kind: 'arrow' as const }], unnamed: ['rectangle 2'] };
+    const hint = { id: 0, groupIndices: [0], kind: 'flowchart' as const, shapes: ['rectangle'], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
+    expect(mergeWithGeometry({ kind: 'flowchart', shapes: [], labels: ['a'], edges: [{ from: 'a', to: 'c' }] }, hint, ['a'], geo).edges).toEqual([{ from: 'a', to: 'c' }]);
+    expect(mergeWithGeometry(undefined, hint, ['a'], geo).edges).toEqual([{ from: 'a', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
+    expect(mergeWithGeometry({ kind: 'table', shapes: [], labels: [], edges: [] }, hint, [], { ...geo, cells: [['x', ''], ['', '']] }).cells).toEqual([['x', ''], ['', '']]);
+  });
+
+  it('gives a stroke-less model diagram to the figure it overlaps and names geometry nodes with the model words by hint id', () => {
+    const { groups, strokes, block, groupOf, box1 } = scene();
+    const figBox = groups.filter((g) => g.figure).map((g) => g.bbox).reduce(unionBounds);
+    const orphan: DigitalBlock = { ...block('diagram', 'Shape: two boxes.', [groupOf(box1)]), strokeIds: [], bbox: figBox, figure: { kind: 'flowchart', shapes: [], labels: ['go', 'stop'], edges: [], nodes: [{ id: 'n1', label: 'go' }, { id: 'n2', label: 'stop' }] } };
+    const out = reconcileFigureBlocks([orphan], groups, strokes);
+    const diagrams = out.filter((b) => b.kind === 'diagram');
+    expect(diagrams).toHaveLength(1);
+    expect(diagrams[0].strokeIds.length).toBeGreaterThan(0);
+    expect(diagrams[0].figure).toMatchObject({ labels: ['go', 'stop'], edges: [{ from: 'go', to: 'stop', kind: 'arrow', inferred: true }], sequence: ['go', 'stop'] });
+  });
+
+  it('turns a model "table" text block on a drawn grid into the figure cells', () => {
+    const grid = [...rectLines(0, 0, 300, 150, 0), line(0, 50, 300, 50, 6000), line(0, 100, 300, 100, 12000), line(150, 0, 150, 150, 18000)];
+    const words = [...textLine(40, 30, 3, 14, 30000), ...textLine(190, 30, 3, 14, 40000), ...textLine(40, 80, 3, 14, 50000)];
+    const strokes = [...grid, ...words];
+    const groups = buildStrokeGroups(strokes);
+    expect(groups.find((g) => g.figure)!.figure!.kind).toBe('table');
+    const wordGroups = groups.filter((g) => g.strokeIds.some((id) => words.some((w) => w.id === id)));
+    const tableBlock: DigitalBlock = { id: 'tb', kind: 'table', text: 'name qty\nnut', bbox: wordGroups.map((g) => g.bbox).reduce(unionBounds), strokeIds: wordGroups.flatMap((g) => g.strokeIds), confidence: 0.8 };
+    const out = reconcileFigureBlocks([tableBlock], groups, strokes);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('diagram');
+    expect(out[0].figure!.cells).toEqual([['name', 'qty'], ['nut', ''], ['', '']]);
+    expect(out[0].figure!.labels).toEqual(expect.arrayContaining(['name', 'qty', 'nut']));
+  });
+
+  it('aligns model nodes to geometry nodes by label group, and lets geometry decide shapes and nesting', () => {
+    const geo = { nodes: [{ id: 'n1', label: 'circle 1', shape: 'circle', group: 1 }, { id: 'n2', label: 'circle 2', shape: 'circle', group: 8 }], edges: [{ from: 'circle 2', to: 'circle 1', kind: 'line' as const }], unnamed: ['circle 1', 'circle 2'] };
+    const hint = { id: 0, groupIndices: [0], kind: 'mindmap' as const, shapes: [], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
+    const prior = { kind: 'sketch' as const, shapes: [], labels: ['topic', 'a'], edges: [], nodes: [{ id: 'n1', label: 'topic', shape: 'box 2', group: 8, parent: 'n2' }, { id: 'n2', label: 'a', group: 1 }] };
+    const fig = mergeWithGeometry(prior, hint, ['topic', 'a'], geo);
+    expect(fig.edges).toEqual([{ from: 'topic', to: 'a', kind: 'line', inferred: true }]);
+    expect(fig.nodes).toEqual([{ id: 'n1', label: 'topic', shape: 'circle', group: 8 }, { id: 'n2', label: 'a', shape: 'circle', group: 1 }]);
+    // A wrong group number on the model side still lets the hint id name the node.
+    const byId = mergeWithGeometry({ ...prior, nodes: [{ id: 'n1', label: 'top', group: 99 }, { id: 'n2', label: 'side', group: 98 }] }, hint, [], geo);
+    expect(byId.edges[0]).toMatchObject({ from: 'side', to: 'top' });
+  });
+
+  it('keeps differently labelled edges when folding diagram blocks, and leaves a far-away stroke-less diagram alone', () => {
+    const merged = mergeFigures({ kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'yes' }] }, { kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'no' }, { from: 'a', to: 'b', label: 'yes' }] });
+    expect(merged.edges).toEqual([{ from: 'a', to: 'b', label: 'yes' }, { from: 'a', to: 'b', label: 'no' }]);
+    expect(mergeFigures({ kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b' }] }, { kind: 'flowchart', shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'yes' }] }).edges).toEqual([{ from: 'a', to: 'b', label: 'yes' }]);
+    const { groups, strokes } = scene();
+    const far: DigitalBlock = { id: 'far', kind: 'diagram', text: 'Shape: a sun.', bbox: { left: 2000, top: 2000, right: 2100, bottom: 2100 }, strokeIds: [], confidence: 0.5, figure: { kind: 'sketch', shapes: ['sun'], labels: [], edges: [] } };
+    const out = reconcileFigureBlocks([far], groups, strokes);
+    expect(out.filter((b) => b.kind === 'diagram')).toHaveLength(2);
+    expect(out.find((b) => b.id === 'far')!.figure!.shapes).toEqual(['sun']);
   });
 
   it('is a no-op without figures', () => {
