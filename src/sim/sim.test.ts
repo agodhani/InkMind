@@ -310,6 +310,17 @@ describe('relation metrics', () => {
   it('scores order against the structured figure.sequence when present, caption text otherwise', () => {
     expect(stepPositionsInSequence(['collect', 'clean', 'eval'], ['Collect data', 'clean', 'train', 'eval'])).toEqual([0, 1, 3]);
     expect(stepPositionsInSequence(['1', '2', '10'], ['10', '2'])).toEqual([null, 1, 0]);
+    // One sequence entry can satisfy only one step: a merged "eval train" entry does not place both steps.
+    expect(stepPositionsInSequence(['collect', 'clean', 'train', 'eval'], ['collect', 'clean', 'eval train'])).toEqual([0, 1, 2, null]);
+    const merged = relationMetrics([fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] })], [block('x', { kind: 'sequence', shapes: [], labels: [], edges: [], sequence: ['collect', 'clean', 'eval train'] })]);
+    expect(merged.sequencesExact).toBe(0);
+    expect(merged.stepsFound).toBe(3);
+    // Signed ticks are whole numbers: "1" is not inside "-1", so a reversed number line is not in order.
+    expect(stepPositionsInSequence(['-1', '0', '1'], ['1', '0', '-1'])).toEqual([2, 1, 0]);
+    expect(stepPositions(['-1', '0', '1'], 'ticks 1, 0, -1')).toEqual([12, 9, 6]);
+    expect(stepPositions(['0', '1'], 'at 0.5 and 10')).toEqual([null, null]);
+    expect(stepPositions(['1', '2'], 'steps 1. then 2.')).toEqual([6, 14]);
+    expect(stepPositions(['eval', 'eval train'], 'eval train')).toEqual([0, null]);
     const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
     const info = (sequence: string[]): DigitalBlock['figure'] => ({ kind: 'sequence', shapes: [], labels: [], edges: [], sequence });
     // Caption order is wrong but the structured sequence is right: the structured one wins.

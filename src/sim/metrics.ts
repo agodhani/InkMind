@@ -165,13 +165,34 @@ export function diagramMetrics(figures: FigureExpectation[], blocks: BlockLike[]
   };
 }
 
-/** Case-insensitive label lookup; one- and two-character labels must match as whole words ("x" is not in "box"). */
+const NUMERIC = /^[-+−]?\d+(\.\d+)?$/;
+
+/** Labels longer than two characters are plain substrings unless they are numbers, which must match whole. */
+function needsWordMatch(l: string): boolean {
+  return l.length <= 2 || NUMERIC.test(l);
+}
+
+/**
+ * Regex matching `l` as a whole word — group 1 is the boundary char before it. Numbers must also be whole
+ * numbers: not preceded by a sign or decimal point, not followed by a decimal point and more digits.
+ */
+function wholeLabelRegex(l: string, flags: string): RegExp {
+  const esc = l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const numeric = NUMERIC.test(l);
+  const before = numeric ? '(^|[^\\p{L}\\p{N}.+\\-−])' : '(^|[^\\p{L}\\p{N}])';
+  const after = numeric ? '(?=$|[^\\p{L}\\p{N}.]|\\.(?!\\p{N}))' : '(?=$|[^\\p{L}\\p{N}])';
+  return new RegExp(`${before}${esc}${after}`, flags);
+}
+
+/**
+ * Case-insensitive label lookup; one- and two-character labels must match as whole words ("x" is not in "box"),
+ * and numbers must match as whole numbers ("1" is not in "-1", "10" or "0.1").
+ */
 export function captionHasLabel(caption: string, label: string): boolean {
   const c = caption.toLowerCase(), l = label.trim().toLowerCase();
   if (!l) return false;
-  if (l.length > 2) return c.includes(l);
-  const esc = l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${esc}(?=$|[^\\p{L}\\p{N}])`, 'u').test(c);
+  if (!needsWordMatch(l)) return c.includes(l);
+  return wholeLabelRegex(l, 'u').test(c);
 }
 
 function round(v: number): number {
@@ -269,42 +290,49 @@ export function kendallTau(positions: (number | null)[]): number | null {
   return pairs ? round((concordant - discordant) / pairs) : null;
 }
 
-/** Position of each step in `text` (first whole-word-ish occurrence), or null when absent. */
-export function stepPositions(steps: string[], text: string): (number | null)[] {
-  const t = text.toLowerCase();
+/**
+ * Assign each step the first position `find(from)` yields after the previous step (so repeated tokens resolve in
+ * order), wrapping around to the start when nothing follows; a position is used by at most one step so two
+ * steps can never tie (which Kendall tau would otherwise ignore).
+ */
+function assignPositions(steps: string[], find: (step: string, from: number) => number, width: (step: string) => number): (number | null)[] {
+  const used = new Set<number>();
   let cursor = 0;
   return steps.map((s) => {
-    const l = normLabel(s);
-    if (!l) return null;
-    // Prefer the first occurrence after the previous step so repeated tokens ("1", "2") resolve in order;
-    // short labels must match whole words ("1" is not inside "10").
-    const find = (from: number) => {
-      if (l.length > 2) return t.indexOf(l, from);
-      const esc = l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`(^|[^\\p{L}\\p{N}])${esc}(?=$|[^\\p{L}\\p{N}])`, 'gu');
-      re.lastIndex = from;
-      const m = re.exec(t);
-      return m ? m.index + m[1].length : -1;
+    const next = (from: number) => {
+      let at = from;
+      for (;;) {
+        const idx = find(s, at);
+        if (idx < 0 || !used.has(idx)) return idx;
+        at = idx + 1;
+      }
     };
-    let idx = find(cursor);
-    if (idx < 0) idx = find(0);
+    let idx = next(cursor);
+    if (idx < 0) idx = next(0);
     if (idx < 0) return null;
-    cursor = idx + l.length;
+    used.add(idx);
+    cursor = idx + width(s);
     return idx;
   });
 }
 
+/** Position of each step in `text` (first whole-word-ish occurrence), or null when absent. */
+export function stepPositions(steps: string[], text: string): (number | null)[] {
+  const t = text.toLowerCase();
+  const find = (l: string, from: number) => {
+    if (!l) return -1;
+    if (!needsWordMatch(l)) return t.indexOf(l, from);
+    const re = wholeLabelRegex(l, 'gu');
+    re.lastIndex = from;
+    const m = re.exec(t);
+    return m ? m.index + m[1].length : -1;
+  };
+  return assignPositions(steps.map(normLabel), find, (l) => Math.max(1, l.length));
+}
+
 /** Position of each step in a structured `figure.sequence` (first entry matching the step after the previous one), or null when absent. */
 export function stepPositionsInSequence(steps: string[], sequence: string[]): (number | null)[] {
-  let cursor = 0;
-  return steps.map((s) => {
-    const find = (from: number) => sequence.findIndex((x, i) => i >= from && labelsMatch(x, s));
-    let idx = find(cursor);
-    if (idx < 0) idx = find(0);
-    if (idx < 0) return null;
-    cursor = idx + 1;
-    return idx;
-  });
+  return assignPositions(steps, (s, from) => sequence.findIndex((x, i) => i >= from && labelsMatch(x, s)), () => 1);
 }
 
 export interface SequencePositions {
