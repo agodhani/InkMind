@@ -6,6 +6,8 @@ import { createPage, newId, type DigitalBlock, type InkStroke, type Page } from 
 import { pagesFromStrokeExport, type StrokeExport } from './model/importStrokes';
 import { db, isIndexedDbAvailable } from './store/db';
 import { DigitalView } from './views/DigitalView';
+import type { FigureEdit } from './views/FigureEditor';
+import { figureCorrectionText } from './views/figureView';
 import { useTranscription } from './transcribe/useTranscription';
 import { OpenRouterTranscriber } from './transcribe/openrouter';
 import { OllamaTranscriber } from './transcribe/ollama';
@@ -51,6 +53,7 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(2.5);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [highlightStrokeIds, setHighlightStrokeIds] = useState<string[] | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPages, setShowPages] = useState(false);
   const [showTips, setShowTips] = useState(() => shouldShowOnboarding());
@@ -166,6 +169,12 @@ export default function App() {
     if (ids.length) markStrokesDeleted(ids);
   }, [page, pushHistory, updatePage, markStrokesDeleted]);
 
+  const onSimSetBlocks = useCallback((blocks: DigitalBlock[], strokes: InkStroke[]) => {
+    if (!page) return;
+    pushHistory(page);
+    updatePage(page.id, p => ({ ...p, strokes, blocks }));
+  }, [page, pushHistory, updatePage]);
+
   const onStrokesErased = useCallback(
     (ids: string[]) => {
       if (!page) return;
@@ -214,9 +223,10 @@ export default function App() {
 
   useUndoRedoKeyboard(undo, redo, true);
 
-  const onEditBlock = useCallback(
-    (block: DigitalBlock, newText: string) => {
+  const recordCorrection = useCallback(
+    (block: DigitalBlock, modelText: string, userText: string) => {
       if (!page) return;
+      if (modelText === userText) return;
       const strokes = page.strokes.filter((s) => block.strokeIds.includes(s.id));
       const bounds = strokesBounds(strokes) ?? block.bbox;
       const crop = strokes.length ? renderStrokesToPng(strokes, bounds, { maxEdge: 700 }) : null;
@@ -225,23 +235,35 @@ export default function App() {
         pageId: page.id,
         blockId: block.id,
         imageDataUrl: crop?.dataUrl ?? '',
-        modelText: block.text,
-        userText: newText,
+        modelText,
+        userText,
         createdAt: Date.now(),
       };
-      if (!block.userEdited || block.text !== newText) {
-        setCorrections((c) => [...c, correction]);
-        void db.putCorrection(correction);
-        setToast({ text: 'Correction saved to your handwriting profile.' });
-      }
+      setCorrections((c) => [...c, correction]);
+      void db.putCorrection(correction);
+      setToast({ text: 'Correction saved to your handwriting profile.' });
+    },
+    [page],
+  );
+
+  const onEditBlock = useCallback(
+    (block: DigitalBlock, newText: string) => {
+      if (!page || block.text === newText) return;
+      recordCorrection(block, block.text, newText);
       updatePage(page.id, (p) => ({ ...p, blocks: p.blocks.map((b) => (b.id === block.id ? { ...b, text: newText, userEdited: true, confidence: 1 } : b)) }));
     },
-    [page, updatePage],
+    [page, updatePage, recordCorrection],
   );
+
+  const onEditFigure = useCallback((block: DigitalBlock, next: FigureEdit) => {
+    if (!page || (block.text === next.text && JSON.stringify(block.figure) === JSON.stringify(next.figure))) return;
+    recordCorrection(block, block.figure ? figureCorrectionText(block.text, block.figure) : block.text, figureCorrectionText(next.text, next.figure));
+    updatePage(page.id, p => ({ ...p, blocks: p.blocks.map(b => b.id === block.id ? { ...b, ...next, userEdited: true, confidence: 1 } : b) }));
+  }, [page, updatePage, recordCorrection]);
 
   const linkedBlockId = hoveredBlockId ?? selectedBlockId;
   const linkedBlock = page?.blocks.find((b) => b.id === linkedBlockId) ?? null;
-  const highlighted = useMemo(() => new Set(linkedBlock?.strokeIds ?? []), [linkedBlock]);
+  const highlighted = useMemo(() => new Set(highlightStrokeIds ?? linkedBlock?.strokeIds ?? []), [highlightStrokeIds, linkedBlock]);
   const outlines = useMemo(() => page?.blocks.map((b) => ({ bbox: b.bbox, active: b.id === linkedBlockId })) ?? [], [page?.blocks, linkedBlockId]);
 
   const onTapStroke = useCallback(
@@ -396,7 +418,9 @@ export default function App() {
       selectedBlockId={selectedBlockId}
       onSelectBlock={setSelectedBlockId}
       onHoverBlock={setHoveredBlockId}
+      onHighlightStrokes={setHighlightStrokeIds}
       onEditBlock={onEditBlock}
+      onEditFigure={onEditFigure}
       emptyHint={
         page.strokes.length === 0
           ? 'Write on the ink page. Pause for a second and the digital version appears here.'
@@ -516,7 +540,7 @@ export default function App() {
 
       {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
         </Suspense>
       )}
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
-import { renderStrokesToPng } from '../transcribe/render';
-import { hasNesting, nodeTree } from '../transcribe/figure';
+import { DiagramCard } from './DiagramCard';
+import type { FigureEdit } from './FigureEditor';
 import { Icon } from '../ui/icons';
 import { Kbd } from '../ui/primitives';
 
@@ -13,11 +13,13 @@ export interface DigitalViewProps {
   onSelectBlock: (id: string | null) => void;
   /** Pointer hover over a block (null on leave) so the ink pane can light up its strokes. */
   onHoverBlock?: (id: string | null) => void;
+  onHighlightStrokes?: (strokeIds: string[] | null) => void;
   onEditBlock: (block: DigitalBlock, newText: string) => void;
+  onEditFigure?: (block: DigitalBlock, next: FigureEdit) => void;
   emptyHint?: string;
 }
 
-export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onEditBlock, emptyHint }: DigitalViewProps) {
+export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onHighlightStrokes, onEditBlock, onEditFigure, emptyHint }: DigitalViewProps) {
   const ordered = useMemo(() => sortBlocksForReading(blocks), [blocks]);
   const strokeById = useMemo(() => new Map(strokes.map((s) => [s.id, s])), [strokes]);
   const footnotes = ordered.filter((b) => b.kind === 'footnote_def');
@@ -40,7 +42,7 @@ export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, o
   return (
     <div className="digital-view" onClick={() => onSelectBlock(null)}>
       {main.map((b) => (
-        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onEdit={onEditBlock} />
+        <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onHighlightStrokes={onHighlightStrokes} onEdit={onEditBlock} onEditFigure={onEditFigure} />
       ))}
       {footnotes.length > 0 && (
         <div className="footnotes">
@@ -59,10 +61,12 @@ interface BlockViewProps {
   selected: boolean;
   onSelect: (id: string | null) => void;
   onHover?: (id: string | null) => void;
+  onHighlightStrokes?: (strokeIds: string[] | null) => void;
   onEdit: (block: DigitalBlock, newText: string) => void;
+  onEditFigure?: (block: DigitalBlock, next: FigureEdit) => void;
 }
 
-function BlockView({ block, strokeById, selected, onSelect, onHover, onEdit }: BlockViewProps) {
+function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlightStrokes, onEdit, onEditFigure }: BlockViewProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(block.text);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -83,6 +87,32 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onEdit }: B
     setEditing(false);
     if (draft.trim() !== block.text.trim()) onEdit(block, draft);
   };
+
+  const content = editing ? (
+    <textarea
+      ref={taRef}
+      className="block-editor"
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        e.target.style.height = 'auto';
+        e.target.style.height = `${e.target.scrollHeight}px`;
+      }}
+      onBlur={commit}
+      aria-label="Correct the transcription"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          setDraft(block.text);
+          setEditing(false);
+        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          commit();
+        }
+      }}
+    />
+  ) : (
+    <BlockText block={block} />
+  );
 
   const className = [
     'block',
@@ -108,7 +138,7 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onEdit }: B
       onPointerEnter={(e) => e.pointerType === 'mouse' && onHover?.(block.id)}
       onPointerLeave={(e) => e.pointerType === 'mouse' && onHover?.(null)}
       onKeyDown={(e) => {
-        if (editing) return;
+        if (editing || e.target !== e.currentTarget) return;
         if (e.key === 'Enter') {
           e.preventDefault();
           startEditing();
@@ -125,33 +155,11 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onEdit }: B
           </button>
         </div>
       )}
-      {block.kind === 'diagram' && <DiagramCrop block={block} strokeById={strokeById} />}
-      {editing ? (
-        <textarea
-          ref={taRef}
-          className="block-editor"
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            e.target.style.height = 'auto';
-            e.target.style.height = `${e.target.scrollHeight}px`;
-          }}
-          onBlur={commit}
-          aria-label="Correct the transcription"
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Escape') {
-              setDraft(block.text);
-              setEditing(false);
-            } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              commit();
-            }
-          }}
-        />
-      ) : (
-        <BlockText block={block} />
-      )}
-      {editing && (
+      {block.kind === 'diagram' ? <DiagramCard block={block} strokeById={strokeById} onHighlightStrokes={onHighlightStrokes} editing={editing} onCancelEdit={() => setEditing(false)} onEditFigure={next => {
+        if (next.text !== block.text || JSON.stringify(next.figure) !== JSON.stringify(block.figure)) onEditFigure?.(block, next);
+        setEditing(false);
+      }} /> : content}
+      {editing && block.kind !== 'diagram' && (
         <div className="editor-hint">
           <span>
             <Kbd>Ctrl</Kbd>+<Kbd>↵</Kbd> save
@@ -200,8 +208,6 @@ function BlockText({ block }: { block: DigitalBlock }) {
       );
     case 'math':
       return <pre className="math">{text}</pre>;
-    case 'diagram':
-      return <DiagramDetails block={block} text={text} />;
     case 'footnote_ref':
       return (
         <p>
@@ -245,80 +251,4 @@ function Inline({ text }: { text: string }) {
       })}
     </>
   );
-}
-
-/** Caption + label chips + compact edge list for a diagram block (falls back to caption only for legacy blocks). */
-function DiagramDetails({ block, text }: { block: DigitalBlock; text: string }) {
-  const fig = block.figure;
-  return (
-    <div className="diagram-details">
-      {text && <div className="caption">{text}</div>}
-      {fig && (fig.kind !== 'other' || fig.shapes.length > 0) && (
-        <div className="diagram-kind">
-          <span className="chip chip-kind">{fig.kind}</span>
-          {fig.shapes.map((s, i) => (
-            <span key={`${s}-${i}`} className="chip chip-shape">{s}</span>
-          ))}
-        </div>
-      )}
-      {fig && fig.labels.length > 0 && (
-        <div className="diagram-labels" aria-label="labels">
-          {fig.labels.map((l, i) => (
-            <span key={`${l}-${i}`} className="chip chip-label">{l}</span>
-          ))}
-        </div>
-      )}
-      {fig?.cells && fig.cells.length > 0 && (
-        <table className="diagram-table" aria-label="table cells">
-          <tbody>
-            {fig.cells.map((row, r) => (
-              <tr key={r}>{row.map((cell, c) => (r === 0 ? <th key={c}>{cell}</th> : <td key={c}>{cell}</td>))}</tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {fig && hasNesting(fig) && (
-        <ul className="diagram-nodes" aria-label="nested shapes">
-          {nodeTree(fig.nodes!).map(({ node, depth }) => (
-            <li key={node.id} style={{ paddingLeft: `${depth * 16}px` }}>
-              <span className="edge-node">{node.label}</span>
-              {node.shape && <span className="diagram-node-shape"> {node.shape}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-      {fig?.sequence && fig.sequence.length > 1 && (
-        <ol className="diagram-sequence" aria-label="step order">
-          {fig.sequence.map((step, i) => (
-            <li key={`${step}-${i}`}>{step}</li>
-          ))}
-        </ol>
-      )}
-      {fig && fig.edges.length > 0 && (
-        <ul className="diagram-edges" aria-label="relations">
-          {fig.edges.map((e, i) => (
-            <li key={`${e.from}-${e.to}-${i}`} className={e.inferred ? 'edge-inferred' : undefined} title={e.inferred ? 'from the ink geometry (not read by the model)' : undefined}>
-              <span className="edge-node">{e.from}</span>
-              {e.kind === 'self-loop' || e.from === e.to ? (
-                <span className="edge-arrow">{e.label ? ` ↺ (${e.label})` : ' ↺'}</span>
-              ) : (
-                <>
-                  <span className="edge-arrow">{e.kind === 'line' ? ' — ' : ' → '}</span>
-                  <span className="edge-node">{e.to}</span>
-                  {e.label && <span className="edge-label"> ({e.label})</span>}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function DiagramCrop({ block, strokeById }: { block: DigitalBlock; strokeById: Map<string, InkStroke> }) {
-  const strokes = useMemo(() => block.strokeIds.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s), [block.strokeIds, strokeById]);
-  const rendered = useMemo(() => (strokes.length ? renderStrokesToPng(strokes, block.bbox, { maxEdge: 1200 }) : null), [strokes, block.bbox]);
-  if (!rendered) return <div className="diagram-missing">(diagram ink not available)</div>;
-  return <img className="diagram" src={rendered.dataUrl} alt={block.text} style={{ maxWidth: '100%', width: rendered.size.width / rendered.scale }} />;
 }

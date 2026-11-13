@@ -89,6 +89,20 @@ export function summariseSuite(results: SuiteResult[]): SuiteSummary {
   return s;
 }
 
+export function suiteFailed(r: SuiteResult): boolean {
+  return !!r.timedOut || !r.relations.figureCountExact || [
+    [r.diagrams.detected, r.diagrams.figures], [r.diagrams.labelsFound, r.diagrams.labels],
+    [r.relations.edgesFound, r.relations.edges], [r.relations.predictedMatched, r.relations.predicted],
+    [r.relations.sequencesExact, r.relations.sequences], [r.relations.containsFound, r.relations.contains],
+  ].some(([found, total]) => total > 0 && found < total);
+}
+
+export function aggregateSuite(results: SuiteResult[]) {
+  const groups = new Map<SceneKind, SuiteResult[]>();
+  for (const result of results) groups.set(result.kind, [...(groups.get(result.kind) ?? []), result]);
+  return [...groups].map(([kind, scenes]) => ({ kind, results: scenes, summary: summariseSuite(scenes), normal: scenes.filter(r => r.messiness === 'normal').length, messy: scenes.filter(r => r.messiness === 'messy').length, failures: scenes.filter(suiteFailed).length }));
+}
+
 /** Markdown table of a suite run, for copying into a PR or issue. */
 export function suiteMarkdown(results: SuiteResult[]): string {
   const s = summariseSuite(results);
@@ -97,9 +111,16 @@ export function suiteMarkdown(results: SuiteResult[]): string {
     `| ${r.kind} | ${r.messiness} | ${frac(r.diagrams.detected, r.diagrams.figures)} | ${frac(r.diagrams.labelsFound, r.diagrams.labels)} | ${frac(r.relations.edgesFound, r.relations.edges)} | ${frac(r.relations.predictedMatched, r.relations.predicted)} | ${frac(r.relations.sequencesExact, r.relations.sequences)} | ${frac(r.relations.containsFound, r.relations.contains)} | ${r.relations.figureCountExact ? '✓' : '✗'} | ${r.seconds.toFixed(0)}s${r.timedOut ? ' (timeout)' : ''} |`,
   );
   return [
-    '| scene | messiness | figures | labels | edges | edge precision | sequences | nesting | count ok | time |',
-    '|---|---|---|---|---|---|---|---|---|---|',
-    ...rows,
-    `| **total** | ${s.scenes} scenes | ${frac(s.detected, s.figures)} | ${frac(s.labelsFound, s.labels)} | ${frac(s.edgesFound, s.edges)} | ${frac(s.predictedMatched, s.predicted)} | ${frac(s.sequencesExact, s.sequences)} | ${frac(s.containsFound, s.contains)} | ${s.countExact}/${s.scenes} | ${s.seconds.toFixed(0)}s |`,
+    '| kind | normal | messy | figures | labels | edges | edge precision | order | nesting | count ok | time |',
+    '|---|---|---|---|---|---|---|---|---|---|---|',
+    ...aggregateSuite(results).map(g => {
+      const s = g.summary;
+      return `| ${g.kind} | ${g.normal} | ${g.messy} | ${frac(s.detected, s.figures)} | ${frac(s.labelsFound, s.labels)} | ${frac(s.edgesFound, s.edges)} | ${frac(s.predictedMatched, s.predicted)} | ${frac(s.sequencesExact, s.sequences)} | ${frac(s.containsFound, s.contains)} | ${s.countExact}/${s.scenes} | ${s.seconds.toFixed(0)}s |`;
+    }),
+    '',
+    '| scene | messiness | figures | labels | edges | edge precision | sequences | nesting | count ok | time | seed | status |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+    ...rows.map((row, i) => `${row} ${results[i].seed} | ${suiteFailed(results[i]) ? 'fail' : 'ok'} |`),
+    `| **total** | ${s.scenes} scenes | ${frac(s.detected, s.figures)} | ${frac(s.labelsFound, s.labels)} | ${frac(s.edgesFound, s.edges)} | ${frac(s.predictedMatched, s.predicted)} | ${frac(s.sequencesExact, s.sequences)} | ${frac(s.containsFound, s.contains)} | ${s.countExact}/${s.scenes} | ${s.seconds.toFixed(0)}s | — | ${results.filter(suiteFailed).length} failed |`,
   ].join('\n');
 }

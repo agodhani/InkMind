@@ -748,6 +748,29 @@ export function buildScene(kind: SceneKind, seed: number, messiness: Messiness =
   return { kind, seed, messiness, title: `${kind} #${seed}${messiness !== 'normal' ? ` (${messiness})` : ''}`, width, height, strokes: p.w.strokes, text, figures, links };
 }
 
+export function expectedTableCells(labels: string[]): string[][] | undefined {
+  const table = TABLES.find(t => JSON.stringify([...t.columns, ...t.rows.flatMap(r => [r.header, ...r.cells])].filter(Boolean)) === JSON.stringify(labels));
+  return table ? [[...table.columns], ...table.rows.map(r => [r.header, ...r.cells])] : undefined;
+}
+
+export function expectedNodeShapes(f: Figure): Map<string, string> {
+  const matches = (labels: string[]) => JSON.stringify(labels) === JSON.stringify(f.nodes);
+  if (f.type === 'flowchart-complex') {
+    const spec = COMPLEX_FLOWS.find(s => matches(s.nodes.map(n => n.label ?? n.id)));
+    if (spec) return new Map(spec.nodes.map(n => [n.label ?? n.id, n.shape ?? 'box']));
+  }
+  if (f.type === 'flowchart') {
+    const spec = FLOWS.find(s => matches(s.nodes.map(n => n.label)));
+    if (spec) return new Map(spec.nodes.map(n => [n.label, n.shape ?? 'box']));
+  }
+  if (f.type === 'nested-boxes') {
+    const flatten = (n: NestedSpec): [string, string][] => [[n.label, n.shape ?? 'box'], ...(n.children ?? []).flatMap(flatten)];
+    const nodes = NESTED.map(flatten).find(nodes => matches(nodes.map(([label]) => label)));
+    if (nodes) return new Map(nodes);
+  }
+  return new Map((f.nodes ?? []).map(label => [label, f.type === 'state-machine' ? 'circle' : f.type === 'mind-map' ? 'ellipse' : 'rectangle']));
+}
+
 function flowRelations(f: (typeof FLOWS)[number]): Omit<Relations, 'labels'> {
   const nodes = f.nodes.map((n) => n.label);
   const edges = nodes.slice(1).map((to, i) => ({ from: nodes[i], to, ...(f.edgeLabels?.[i] ? { label: f.edgeLabels[i]! } : {}) }));
