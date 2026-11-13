@@ -168,7 +168,7 @@ export function aggRow(name: string, a: Agg): string {
 export const METRIC_NOTES =
   'figures found = a `diagram` block covers ≥80 % of the figure\'s strokes with ≤20 % foreign strokes · text leak = figure strokes that ended up in text blocks · labels found = expected labels present in the diagram caption (case-insensitive) · ' +
   'edge recall/precision = expected relations `{from,to}` vs the relations the blocks claim (`figure.edges`, else `A → B` in the caption), matched by endpoint label, case-insensitive, `->` == `→`, either direction for undirected figures · ' +
-  'sequence exact = ordered step lists reproduced completely and in order in the caption, τ = mean Kendall tau of the steps found · nesting = expected "inner inside outer" pairs stated in the caption · ' +
+  'sequence exact = ordered step lists reproduced completely and in order (in the structured `figure.sequence`, else in the caption), τ = mean Kendall tau of the steps found · nesting = expected "inner inside outer" pairs vs structured `figure.nodes` parents (else caption phrases) · ' +
   'figure count ok = pages whose number of `diagram` blocks equals the number of expected figures. WER/CER cover the text parts only.';
 
 export interface EvalResult {

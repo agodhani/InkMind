@@ -10,11 +10,11 @@
     "figureStrokes": 146,
     "leaked": 0,
     "labels": 17,
-    "labelsFound": 6,
-    "spurious": 1,
+    "labelsFound": 11,
+    "spurious": 0,
     "edges": 0,
     "edgesFound": 0,
-    "predicted": 6,
+    "predicted": 3,
     "predictedMatched": 0,
     "sequences": 0,
     "sequencesExact": 0,
@@ -22,10 +22,12 @@
     "stepsFound": 0,
     "tauSum": 0,
     "tauN": 0,
+    "sequencesStructured": 0,
     "contains": 13,
     "containsFound": 0,
+    "containsStructuredPages": 0,
     "countPages": 4,
-    "countExact": 3
+    "countExact": 4
   },
   "byKind": {
     "nested-boxes": {
@@ -38,11 +40,11 @@
       "figureStrokes": 94,
       "leaked": 0,
       "labels": 9,
-      "labelsFound": 6,
+      "labelsFound": 5,
       "spurious": 0,
       "edges": 0,
       "edgesFound": 0,
-      "predicted": 4,
+      "predicted": 1,
       "predictedMatched": 0,
       "sequences": 0,
       "sequencesExact": 0,
@@ -50,8 +52,10 @@
       "stepsFound": 0,
       "tauSum": 0,
       "tauN": 0,
+      "sequencesStructured": 0,
       "contains": 7,
       "containsFound": 0,
+      "containsStructuredPages": 0,
       "countPages": 2,
       "countExact": 2
     },
@@ -65,8 +69,8 @@
       "figureStrokes": 52,
       "leaked": 0,
       "labels": 8,
-      "labelsFound": 0,
-      "spurious": 1,
+      "labelsFound": 6,
+      "spurious": 0,
       "edges": 0,
       "edgesFound": 0,
       "predicted": 2,
@@ -77,10 +81,12 @@
       "stepsFound": 0,
       "tauSum": 0,
       "tauN": 0,
+      "sequencesStructured": 0,
       "contains": 6,
       "containsFound": 0,
+      "containsStructuredPages": 0,
       "countPages": 2,
-      "countExact": 1
+      "countExact": 2
     }
   }
 }

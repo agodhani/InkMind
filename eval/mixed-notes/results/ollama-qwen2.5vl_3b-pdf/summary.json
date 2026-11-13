@@ -3,8 +3,8 @@
   "total": {
     "pages": 3,
     "textPages": 3,
-    "wer": 2.276,
-    "cer": 2.072,
+    "wer": 2.442,
+    "cer": 2.199,
     "figures": 3,
     "detected": 0,
     "figureStrokes": 108,
@@ -22,8 +22,10 @@
     "stepsFound": 0,
     "tauSum": 0,
     "tauN": 0,
+    "sequencesStructured": 0,
     "contains": 0,
     "containsFound": 0,
+    "containsStructuredPages": 0,
     "countPages": 3,
     "countExact": 2
   },
@@ -31,8 +33,8 @@
     "mixed-notes": {
       "pages": 3,
       "textPages": 3,
-      "wer": 2.276,
-      "cer": 2.072,
+      "wer": 2.442,
+      "cer": 2.199,
       "figures": 3,
       "detected": 0,
       "figureStrokes": 108,
@@ -50,8 +52,10 @@
       "stepsFound": 0,
       "tauSum": 0,
       "tauN": 0,
+      "sequencesStructured": 0,
       "contains": 0,
       "containsFound": 0,
+      "containsStructuredPages": 0,
       "countPages": 3,
       "countExact": 2
     }
