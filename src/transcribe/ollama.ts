@@ -35,8 +35,10 @@ function compactBlocks(json: unknown): TranscribeResult['blocks'] {
   const root = (json ?? {}) as { blocks?: unknown };
   const blocks = Array.isArray(root.blocks) ? root.blocks : Array.isArray(json) ? json : [];
   return normaliseBlocks({ blocks: blocks.map((block) => {
-    if (!block || typeof block !== 'object' || block.kind !== 'table' || block.figure || !block.table || typeof block.table !== 'object') return block;
-    return { ...block, kind: 'diagram', figure: { kind: 'table', ...block.table } };
+    if (!block || typeof block !== 'object' || block.kind !== 'table') return block;
+    const figure = block.figure ?? block.table;
+    if (!figure || typeof figure !== 'object' || Array.isArray(figure)) return block;
+    return { ...block, kind: 'diagram', figure: { kind: 'table', ...figure } };
   }) });
 }
 
