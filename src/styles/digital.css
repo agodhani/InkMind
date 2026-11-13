@@ -89,3 +89,41 @@
 .block .diagram-table { border-collapse: collapse; font-size: var(--fs-sm); margin: 2px 0; }
 .block .diagram-table th, .block .diagram-table td { border: 1px solid var(--line); padding: 2px 8px; text-align: left; color: var(--fg); }
 .block .diagram-table th { background: var(--surface-2); font-weight: 600; }
+
+/* Diagram cards keep the ink as a preview and the structure as readable content. */
+.block.kind-diagram { padding: 0; margin: 20px auto; border: 1px solid var(--line); background: var(--surface); overflow-wrap: anywhere; min-width: 0; }
+.diagram-card { font-size: var(--fs-md); line-height: var(--lh); min-width: 0; }
+.diagram-preview { padding: 16px; }
+.diagram-thumbnail { display: block; width: 100%; height: auto; max-height: 220px; object-fit: contain; background: #fffdf8; border: 1px solid var(--line-strong); border-radius: var(--r-md); padding: 8px; }
+.block .diagram-caption { color: var(--fg-2); margin: 12px 0 0; font-size: var(--fs-md); }
+.diagram-card-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.diagram-summary { flex: 1 1 120px; color: var(--fg-2); font-size: var(--fs-sm); }
+.diagram-disclosure { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; min-width: 44px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.diagram-panel { padding: 16px; display: grid; gap: 20px; }
+.diagram-panel[hidden] { display: none; }
+.diagram-panel section { min-width: 0; }
+.diagram-panel h4 { font-size: var(--fs-sm); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 8px; }
+.block .card-steps { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 8px; padding: 0; margin: 0; }
+.block .card-steps li { margin: 0; min-width: 0; }
+.card-steps button { display: flex; gap: 10px; align-items: center; text-align: start; min-height: 48px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); color: var(--fg); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.card-steps button:hover, .card-steps button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.step-number { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.block .card-nodes ul { list-style: none; padding: 0 0 0 20px; margin: 0; }
+.block .card-nodes > ul { padding: 0; }
+.card-nodes li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-height: 32px; }
+.node-glyph { color: var(--accent); width: 20px; text-align: center; }
+.card-nodes small { color: var(--fg-3); font-size: var(--fs-sm); }
+.block .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.card-links li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; border-inline-start: 2px solid var(--line); padding-inline-start: 12px; }
+.link-badge { display: inline-block; font-size: var(--fs-sm); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; }
+.link-inferred { color: var(--fg-3); }
+.card-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.card-table { width: 100%; border-collapse: collapse; text-align: start; }
+.card-table th, .card-table td { padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.card-table th { background: var(--surface-2); font-weight: 600; }
+.mindmap-hub { display: inline-block; padding: 8px 20px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 650; border: 1px solid var(--accent-ring); }
+.block .mindmap-branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 12px; list-style: none; margin: 12px 0 0; padding: 0 0 0 16px; border-inline-start: 2px solid var(--accent-ring); }
+.mindmap-branches > li { border-radius: var(--r-sm); background: var(--surface-2); padding: 8px 12px; }
+.block .mindmap-branches ul { padding-inline-start: 20px; }
+.diagram-card button:focus-visible, .card-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.kind-diagram .block-tools .btn { min-height: 44px; height: auto; }

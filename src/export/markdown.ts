@@ -1,6 +1,7 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
-import { edgeText, hasNesting, nodeTree } from '../transcribe/figure';
+import { edgeText, nodeTree } from '../transcribe/figure';
+import { figureToMermaid, mindMapLayout } from '../views/figureView';
 
 /**
  * Obsidian-compatible Markdown. Diagrams become image embeds pointing at
@@ -52,15 +53,21 @@ export function figureLines(b: DigitalBlock): string[] {
   const fig = b.figure;
   if (!fig) return [];
   const lines: string[] = [];
-  if (fig.labels.length) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
+  const mermaid = figureToMermaid(fig);
+  if (fig.labels.length && !fig.nodes?.length && !mermaid) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
   if (fig.cells?.length) {
     const cell = (s: string) => s.replace(/\|/g, '\\|').trim();
     const [head, ...rows] = fig.cells;
     lines.push('', `| ${head.map(cell).join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`), '');
   }
-  if (hasNesting(fig)) lines.push(...nodeTree(fig.nodes!).map(({ node, depth }) => `${'  '.repeat(depth)}- ${node.label}${node.shape ? ` (${node.shape})` : ''}`));
-  if (fig.sequence && fig.sequence.length > 1) lines.push(...fig.sequence.map((step, i) => `${i + 1}. ${step}`), '');
-  if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
+  if (fig.nodes?.length && fig.kind !== 'mindmap') lines.push(...nodeTree(fig.nodes).map(({ node, depth }) => `${'  '.repeat(depth)}- ${node.label}${node.shape ? ` (${node.shape})` : ''}`));
+  if (fig.sequence?.length) lines.push(...fig.sequence.map((step, i) => `${i + 1}. ${step}`), '');
+  const map = fig.kind === 'mindmap' ? mindMapLayout(fig) : null;
+  if (map) {
+    lines.push(`- ${map.hub}`);
+    for (const spoke of map.spokes) lines.push(`  - ${spoke.label}`, ...spoke.children.map(child => `    - ${child}`));
+  } else if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
+  if (mermaid) lines.push('', '```mermaid', mermaid, '```');
   return lines;
 }
 

@@ -1,0 +1,38 @@
+import { describe, expect, it } from 'vitest';
+import type { FigureInfo } from '../model/page';
+import { edgeMarks, figureToMermaid, mindMapLayout, shapeGlyph, stepNode } from './figureView';
+
+const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
+
+describe('figure presentation', () => {
+  it('maps shape glyphs and unknown values', () => {
+    expect(['rectangle', 'box', 'rounded', 'circle', 'ellipse', 'oval', 'diamond', 'decision', 'parallelogram', 'triangle', 'cylinder', 'database', 'unknown', undefined].map(shapeGlyph)).toEqual(['▭', '▭', '▢', '◯', '◯', '◯', '◇', '◇', '▱', '△', '⛁', '⛁', '•', '•']);
+  });
+  it('matches steps and marks normalized back edges and self loops', () => {
+    const fig = figure({ sequence: [' Alpha ', 'Beta'], nodes: [{ id: 'a', label: 'alpha' }, { id: 'b', label: 'beta' }], edges: [{ from: 'BETA', to: ' a ' }, { from: 'ALPHA', to: 'alpha' }, { from: 'a', to: 'b', kind: 'self-loop' }] });
+    expect(stepNode(fig, ' ALPHA ')).toEqual(fig.nodes![0]);
+    expect(stepNode(fig, 'missing')).toBeUndefined();
+    expect(edgeMarks(fig)).toEqual(['back', 'self-loop', 'self-loop']);
+  });
+  it('finds DFS cycle-closing edges but not acyclic or undirected edges', () => {
+    expect(edgeMarks(figure({ edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'A' }, { from: 'c', to: 'b', kind: 'line' }] }))).toEqual([null, null, 'back', null]);
+    expect(edgeMarks(figure())).toEqual([]);
+  });
+  it('lays out parent-only and edge-driven mind maps without duplicated neighbours', () => {
+    expect(mindMapLayout(figure())).toBeNull();
+    const fig = figure({ kind: 'mindmap', nodes: [{ id: 'h', label: 'Hub' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'h' }, { id: 'c', label: 'C', parent: 'a' }], edges: [{ from: 'Hub', to: 'A' }, { from: 'A', to: 'B' }] });
+    expect(mindMapLayout(fig)).toEqual({ hub: 'Hub', spokes: [{ label: 'A', children: ['C'] }, { label: 'B', children: [] }] });
+    expect(mindMapLayout(figure({ labels: ['alone'] }))).toEqual({ hub: 'alone', spokes: [] });
+    expect(mindMapLayout(figure({ edges: [{ from: 'a', to: 'hub' }, { from: 'hub', to: 'b' }] }))?.hub).toBe('hub');
+  });
+  it('renders Mermaid shapes, aliases, subgraphs, line edges and escaped labels', () => {
+    const fig = figure({ nodes: [{ id: 'outer', label: 'System "A"' }, { id: 'a', label: 'Ready?', shape: 'diamond', parent: 'outer' }, { id: 'b', label: 'Go', shape: 'circle' }, { id: 'c', label: 'End', shape: 'rounded' }], edges: [{ from: 'a', to: 'Go', label: 'yes|"<`\n' }, { from: 'b', to: 'c', kind: 'line' }] });
+    expect(figureToMermaid(fig)).toBe('flowchart TD\n  subgraph n1["System &quot;A&quot;"]\n    n2{"Ready?"}\n  end\n  n3(("Go"))\n  n4("End")\n  n2 -->|"yes&#124;&quot;&#60;&#96;&#10;"| n3\n  n3 --- n4');
+    expect(figureToMermaid(figure({ kind: 'sequence', edges: [{ from: 'A', to: 'B' }] }))).toContain('flowchart LR');
+  });
+  it('handles empty, unsupported and malformed cyclic nesting safely', () => {
+    expect(figureToMermaid(figure())).toBeNull();
+    for (const kind of ['table', 'plot', 'sketch', 'cube', 'shape'] as const) expect(figureToMermaid(figure({ kind, edges: [{ from: 'a', to: 'b' }] }))).toBeNull();
+    expect(figureToMermaid(figure({ nodes: [{ id: 'a', label: 'A', parent: 'b' }, { id: 'b', label: 'B', parent: 'a' }] }))).toContain('subgraph');
+  });
+});

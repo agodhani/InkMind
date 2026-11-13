@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pageToMarkdown } from './markdown';
+import { figureLines, pageToMarkdown } from './markdown';
 import type { Page } from '../model/page';
 
 describe('pageToMarkdown', () => {
@@ -27,7 +27,9 @@ describe('pageToMarkdown', () => {
       ],
     };
     const md = pageToMarkdown(page);
-    expect(md).toContain('![[page_1/f.png]]\n*Shape: two boxes. Labels: policy, reward. Relations: policy → reward.*\nLabels: `policy`, `reward`\n- policy → reward (scores)\n');
+    expect(md).toContain('![[page_1/f.png]]\n*Shape: two boxes. Labels: policy, reward. Relations: policy → reward.*\n- policy → reward (scores)\n');
+    expect(md).toContain('```mermaid\nflowchart TD\n  n1["policy"]\n  n2["reward"]\n  n1 -->|"scores"| n2\n```');
+    expect(md).not.toContain('Labels: `policy`');
     expect(md).toContain('## PPO step');
     expect(md).toContain('uses PPO[^star]');
     expect(md).toContain('![[page_1/g.png]]');
@@ -59,7 +61,19 @@ describe('pageToMarkdown', () => {
       ],
     };
     const md = pageToMarkdown(page);
-    expect(md).toContain('![[p/f.png]]\n*Shape: flow.*\nLabels: `start`, `end`\n- system (rectangle)\n  - start\n  - end\n1. start\n2. end\n\n- start → end (yes)\n- end ↺\n- end → start *(from ink geometry)*');
+    expect(md).toContain('![[p/f.png]]\n*Shape: flow.*\n- system (rectangle)\n  - start\n  - end\n1. start\n2. end\n\n- start → end (yes)\n- end ↺\n- end → start *(from ink geometry)*');
     expect(md).toContain('![[p/t.png]]\n\n| name | qty |\n| --- | --- |\n| nut | 12 |');
+  });
+
+  it('escapes table pipes and exports mind map branches plus Mermaid', () => {
+    const base = { id: 'f', kind: 'diagram' as const, text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1 };
+    expect(figureLines({ ...base, figure: { kind: 'table', shapes: [], labels: [], edges: [], cells: [['A|B', 'C'], ['x|y', 'z']] } }).join('\n')).toContain('| A\\|B | C |\n| --- | --- |\n| x\\|y | z |');
+    const lines = figureLines({ ...base, figure: { kind: 'mindmap', shapes: [], labels: ['Trip', 'Hotel', 'Book'], edges: [{ from: 'Trip', to: 'Hotel' }, { from: 'Trip', to: 'Food' }, { from: 'Hotel', to: 'Book' }] } }).join('\n');
+    expect(lines).toContain('- Trip\n  - Hotel\n    - Book\n  - Food');
+    expect(lines).toContain('```mermaid\nflowchart TD');
+    expect(lines).not.toContain('Labels:');
+    expect(figureLines(base)).toEqual([]);
+    expect(figureLines({ ...base, figure: { kind: 'other', shapes: [], labels: ['old'], edges: [] } })).toEqual(['Labels: `old`']);
+    expect(figureLines({ ...base, figure: { kind: 'shape', shapes: [], labels: ['Container'], nodes: [{ id: 'c', label: 'Container', shape: 'box' }], edges: [] } })).toEqual(['- Container (box)']);
   });
 });

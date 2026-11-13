@@ -51,6 +51,7 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(2.5);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [highlightStrokeIds, setHighlightStrokeIds] = useState<string[] | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPages, setShowPages] = useState(false);
   const [showTips, setShowTips] = useState(() => shouldShowOnboarding());
@@ -241,7 +242,7 @@ export default function App() {
 
   const linkedBlockId = hoveredBlockId ?? selectedBlockId;
   const linkedBlock = page?.blocks.find((b) => b.id === linkedBlockId) ?? null;
-  const highlighted = useMemo(() => new Set(linkedBlock?.strokeIds ?? []), [linkedBlock]);
+  const highlighted = useMemo(() => new Set(highlightStrokeIds ?? linkedBlock?.strokeIds ?? []), [highlightStrokeIds, linkedBlock]);
   const outlines = useMemo(() => page?.blocks.map((b) => ({ bbox: b.bbox, active: b.id === linkedBlockId })) ?? [], [page?.blocks, linkedBlockId]);
 
   const onTapStroke = useCallback(
@@ -396,6 +397,7 @@ export default function App() {
       selectedBlockId={selectedBlockId}
       onSelectBlock={setSelectedBlockId}
       onHoverBlock={setHoveredBlockId}
+      onHighlightStrokes={setHighlightStrokeIds}
       onEditBlock={onEditBlock}
       emptyHint={
         page.strokes.length === 0
