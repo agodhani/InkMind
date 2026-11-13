@@ -33,6 +33,7 @@ setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const nodeCanvas: CanvasFactory = (w, h) => createCanvas(w, h) as unknown as ReturnType<CanvasFactory>;
 import { ModelOutputError } from '../src/transcribe/prompt';
+import { resolveFigureRefs } from '../src/transcribe/figure';
 import { diagramMetrics, parseReferencePage, pct, relationMetrics, type DiagramMetrics, type RelationMetrics } from '../src/sim/metrics';
 
 export interface Args {
@@ -357,7 +358,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
     const hyp = blocks.filter((b) => b.kind !== 'diagram').map((b) => b.text).join('\n');
     const s = score(hyp, ref);
     const dm: DiagramMetrics = diagramMetrics(figures, blocks);
-    const rm: RelationMetrics = relationMetrics(figures, blocks);
+    const rm: RelationMetrics = relationMetrics(figures, blocks.map((b) => b.figure ? { ...b, figure: resolveFigureRefs(b.figure) } : b));
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)${figures.length ? ` figures ${dm.detected}/${dm.figures} leak ${pct(dm.textLeak)} labels ${dm.labelsFound}/${dm.labels}` : ''}${rm.edges ? ` edges ${rm.edgesFound}/${rm.edges} (P ${rm.predictedMatched}/${rm.predicted})` : ''}${rm.sequences ? ` seq ${rm.sequencesExact}/${rm.sequences} τ ${rm.sequenceTau ?? '—'}` : ''}${rm.contains ? ` nesting ${rm.containsFound}/${rm.contains}` : ''}\n`);
     writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, kind, messiness: meta.messiness, score: s, diagrams: dm, relations: rm, blocks, hyp, ref }, null, 2));

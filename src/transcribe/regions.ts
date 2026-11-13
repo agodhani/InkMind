@@ -4,7 +4,7 @@ import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
 import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
-import { cellGrid, figureCaption } from './figure';
+import { cellGrid, figureCaption, resolveNodeRefs, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
@@ -248,18 +248,19 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
+function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[]): FigureNode | undefined {
+  return (g.group !== undefined ? modelNodes.find((n) => n.group === g.group) : undefined) ??
+    modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || !geoNodes.some((o) => o.group === n.group)));
+}
+
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): ReturnType<typeof figureFromGeometry> {
   const rename = new Map<string, string>();
-  const taken = new Set<FigureNode>();
   for (const g of geo.nodes ?? []) {
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const m =
-      (g.group !== undefined ? prior?.nodes?.find((n) => n.group === g.group && !taken.has(n)) : undefined) ??
-      prior?.nodes?.find((n) => n.id.toLowerCase() === g.id.toLowerCase() && !taken.has(n) && (n.group === undefined || !geo.nodes?.some((o) => o.group === n.group)));
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
-      taken.add(m);
     }
   }
   if (rename.size === 0) return geo;
@@ -278,51 +279,49 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
 }
 
 /**
- * The model's figure, completed from geometry: edges an arrow clearly draws but the model left
- * out are added with `inferred: true` (lower confidence); edge labels, node shapes/nesting, the
- * step order and table cells are filled in when the model gave none. Geometry edges between
- * nodes whose label could not be read are only used when the model listed no edges at all.
+ * Geometry owns structure; the model supplies words and only fills structural gaps.
  */
 export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
-  const kind = prior?.kind && prior.kind !== 'other' ? prior.kind : fig.kind;
+  const kind = fig.kind;
   const geo = nameGeometryNodes(geoIn, prior);
-  const inferredEdges = geo.edges.map((e) => ({ ...e, inferred: true }));
-  const edges: FigureEdge[] = prior?.edges.length ? [...prior.edges] : inferredEdges;
-  if (prior?.edges.length) {
-    for (const e of inferredEdges) {
-      if (geo.unnamed.includes(e.from) || geo.unnamed.includes(e.to)) continue;
-      const match = edges.find((x) => sameEdge(x, e));
-      if (match) {
-        if (!match.label && e.label) match.label = e.label;
-        if (!match.kind && e.kind) match.kind = e.kind;
-      } else edges.push(e);
-    }
+  const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
+  const matched = new Set<FigureNode>();
+  const aliases = new Map<string, string>();
+  for (const g of nodes) {
+    const m = modelNodeFor(g, nodes, prior?.nodes ?? []);
+    if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  const nodes: FigureNode[] | undefined = (() => {
-    if (!prior?.nodes?.length) return geo.nodes?.length ? geo.nodes : undefined;
-    const out = prior.nodes.map((n) => ({ ...n }));
-    for (const g of geo.nodes ?? []) {
-      const match =
-        (g.group !== undefined ? out.find((n) => n.group === g.group) : undefined) ?? out.find((n) => sameText(n.label, g.label)) ?? out.find((n) => sameText(n.id, g.id));
-      if (!match) {
-        if (!geo.unnamed.includes(g.label)) out.push(g);
-        continue;
-      }
-      // Drawn geometry beats the model's guess for what shape a node is and what it sits inside.
-      if (g.shape) match.shape = g.shape;
-      if (g.group !== undefined) match.group = g.group;
-      const parent = g.parent !== undefined ? geo.nodes!.find((p) => p.id === g.parent) : undefined;
-      const target = parent && (out.find((n) => sameText(n.label, parent.label) || sameText(n.id, parent.id)) ?? out.find((n) => n.id === parent.id));
-      if (target && target !== match) match.parent = target.id;
-      else if (geo.nodes!.length) delete match.parent;
-    }
-    return out;
-  })();
-  const sequence = prior?.sequence?.length ? prior.sequence : geo.sequence?.length && !geo.sequence.every((s) => geo.unnamed.includes(s)) ? geo.sequence : undefined;
-  const cells = kind === 'table' && prior?.cells?.length ? prior.cells : geo.cells?.length && (kind === 'table' || geo.cells.some((row) => row.some(Boolean))) ? geo.cells : undefined;
+  for (const m of prior?.nodes ?? []) if (!matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
+    const extra = { ...m };
+    if (geo.nodes?.some((n) => n.parent !== undefined)) delete extra.parent;
+    nodes.push(extra);
+  }
+  const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
+  const knownNode = (s: string) => nodes.find((n) => sameText(n.label, resolve(s)) || sameText(n.id, s));
+  const hasNesting = geo.nodes?.some((n) => n.parent !== undefined);
+  if (!hasNesting) for (const g of nodes) {
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
+    const parent = m?.parent && knownNode(m.parent);
+    if (!g.parent && parent && parent.id !== g.id) g.parent = parent.id;
+  }
+  const modelEdges = (prior?.edges ?? []).map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) }));
+  const edges: FigureEdge[] = geo.edges.map((e) => {
+    const match = modelEdges.find((m) => sameEdge(e, m) || (sameText(e.from, m.to) && sameText(e.to, m.from)));
+    return { ...e, ...(e.label || !match?.label ? {} : { label: match.label }), inferred: true };
+  });
+  if (geo.edges.length === 0 && fig.relations.length === 0) for (const e of modelEdges) {
+    const from = knownNode(e.from), to = knownNode(e.to);
+    if (from && to && from.id !== to.id) edges.push({ ...e, from: from.label, to: to.label });
+  }
+  const sequence = (geo.sequence?.length ?? 0) >= 2 && !geo.sequence!.every((s) => geo.unnamed.includes(s))
+    ? geo.sequence : prior?.sequence?.flatMap((s) => stringList(s).map(resolve));
+  let cells = geo.cells?.length ? geo.cells : prior?.cells;
+  if (kind === 'table' && geo.cells?.length && prior?.cells?.length) {
+    cells = geo.cells.map((row, r) => row.map((value, c) => value || prior.cells?.[r]?.[c] || ''));
+  }
   // Words written on arrows are labels of the figure too.
-  const allLabels = dedupe([...labels, ...edges.map((e) => e.label).filter((l): l is string => !!l && !labels.some((x) => sameText(x, l)))]);
-  const figure: FigureInfo = { kind, shapes: prior?.shapes.length ? prior.shapes : fig.shapes, labels: allLabels, edges };
+  const allLabels = dedupe([...labels.flatMap((s) => stringList(s).map(resolve)), ...nodes.filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label), ...edges.flatMap((e) => e.label ? [e.label] : [])]);
+  const figure: FigureInfo = { kind, shapes: dedupe([...fig.shapes, ...(prior?.shapes ?? [])]), labels: allLabels, edges };
   if (nodes?.length) figure.nodes = nodes;
   if (sequence) figure.sequence = sequence;
   if (cells) figure.cells = cells;

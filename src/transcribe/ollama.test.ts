@@ -50,6 +50,11 @@ describe('probeOllama', () => {
 });
 
 describe('OllamaTranscriber', () => {
+  it('records prompt and generation counters from the final stream chunk', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ message: { content: '{"blocks":[]}' } }) + '\n' + JSON.stringify({ done: true, prompt_eval_count: 200, prompt_eval_duration: 3000000000, eval_count: 40, eval_duration: 5000000000 }) + '\n'));
+    const result = await new OllamaTranscriber().transcribe(request);
+    expect(result.raw).toContain('[ollama-timing: {"prompt_eval_count":200,"prompt_eval_duration":3000000000,"eval_count":40,"eval_duration":5000000000}]');
+  });
   it('uses the native /api/chat with num_ctx, json format and raw base64 images', async () => {
     let captured: { url: string; body: Record<string, unknown> } | null = null;
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {

@@ -108,9 +108,11 @@ export class OllamaTranscriber implements Transcriber {
       const decoder = new TextDecoder();
       let pending = '';
       let done = false;
+      let timing: Record<string, number | undefined> | undefined;
       const consume = (line: string) => {
         if (!line.trim()) return;
-        const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string; done?: boolean };
+        const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string; done?: boolean; prompt_eval_count?: number; prompt_eval_duration?: number; eval_count?: number; eval_duration?: number };
+        if (chunk.done) timing = { prompt_eval_count: chunk.prompt_eval_count, prompt_eval_duration: chunk.prompt_eval_duration, eval_count: chunk.eval_count, eval_duration: chunk.eval_duration };
         if (chunk.error) throw new Error(chunk.error);
         raw += chunk.message?.content ?? '';
         const loop = detectLoop(raw);
@@ -136,7 +138,7 @@ export class OllamaTranscriber implements Transcriber {
       }
       signal?.throwIfAborted();
       const parsed = closeJsonPrefix(raw);
-      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`);
+      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '');
       let blocks: TranscribeResult['blocks'];
       try { blocks = normaliseBlocks(extractJson(parsed)); } catch (e) {
         if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);

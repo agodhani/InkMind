@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, stringList } from './figure';
+import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, resolveFigureRefs, stringList } from './figure';
+import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it('resolves case-insensitive ids and comma lists through compact names or model nodes', () => {
+    for (const data of [{ names: { n1: 'start', n3: 'end' } }, { nodes: [{ id: 'n1', label: 'start' }, { id: 'n3', label: 'end' }] }]) {
+      const figure = normaliseFigure({ ...data, labels: ['n1, N3'], sequence: ['n1', 'N3'], edges: [{ from: 'N1', to: 'n3' }] })!;
+      expect(figure.labels).toEqual(['start', 'end']);
+      expect(figure.sequence).toEqual(['start', 'end']);
+      expect(figure.edges).toEqual([{ from: 'start', to: 'end' }]);
+    }
+  });
+  it('preserves unresolved node ids until geometry can name them', () => {
+    const figure = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], edges: [{ from: 'n1', to: 'N3' }] })!;
+    expect(figure.labels).toEqual(['n1', 'N3']);
+    expect(figure.sequence).toEqual(['n1', 'N3']);
+    expect(figure.edges).toEqual([{ from: 'n1', to: 'N3' }]);
+    expect(normaliseFigure({ names: { n1: '<word in n1>' }, labels: ['n1 receptor'] })!.labels).toEqual(['n1 receptor', '<word in n1>']);
+  });
+  it('resolves ids for evaluator edge, sequence and nesting metrics without changing node ids', () => {
+    const figure = resolveFigureRefs({ kind: 'flowchart', shapes: [], labels: ['n1', 'N3'], nodes: [{ id: 'n1', label: 'start' }, { id: 'n3', label: 'end', parent: 'N1' }], edges: [{ from: 'N1', to: 'n3' }], sequence: ['n1, N3'] });
+    const metrics = relationMetrics([{ id: 'f', type: 'flowchart', labels: [], strokeIds: ['s'], edges: [{ from: 'start', to: 'end' }], sequence: ['start', 'end'], contains: [{ outer: 'start', inner: 'end' }] }], [{ kind: 'diagram', text: '', strokeIds: ['s'], figure }]);
+    expect(metrics).toMatchObject({ edgesFound: 1, sequencesExact: 1, containsFound: 1 });
+    expect(figure.nodes?.map((n) => n.id)).toEqual(['n1', 'n3']);
+  });
   it('normalises compact names without invented geometry', () => {
     expect(normaliseFigure({ kind: 'flowchart', labels: ['start'], names: { n1: 'start', n2: 'end' } })).toEqual({ kind: 'flowchart', shapes: [], labels: ['start', 'end'], edges: [], nodes: [{ id: 'n1', label: 'start' }, { id: 'n2', label: 'end' }] });
     expect(normaliseFigure({ names: {} })).toBeUndefined();

@@ -14,14 +14,15 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
-  const byRef = (ref: string) => ref.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);
+  const byRef = (ref: string) => resolveNodeRefs(ref, nodes);
+  const unwantedRef = (ref: string) => isGroupRef(ref) && !(nodes.length === 0 && /^n\d+$/i.test(ref));
   const labels = dedupeText([
     ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])).map(byRef),
     ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
-  ]).filter((l) => !isGroupRef(l));
-  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef);
+  ]).filter((l) => !unwantedRef(l));
+  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef, nodes.length === 0);
   // "a → b" written as a step is two steps (arrow glyphs only: "ready to ship" is one step).
-  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !isGroupRef(l));
+  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !unwantedRef(l));
   // Cells only describe tables; small models echo the placeholder grid onto every figure.
   const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
@@ -30,6 +31,24 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   if (nodes.length) fig.nodes = nodes;
   if (cells.length) fig.cells = cells;
   return fig;
+}
+
+export function resolveNodeRefs(value: string, nodes: FigureNode[]): string {
+  if (!/^\s*n\d+(?:\s*(?:,|;|\||->|→|=>|⇒)\s*n\d+)*\s*$/i.test(value)) return value;
+  return value.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);
+}
+
+/** Resolve ids before scoring, without changing the figure's geometry or node ids. */
+export function resolveFigureRefs(figure: FigureInfo): FigureInfo {
+  const nodes = figure.nodes ?? [];
+  const resolve = (s: string) => resolveNodeRefs(s, nodes);
+  return {
+    ...figure,
+    labels: figure.labels.map(resolve),
+    edges: figure.edges.map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) })),
+    ...(figure.sequence ? { sequence: figure.sequence.flatMap((s) => stringList(s).map(resolve)) } : {}),
+    ...(figure.nodes ? { nodes: nodes.map((n) => ({ ...n, label: resolve(n.label), ...(n.parent ? { parent: nodes.find((p) => p.id.toLowerCase() === n.parent!.toLowerCase())?.id ?? resolve(n.parent) } : {}) })) } : {}),
+  };
 }
 
 function dedupeText(xs: string[]): string[] {
@@ -302,12 +321,12 @@ function isEdgeEcho(label: string, from: string, to: string): boolean {
 }
 
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
-export function edgeList(value: unknown, resolve: (ref: string) => string = (r) => r): FigureEdge[] {
+export function edgeList(value: unknown, resolve: (ref: string) => string = (r) => r, keepNodeIds = true): FigureEdge[] {
   const out: FigureEdge[] = [];
   const add = (from: unknown, to: unknown, label?: unknown, kind?: unknown, inferred?: unknown) => {
     const f0 = typeof from === 'string' || typeof from === 'number' ? resolve(cleanText(String(from))) : stringList(from)[0];
     const t0 = typeof to === 'string' || typeof to === 'number' ? resolve(cleanText(String(to))) : stringList(to)[0];
-    if (isGroupRef(f0) || isGroupRef(t0)) return;
+    if ([f0, t0].some((s) => isGroupRef(s) && !(keepNodeIds && typeof s === 'string' && /^n\d+$/i.test(s)))) return;
     const f = f0 && cleanText(f0), t = t0 && cleanText(t0);
     if (!f || !t || out.length >= MAX_ITEMS) return;
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
