@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type { DigitalBlock, FigureNode, InkStroke } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
 import { renderStrokesToPng } from '../transcribe/render';
-import { edgeMarks, mindMapLayout, shapeGlyph, stepNode, uncoveredFigureLabels, type MindMapBranch } from './figureView';
+import { edgeMarks, figureEdgeText, mindMapLayout, shapeGlyph, stepNode, uncoveredFigureLabels, type MindMapBranch } from './figureView';
 import { nodeInkStrokes } from './figureInk';
 import { FigureEditor, type FigureEdit } from './FigureEditor';
 
@@ -94,7 +94,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
           </section>}
           {!!linkIndices.length && <section aria-label="Links"><h4>{mindMap ? 'Other links' : 'Links'}</h4>
             <ul className="card-links">{linkIndices.map(i => { const edge = fig.edges[i]; return <li key={i} className={edge.inferred ? 'link-inferred' : undefined} title={edge.inferred ? 'from the ink geometry (not read by the model)' : undefined}>
-              <span>{edge.from} {marks[i] === 'self-loop' ? '↺' : edge.kind === 'line' ? '—' : '→'} {marks[i] === 'self-loop' ? '' : edge.to}{edge.label ? ` (${edge.label})` : ''}</span>
+              <span>{figureEdgeText(fig, edge)}</span>
               {marks[i] && <span className="link-badge">{marks[i] === 'back' ? '↩ back' : 'self-loop'}</span>}
             </li>; })}</ul>
           </section>}

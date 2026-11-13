@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { DigitalBlock, FigureInfo } from '../model/page';
-import { renameFigureNodes } from './figureView';
+import { figureEndpointLabel, renameFigureNodes } from './figureView';
 
 export interface FigureEdit { text: string; figure: FigureInfo }
 
@@ -49,7 +49,7 @@ export function FigureEditor({ block, onSave, onCancel }: { block: DigitalBlock;
       </div>
     </li>)}</ol></fieldset>}
     {!!figure.nodes?.length && <fieldset><legend>Nodes</legend><div className="figure-edit-grid">{figure.nodes.map((node, i) => <label key={node.id}>Node {i + 1}<input value={draft.nodes![i].label} onChange={e => setNodeLabel(node.id, e.target.value)} /></label>)}</div></fieldset>}
-    {!!figure.edges.length && <fieldset><legend>Links</legend>{draft.edges.map((edge, i) => <label key={i}>{draft.nodes?.find(n => n.id === edge.from)?.label ?? edge.from} → {draft.nodes?.find(n => n.id === edge.to)?.label ?? edge.to}<input aria-label={`Link ${i + 1} label`} value={edge.label ?? ''} onChange={e => setFigure(current => ({ ...current, edges: current.edges.map((item, index) => index === i ? { ...item, label: e.target.value } : item) }))} /></label>)}</fieldset>}
+    {!!figure.edges.length && <fieldset><legend>Links</legend>{draft.edges.map((edge, i) => <label key={i}>{figureEndpointLabel(draft, edge.from)} → {figureEndpointLabel(draft, edge.to)}<input aria-label={`Link ${i + 1} label`} value={edge.label ?? ''} onChange={e => setFigure(current => ({ ...current, edges: current.edges.map((item, index) => index === i ? { ...item, label: e.target.value } : item) }))} /></label>)}</fieldset>}
     {!!figure.cells?.length && <fieldset><legend>Table cells</legend><div className="figure-edit-cells">{figure.cells.map((row, i) => <div className="figure-edit-grid" key={i}>{row.map((cell, j) => <label key={j}>Row {i + 1}, column {j + 1}<input value={cell} onChange={e => setFigure(current => ({ ...current, cells: current.cells!.map((cells, r) => r === i ? cells.map((value, c) => c === j ? e.target.value : value) : cells) }))} /></label>)}</div>)}</div></fieldset>}
   </form>;
 }

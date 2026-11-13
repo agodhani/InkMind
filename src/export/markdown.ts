@@ -1,7 +1,7 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
-import { edgeText, nodeTree } from '../transcribe/figure';
-import { figureToMermaid, mindMapLayout, uncoveredFigureLabels, type MindMapBranch } from '../views/figureView';
+import { nodeTree } from '../transcribe/figure';
+import { figureEdgeText, figureToMermaid, mindMapLayout, uncoveredFigureLabels, type MindMapBranch } from '../views/figureView';
 
 /**
  * Obsidian-compatible Markdown. Diagrams become image embeds pointing at
@@ -76,7 +76,7 @@ export function figureLines(b: DigitalBlock): string[] {
     branches(map.other, 0);
   }
   const edges = map ? map.remainingEdges.map(i => fig.edges[i]) : fig.edges;
-  lines.push(...edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
+  lines.push(...edges.map((e) => `- ${figureEdgeText(fig, e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
   if (mermaid) lines.push('', '```mermaid', mermaid, '```');
   return lines;
 }

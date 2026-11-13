@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DigitalBlock, FigureInfo } from '../model/page';
 import { DiagramCard } from './DiagramCard';
 import { DigitalView } from './DigitalView';
-import { figureToMermaid } from './figureView';
+import { figureToMermaid, renameFigureNodes } from './figureView';
 
 vi.mock('../transcribe/render', () => ({ renderStrokesToPng: () => null }));
 
@@ -30,6 +30,11 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('shows current labels on saved links whose endpoints retain original node ids', () => {
+    const original = block({ nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] });
+    render({ ...original, figure: renameFigureNodes(original.figure!, new Map([['A', 'Alpha']])) });
+    expect(container.querySelector('[aria-label="Links"]')!.textContent).toBe('LinksAlpha → B');
+  });
   it('renames node-less step B through A, Al, Alpha without stale or cascaded endpoints', () => {
     const save = vi.fn();
     act(() => root.render(createElement(DiagramCard, { block: block({ labels: ['A', 'B'], sequence: ['A', 'B'], edges: [{ from: 'A', to: 'B' }] }), strokeById: new Map(), editing: true, onEditFigure: save })));

@@ -1,4 +1,4 @@
-import type { FigureInfo, FigureNode } from '../model/page';
+import type { FigureEdge, FigureInfo, FigureNode } from '../model/page';
 
 const key = (value: string) => value.trim().toLowerCase();
 
@@ -6,7 +6,7 @@ export function uncoveredFigureLabels(fig: FigureInfo): string[] {
   if (fig.kind === 'mindmap' && !fig.nodes?.length && !fig.edges.length) return [];
   const covered = new Set([
     ...(fig.nodes ?? []).map(node => node.label), ...(fig.cells ?? []).flat(), ...(fig.sequence ?? []),
-    ...fig.edges.flatMap(edge => [edge.from, edge.to, edge.label ?? '']),
+    ...fig.edges.flatMap(edge => [figureEndpointLabel(fig, edge.from), figureEndpointLabel(fig, edge.to), edge.label ?? '']),
   ].map(key));
   return fig.labels.filter(label => {
     const normalized = key(label);
@@ -56,7 +56,7 @@ export function renameFigureLabel(fig: FigureInfo, old: string, next: string): F
 export function figureCorrectionText(text: string, fig: FigureInfo): string {
   return [text, fig.kind, ...(fig.sequence ?? []).map((step, i) => `${i + 1}. ${step}`),
     ...(fig.nodes ?? []).map(node => `${node.label}${node.shape ? ` (${node.shape})` : ''}`),
-    ...fig.edges.map(edge => `${edge.from} ${edge.kind === 'line' ? '—' : '→'} ${edge.to}${edge.label ? ` (${edge.label})` : ''}`),
+    ...fig.edges.map(edge => figureEdgeText(fig, edge)),
     ...(fig.cells ?? []).map(row => row.join(' | ')), ...fig.labels].filter(Boolean).join('\n');
 }
 
@@ -83,6 +83,20 @@ function resolver(fig: FigureInfo) {
     return matches.length === 1 ? nodeKey(matches[0]) : `label:${key(value)}`;
   };
   return { resolve, nodeKey };
+}
+
+export function figureEndpointLabel(fig: FigureInfo, value: string): string {
+  const { resolve, nodeKey } = resolver(fig);
+  const id = resolve(value);
+  return fig.nodes?.find(node => nodeKey(node) === id)?.label ?? value;
+}
+
+export function figureEdgeText(fig: FigureInfo, edge: FigureEdge): string {
+  const { resolve } = resolver(fig);
+  const from = figureEndpointLabel(fig, edge.from), to = figureEndpointLabel(fig, edge.to);
+  const label = edge.label ? ` (${edge.label})` : '';
+  if (edge.kind === 'self-loop' || resolve(edge.from) === resolve(edge.to)) return `${from} ↺${label}`;
+  return `${from} ${edge.kind === 'line' ? '—' : '→'} ${to}${label}`;
 }
 
 export function stepNode(fig: FigureInfo, step: string): FigureNode | undefined {

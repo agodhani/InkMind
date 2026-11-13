@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import type { FigureInfo } from '../model/page';
-import { edgeMarks, figureCorrectionText, figureToMermaid, mindMapLayout, renameFigureLabel, shapeGlyph, stepNode, uncoveredFigureLabels } from './figureView';
+import { edgeMarks, figureCorrectionText, figureEdgeText, figureEndpointLabel, figureToMermaid, mindMapLayout, renameFigureLabel, renameFigureNodes, shapeGlyph, stepNode, uncoveredFigureLabels } from './figureView';
 import { glossaryFromCorrections } from '../profile/handwritingProfile';
 
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('formats links id-first without inventing self-loops for equal labels or guessing unknown endpoints', () => {
+    const fig = figure({ nodes: [{ id: 'A', label: 'Alpha' }, { id: 'B', label: 'A' }, { id: 'C', label: 'A' }] });
+    expect(figureEdgeText(fig, { from: ' a ', to: 'b' })).toBe('Alpha → A');
+    expect(figureEdgeText(fig, { from: 'B', to: 'C', kind: 'line', label: 'next' })).toBe('A — A (next)');
+    expect(figureEdgeText(fig, { from: 'A', to: 'alpha' })).toBe('Alpha ↺');
+    expect(figureEndpointLabel(fig, 'unknown')).toBe('unknown');
+    expect(figureEndpointLabel(figure({ nodes: [{ id: 'one', label: 'Same' }, { id: 'two', label: 'Same' }] }), ' SAME ')).toBe(' SAME ');
+    expect(figureEdgeText(figure(), { from: 'old', to: 'end' })).toBe('old → end');
+  });
+  it('uses current id-resolved node labels in correction link text without changing endpoint identity', () => {
+    const fig = renameFigureNodes(figure({ nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] }), new Map([['A', 'Alpha']]));
+    expect(fig.edges).toEqual([{ from: 'A', to: 'B' }]);
+    expect(figureCorrectionText('', fig)).toContain('Alpha → B');
+    expect(figureToMermaid(fig)).toContain('n1 --> n2');
+  });
   it('deduplicates uncovered annotations without losing legacy or empty-label fallbacks', () => {
     expect(uncoveredFigureLabels(figure())).toEqual([]);
     expect(uncoveredFigureLabels(figure({ labels: ['  ', 'Note', ' note '] }))).toEqual(['Note']);

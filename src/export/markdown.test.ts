@@ -3,6 +3,12 @@ import { figureLines, pageToMarkdown } from './markdown';
 import type { Page } from '../model/page';
 
 describe('pageToMarkdown', () => {
+  it('exports current node labels for id endpoints, including non-loop links between repeated labels', () => {
+    const block = { id: 'f', kind: 'diagram' as const, text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1 };
+    const fig = { kind: 'flowchart' as const, shapes: [], labels: [], nodes: [{ id: 'A', label: 'Alpha' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] };
+    expect(figureLines({ ...block, figure: fig }).join('\n')).toContain('- Alpha → B');
+    expect(figureLines({ ...block, figure: { ...fig, nodes: [{ id: 'A', label: 'Same' }, { id: 'B', label: 'Same' }] } }).join('\n')).toContain('- Same → Same');
+  });
   it('exports only uncovered free annotations when nodes, cells or Mermaid cover other labels', () => {
     const base = { id: 'f', kind: 'diagram' as const, text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1 };
     const flow = figureLines({ ...base, figure: { kind: 'flowchart', shapes: [], labels: [' start ', 'YES', 'step', 'Finish', 'Free note', 'free NOTE'], nodes: [{ id: 'n', label: 'Start' }], sequence: ['Step'], edges: [{ from: 'Start', to: 'Finish', label: 'yes' }] } });
