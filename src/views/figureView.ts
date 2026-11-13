@@ -2,6 +2,30 @@ import type { FigureInfo, FigureNode } from '../model/page';
 
 const key = (value: string) => value.trim().toLowerCase();
 
+export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<string, string>): FigureInfo {
+  if (!labelsById.size) return fig;
+  const nodes = fig.nodes ?? [];
+  const labelNode = (value: string) => {
+    const matches = nodes.filter(node => key(node.label) === key(value));
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  const label = (node: FigureNode) => labelsById.get(node.id) ?? node.label;
+  const renameLabel = (value: string) => {
+    const node = labelNode(value);
+    return node ? label(node) : value;
+  };
+  const endpoint = (value: string) => {
+    const byId = nodes.find(node => key(node.id) === key(value));
+    if (byId) return value;
+    const node = labelNode(value);
+    if (!node) return value;
+    const next = label(node);
+    const ambiguous = nodes.some(other => other.id !== node.id && (key(label(other)) === key(next) || key(other.id) === key(next)));
+    return ambiguous ? node.id : next;
+  };
+  return { ...fig, nodes: nodes.map(node => ({ ...node, label: label(node) })), labels: fig.labels.map(renameLabel), sequence: fig.sequence?.map(renameLabel), edges: fig.edges.map(edge => ({ ...edge, from: endpoint(edge.from), to: endpoint(edge.to) })) };
+}
+
 export function renameFigureLabel(fig: FigureInfo, old: string, next: string): FigureInfo {
   const matches = (value: string) => key(value) === key(old);
   const rename = (value: string) => matches(value) ? next : value;

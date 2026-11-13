@@ -29,6 +29,29 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('keeps node A unchanged while typing A, Al, Alpha over node B', () => {
+    const save = vi.fn();
+    const figure = { labels: ['A', 'B'], sequence: ['A', 'B'], nodes: [{ id: 'na', label: 'A' }, { id: 'nb', label: 'B' }], edges: [{ from: 'A', to: 'B' }] };
+    act(() => root.render(createElement(DiagramCard, { block: block(figure), strokeById: new Map(), editing: true, onEditFigure: save })));
+    const inputs = container.querySelectorAll<HTMLInputElement>('.figure-edit-grid input');
+    for (const value of ['A', 'Al', 'Alpha']) change(inputs[1], value);
+    expect(inputs[0].value).toBe('A');
+    expect(container.textContent).toContain('A → Alpha');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save.mock.calls[0][0].figure).toMatchObject({ labels: ['A', 'Alpha'], sequence: ['A', 'Alpha'], nodes: [{ id: 'na', label: 'A' }, { id: 'nb', label: 'Alpha' }], edges: [{ from: 'A', to: 'Alpha' }] });
+  });
+  it('applies simultaneous node-label swaps without cascading and keeps colliding edges identifiable', () => {
+    const save = vi.fn();
+    const figure = { labels: ['A', 'B'], sequence: ['A', 'B'], nodes: [{ id: 'na', label: 'A' }, { id: 'nb', label: 'B' }], edges: [{ from: 'A', to: 'B' }] };
+    act(() => root.render(createElement(DiagramCard, { block: block(figure), strokeById: new Map(), editing: true, onEditFigure: save })));
+    const inputs = container.querySelectorAll<HTMLInputElement>('.figure-edit-grid input');
+    change(inputs[0], 'B'); change(inputs[1], 'A');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save.mock.calls[0][0].figure).toMatchObject({ labels: ['B', 'A'], sequence: ['B', 'A'], edges: [{ from: 'B', to: 'A' }] });
+    change(inputs[1], 'B');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save.mock.calls[1][0].figure).toMatchObject({ nodes: [{ id: 'na', label: 'B' }, { id: 'nb', label: 'B' }], edges: [{ from: 'na', to: 'nb' }] });
+  });
   it('renders numbered steps and toggles their ink highlight, preserving block selection', () => {
     const select = vi.fn(), edit = vi.fn();
     act(() => root.render(createElement(DigitalView, { blocks: [block({ sequence: ['First', 'Next'] })], strokes: [], selectedBlockId: null, onSelectBlock: select, onEditBlock: edit, onHighlightStrokes: highlight })));
