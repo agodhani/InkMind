@@ -26,6 +26,15 @@ so they measure *reading* accuracy, not formatting.
 
 ## Synthetic shape / diagram datasets
 
+For an offline detector-only pass over all 14 datasets (58 pages), run
+`npm run eval:shapes -- --provider geometry --run geometry-baseline`.
+This provider returns no model blocks and reconciles geometry only, without calling a model.
+Unclaimed text is not appended to a diagram, so figure coverage/contamination reflects the detector.
+Use `--messiness normal` or `--messiness messy` to compare drawing quality levels.
+Label-dependent relation scores will generally be zero: without recognised words, geometry nodes
+have shape placeholders rather than the reference labels. Inspect page JSON nodes, edges, parents
+and order alongside the figure coverage/count metrics when iterating on the detector.
+
 `npm run gen:shapes` (scripts/gen_shapes.ts, generator in `src/sim/`) writes reproducible, seed-based
 datasets in the same layout — `strokes.json`, `pages/page-N.png` rendered with the app's own
 renderer, `reference.md` — so they can be scored with the commands above and imported into the app.

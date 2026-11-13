@@ -1,5 +1,5 @@
 import type { BoundingBox } from '../types';
-import { getStrokeBoundingBox } from '../types/brush';
+import { getStrokeBoundingBox, getStrokeStartTime } from '../types/brush';
 import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
@@ -104,7 +104,7 @@ export function buildStrokeGroups(strokes: InkStroke[]): StrokeGroupMeta[] {
   const writtenOrder = new Map(ordered.map((c, i) => [c, i]));
   const groups: StrokeGroupMeta[] = clusters
     .map((c) => ({
-      strokeIds: (c.strokes as InkStroke[]).map((s) => s.id),
+      strokeIds: [...c.strokes as InkStroke[]].sort((a, b) => getStrokeStartTime(a) - getStrokeStartTime(b)).map((s) => s.id),
       bbox: c.bounds,
       writtenOrder: writtenOrder.get(c) ?? 0,
     }))

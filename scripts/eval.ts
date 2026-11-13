@@ -38,7 +38,7 @@ import { diagramMetrics, parseReferencePage, pct, relationMetrics, type DiagramM
 
 export interface Args {
   dataset: string;
-  provider: 'ollama' | 'openrouter';
+  provider: 'ollama' | 'openrouter' | 'geometry';
   model: string;
   prompt?: 'compact' | 'full';
   pages?: number[];
@@ -67,7 +67,7 @@ export function parseArgs(): Args {
   return {
     dataset: a.dataset ?? 'eval/l8-workflow',
     provider,
-    model: a.model ?? (provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
+    model: a.model ?? (provider === 'geometry' ? 'geometry' : provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
     prompt: a.prompt === 'compact' || a.prompt === 'full' ? a.prompt : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
@@ -238,7 +238,9 @@ export async function runEval(args: Args): Promise<EvalResult> {
   mkdirSync(outDir, { recursive: true });
 
   const transcriber: Transcriber =
-    args.provider === 'ollama'
+    args.provider === 'geometry'
+      ? { name: 'geometry', transcribe: async () => ({ blocks: [], model: 'geometry', durationMs: 0 }) }
+      : args.provider === 'ollama'
       ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt })
       : new OpenRouterTranscriber({ apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY ?? '', model: args.model, siteName: 'InkMind eval' });
 
@@ -348,7 +350,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
     if (args.reconcile) {
       const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
       const unclaimed = page.strokes.filter((st) => !claimed.has(st.id)).map((st) => st.id);
-      if (unclaimed.length && incoming.length) {
+      if (args.provider !== 'geometry' && unclaimed.length && incoming.length) {
         incoming = [...incoming];
         incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
       }
