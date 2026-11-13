@@ -1,7 +1,7 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { edgeText, nodeTree } from '../transcribe/figure';
-import { figureToMermaid, mindMapLayout } from '../views/figureView';
+import { figureToMermaid, mindMapLayout, type MindMapBranch } from '../views/figureView';
 
 /**
  * Obsidian-compatible Markdown. Diagrams become image embeds pointing at
@@ -65,8 +65,17 @@ export function figureLines(b: DigitalBlock): string[] {
   const map = fig.kind === 'mindmap' ? mindMapLayout(fig) : null;
   if (map) {
     lines.push(`- ${map.hub}`);
-    for (const spoke of map.spokes) lines.push(`  - ${spoke.label}`, ...spoke.children.map(child => `    - ${child}`));
-  } else if (fig.edges.length) lines.push(...fig.edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
+    const branches = (entries: MindMapBranch[], depth: number) => {
+      for (const entry of entries) {
+        lines.push(`${'  '.repeat(depth)}- ${entry.label}`);
+        branches(entry.children, depth + 1);
+      }
+    };
+    branches(map.spokes, 1);
+    branches(map.other, 0);
+  }
+  const edges = map ? map.remainingEdges.map(i => fig.edges[i]) : fig.edges;
+  lines.push(...edges.map((e) => `- ${edgeText(e)}${e.inferred ? ' *(from ink geometry)*' : ''}`));
   if (mermaid) lines.push('', '```mermaid', mermaid, '```');
   return lines;
 }

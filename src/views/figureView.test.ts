@@ -6,6 +6,13 @@ import { glossaryFromCorrections } from '../profile/handwritingProfile';
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('lays out every depth, disconnected component and cycle of H-A-B-C-D plus X-Y', () => {
+    const fig = figure({ kind: 'mindmap', nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'D', parent: 'c' }, { id: 'x', label: 'X' }, { id: 'y', label: 'Y', parent: 'x' }], edges: [{ from: 'h', to: 'a' }, { from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }, { from: 'c', to: 'a', label: 'cycle' }, { from: 'x', to: 'y' }] });
+    const map = mindMapLayout(fig)!;
+    expect(JSON.stringify(map.spokes)).toContain('"label":"D"');
+    expect(map).toHaveProperty('other', [{ label: 'X', children: [{ label: 'Y', children: [] }] }]);
+    expect(map).toHaveProperty('remainingEdges', expect.arrayContaining([4, 5]));
+  });
   it('handles id/label alias collisions in a node-only mind map without crashing', () => {
     const fig = figure({ kind: 'mindmap', nodes: [{ id: 'a', label: 'b' }, { id: 'b', label: 'c' }] });
     expect(() => mindMapLayout(fig)).not.toThrow();
@@ -61,8 +68,8 @@ describe('figure presentation', () => {
   it('lays out parent-only and edge-driven mind maps without duplicated neighbours', () => {
     expect(mindMapLayout(figure())).toBeNull();
     const fig = figure({ kind: 'mindmap', nodes: [{ id: 'h', label: 'Hub' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'h' }, { id: 'c', label: 'C', parent: 'a' }], edges: [{ from: 'Hub', to: 'A' }, { from: 'A', to: 'B' }] });
-    expect(mindMapLayout(fig)).toEqual({ hub: 'Hub', spokes: [{ label: 'A', children: ['C'] }, { label: 'B', children: [] }] });
-    expect(mindMapLayout(figure({ labels: ['alone'] }))).toEqual({ hub: 'alone', spokes: [] });
+    expect(mindMapLayout(fig)).toEqual({ hub: 'Hub', spokes: [{ label: 'A', children: [{ label: 'C', children: [] }] }, { label: 'B', children: [] }], other: [], remainingEdges: [1] });
+    expect(mindMapLayout(figure({ labels: ['alone'] }))).toEqual({ hub: 'alone', spokes: [], other: [], remainingEdges: [] });
     expect(mindMapLayout(figure({ edges: [{ from: 'a', to: 'hub' }, { from: 'hub', to: 'b' }] }))?.hub).toBe('hub');
   });
   it('renders Mermaid shapes, aliases, subgraphs, line edges and escaped labels', () => {

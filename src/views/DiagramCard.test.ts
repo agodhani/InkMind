@@ -29,6 +29,12 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('renders deep and disconnected mind-map descendants and leftover cycle links', () => {
+    render(block({ kind: 'mindmap', nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'Deep D', parent: 'c' }, { id: 'x', label: 'Orphan X' }, { id: 'y', label: 'Orphan Y', parent: 'x' }], edges: [{ from: 'c', to: 'a', label: 'cycle' }, { from: 'x', to: 'y' }] }));
+    expect(container.querySelector('[aria-label="Mind map"]')!.textContent).toContain('Deep D');
+    expect(container.querySelector('[aria-label="Mind map"]')!.textContent).toContain('Orphan Y');
+    expect(container.querySelector('[aria-label="Links"]')!.textContent).toContain('cycle');
+  });
   it('keeps node A unchanged while typing A, Al, Alpha over node B', () => {
     const save = vi.fn();
     const figure = { labels: ['A', 'B'], sequence: ['A', 'B'], nodes: [{ id: 'na', label: 'A' }, { id: 'nb', label: 'B' }], edges: [{ from: 'A', to: 'B' }] };

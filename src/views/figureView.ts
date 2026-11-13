@@ -98,8 +98,8 @@ export function edgeMarks(fig: FigureInfo): ('self-loop' | 'back' | null)[] {
   return marks;
 }
 
-export interface MindMapBranch { label: string; children: string[] }
-export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBranch[] } | null {
+export interface MindMapBranch { label: string; children: MindMapBranch[] }
+export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBranch[]; other: MindMapBranch[]; remainingEdges: number[] } | null {
   const { resolve, nodeKey } = resolver(fig), labels = new Map<string, string>(), neighbours = new Map<string, Set<string>>();
   const add = (label: string) => {
     const id = resolve(label);
@@ -121,12 +121,30 @@ export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBr
   const candidates = roots.length ? roots : [...labels.keys()];
   const hub = candidates.reduce<string | undefined>((best, id) => best === undefined || (neighbours.get(id)?.size ?? 0) > (neighbours.get(best)?.size ?? 0) ? id : best, undefined);
   if (hub === undefined) return null;
-  const spokeIds = [...neighbours.get(hub)!], placed = new Set([hub, ...spokeIds]);
-  return { hub: labels.get(hub)!, spokes: spokeIds.map(id => ({ label: labels.get(id)!, children: [...neighbours.get(id)!].filter(child => {
-    if (placed.has(child)) return false;
-    placed.add(child);
-    return true;
-  }).map(child => labels.get(child)!) })) };
+  const spokeIds = [...(neighbours.get(hub) ?? [])], placed = new Set([hub, ...spokeIds]);
+  const pair = (a: string, b: string) => JSON.stringify([a, b].sort());
+  const treeLinks = new Set(spokeIds.map(id => pair(hub, id)));
+  const branch = (id: string): MindMapBranch => {
+    const children: MindMapBranch[] = [];
+    for (const child of neighbours.get(id) ?? []) {
+      if (placed.has(child)) continue;
+      placed.add(child);
+      treeLinks.add(pair(id, child));
+      children.push(branch(child));
+    }
+    return { label: labels.get(id)!, children };
+  };
+  const spokes = spokeIds.map(branch), reachable = new Set(placed), other: MindMapBranch[] = [];
+  for (const id of labels.keys()) {
+    if (placed.has(id)) continue;
+    placed.add(id);
+    other.push(branch(id));
+  }
+  const remainingEdges = fig.edges.flatMap((edge, i) => {
+    const from = resolve(edge.from), to = resolve(edge.to);
+    return !reachable.has(from) || !reachable.has(to) || !treeLinks.has(pair(from, to)) || edge.label ? [i] : [];
+  });
+  return { hub: labels.get(hub)!, spokes, other, remainingEdges };
 }
 
 export function figureToMermaid(fig: FigureInfo): string | null {

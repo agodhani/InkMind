@@ -3,6 +3,12 @@ import { figureLines, pageToMarkdown } from './markdown';
 import type { Page } from '../model/page';
 
 describe('pageToMarkdown', () => {
+  it('exports deep mind-map descendants, disconnected branches and leftover links', () => {
+    const lines = figureLines({ id: 'map', kind: 'diagram', text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1, figure: { kind: 'mindmap', shapes: [], labels: [], nodes: [{ id: 'h', label: 'H' }, { id: 'a', label: 'A', parent: 'h' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', parent: 'b' }, { id: 'd', label: 'D', parent: 'c' }, { id: 'x', label: 'X' }, { id: 'y', label: 'Y', parent: 'x' }], edges: [{ from: 'x', to: 'y', label: 'detached' }] } }).join('\n');
+    expect(lines).toContain('- H\n  - A\n    - B\n      - C\n        - D');
+    expect(lines).toContain('- X\n  - Y');
+    expect(lines).toContain('(detached)');
+  });
   it('emits headings, footnotes and diagram embeds in reading order', () => {
     const page: Page = {
       id: 'page_1',

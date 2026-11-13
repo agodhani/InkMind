@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type { DigitalBlock, FigureNode, InkStroke } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
 import { renderStrokesToPng } from '../transcribe/render';
-import { edgeMarks, mindMapLayout, shapeGlyph, stepNode } from './figureView';
+import { edgeMarks, mindMapLayout, shapeGlyph, stepNode, type MindMapBranch } from './figureView';
 import { nodeInkStrokes } from './figureInk';
 import { FigureEditor, type FigureEdit } from './FigureEditor';
 
@@ -33,6 +33,10 @@ function NodeHierarchy({ nodes }: { nodes: FigureNode[] }) {
   return <div className="card-nodes">{list(roots)}</div>;
 }
 
+function MindMapBranches({ branches }: { branches: MindMapBranch[] }) {
+  return <>{branches.map((branch, i) => <li key={i}><strong>{branch.label}</strong>{!!branch.children.length && <ul><MindMapBranches branches={branch.children} /></ul>}</li>)}</>;
+}
+
 export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, editing, onEditFigure, onCancelEdit }: DiagramCardProps) {
   const panelId = useId();
   const [expanded, setExpanded] = useState(true);
@@ -42,6 +46,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
   const fig = block.figure;
   const marks = fig ? edgeMarks(fig) : [];
   const mindMap = fig?.kind === 'mindmap' ? mindMapLayout(fig) : null;
+  const linkIndices = mindMap?.remainingEdges ?? fig?.edges.map((_, i) => i) ?? [];
   const stepInk = useMemo(() => new Map((fig?.sequence ?? []).map(step => [step, nodeInkStrokes(block, stepNode(fig!, step), [...strokeById.values()])])), [block, fig, strokeById]);
   useEffect(() => () => onHighlightStrokes?.(null), [onHighlightStrokes]);
   const highlight = (step: string | null) => {
@@ -83,13 +88,14 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
             <NodeHierarchy nodes={fig.nodes} />
           </section>}
           {mindMap && <section aria-label="Mind map"><h4>Mind map</h4><div className="mindmap-hub">{mindMap.hub}</div>
-            <ul className="mindmap-branches">{mindMap.spokes.map(spoke => <li key={spoke.label}><strong>{spoke.label}</strong>{!!spoke.children.length && <ul>{spoke.children.map(child => <li key={child}>{child}</li>)}</ul>}</li>)}</ul>
+            <ul className="mindmap-branches"><MindMapBranches branches={mindMap.spokes} /></ul>
+            {!!mindMap.other.length && <><h4>Other branches</h4><ul className="mindmap-branches"><MindMapBranches branches={mindMap.other} /></ul></>}
           </section>}
-          {!mindMap && !!fig.edges.length && <section aria-label="Links"><h4>Links</h4>
-            <ul className="card-links">{fig.edges.map((edge, i) => <li key={i} className={edge.inferred ? 'link-inferred' : undefined} title={edge.inferred ? 'from the ink geometry (not read by the model)' : undefined}>
+          {!!linkIndices.length && <section aria-label="Links"><h4>{mindMap ? 'Other links' : 'Links'}</h4>
+            <ul className="card-links">{linkIndices.map(i => { const edge = fig.edges[i]; return <li key={i} className={edge.inferred ? 'link-inferred' : undefined} title={edge.inferred ? 'from the ink geometry (not read by the model)' : undefined}>
               <span>{edge.from} {marks[i] === 'self-loop' ? '↺' : edge.kind === 'line' ? '—' : '→'} {marks[i] === 'self-loop' ? '' : edge.to}{edge.label ? ` (${edge.label})` : ''}</span>
               {marks[i] && <span className="link-badge">{marks[i] === 'back' ? '↩ back' : 'self-loop'}</span>}
-            </li>)}</ul>
+            </li>; })}</ul>
           </section>}
           {!!fig.cells?.length && <section aria-label="Table"><h4>Table</h4><div className="card-table-scroll" tabIndex={0} role="region" aria-label="Table cells">
             <table className="card-table"><thead><tr>{fig.cells[0].map((cell, i) => <th scope="col" key={i}>{cell}</th>)}</tr></thead><tbody>
