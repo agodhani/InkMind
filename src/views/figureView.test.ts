@@ -6,6 +6,25 @@ import { glossaryFromCorrections } from '../profile/handwritingProfile';
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('handles id/label alias collisions in a node-only mind map without crashing', () => {
+    const fig = figure({ kind: 'mindmap', nodes: [{ id: 'a', label: 'b' }, { id: 'b', label: 'c' }] });
+    expect(() => mindMapLayout(fig)).not.toThrow();
+    const mermaid = figureToMermaid({ ...fig, edges: [{ from: 'a', to: 'b' }] });
+    expect(mermaid).toContain('n1["b"]');
+    expect(mermaid).toContain('n2["c"]');
+    expect(mermaid).toContain('n1 --> n2');
+  });
+  it('preserves distinct node identities for repeated labels and does not guess ambiguous endpoints', () => {
+    const fig = figure({ nodes: [{ id: 'one', label: 'Same' }, { id: 'two', label: 'Same' }], edges: [{ from: 'one', to: 'two' }, { from: 'Same', to: 'one' }, { from: 'unknown', to: 'two' }] });
+    const mermaid = figureToMermaid(fig)!;
+    expect(mermaid).toContain('n1["Same"]');
+    expect(mermaid).toContain('n2["Same"]');
+    expect(mermaid).toContain('n1 --> n2');
+    expect(mermaid).toContain('n3 --> n1');
+    expect(mermaid).toContain('n4["unknown"]');
+    expect(edgeMarks(fig)[0]).toBeNull();
+    expect(() => mindMapLayout({ ...fig, kind: 'mindmap' })).not.toThrow();
+  });
   it('renames labels case-insensitively without mutating stable node IDs or geometry groups', () => {
     const original = figure({ labels: [' Alpha ', 'Beta'], sequence: ['ALPHA', 'Beta'], nodes: [{ id: 'n1', label: 'alpha', group: 2 }, { id: 'n2', label: 'Beta', parent: 'n1' }], edges: [{ from: ' alpha ', to: 'Beta' }, { from: 'n1', to: 'ALPHA', label: 'alpha' }] });
     const next = renameFigureLabel(original, 'alpha', 'Synapse');

@@ -59,12 +59,15 @@ export function shapeGlyph(shape?: string): string {
 }
 
 function resolver(fig: FigureInfo) {
-  const aliases = new Map<string, string>();
-  for (const node of fig.nodes ?? []) {
-    aliases.set(key(node.id), key(node.label));
-    aliases.set(key(node.label), key(node.label));
-  }
-  return (value: string) => aliases.get(key(value)) ?? key(value);
+  const nodes = fig.nodes ?? [];
+  const nodeKey = (node: FigureNode) => `node:${nodes.indexOf(node)}`;
+  const resolve = (value: string) => {
+    const byId = nodes.find(node => key(node.id) === key(value));
+    if (byId) return nodeKey(byId);
+    const matches = nodes.filter(node => key(node.label) === key(value));
+    return matches.length === 1 ? nodeKey(matches[0]) : `label:${key(value)}`;
+  };
+  return { resolve, nodeKey };
 }
 
 export function stepNode(fig: FigureInfo, step: string): FigureNode | undefined {
@@ -72,7 +75,7 @@ export function stepNode(fig: FigureInfo, step: string): FigureNode | undefined 
 }
 
 export function edgeMarks(fig: FigureInfo): ('self-loop' | 'back' | null)[] {
-  const resolve = resolver(fig);
+  const { resolve } = resolver(fig);
   const sequence = (fig.sequence ?? []).map(resolve);
   const marks: ('self-loop' | 'back' | null)[] = fig.edges.map(e => {
     if (e.kind === 'self-loop' || resolve(e.from) === resolve(e.to)) return 'self-loop';
@@ -97,15 +100,15 @@ export function edgeMarks(fig: FigureInfo): ('self-loop' | 'back' | null)[] {
 
 export interface MindMapBranch { label: string; children: string[] }
 export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBranch[] } | null {
-  const resolve = resolver(fig), labels = new Map<string, string>(), neighbours = new Map<string, Set<string>>();
+  const { resolve, nodeKey } = resolver(fig), labels = new Map<string, string>(), neighbours = new Map<string, Set<string>>();
   const add = (label: string) => {
     const id = resolve(label);
-    if (!labels.has(id)) labels.set(id, fig.nodes?.find(n => resolve(n.id) === id)?.label ?? label);
+    if (!labels.has(id)) labels.set(id, fig.nodes?.find(n => nodeKey(n) === id)?.label ?? label);
     if (!neighbours.has(id)) neighbours.set(id, new Set());
     return id;
   };
-  (fig.nodes ?? []).forEach(n => add(n.label));
-  fig.labels.forEach(add);
+  (fig.nodes ?? []).forEach(n => { labels.set(nodeKey(n), n.label); neighbours.set(nodeKey(n), new Set()); });
+  if (!fig.nodes?.length && !fig.edges.length) fig.labels.forEach(add);
   const link = (a: string, b: string) => {
     const from = add(a), to = add(b);
     if (from === to) return;
@@ -114,9 +117,9 @@ export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBr
   };
   fig.edges.forEach(e => link(e.from, e.to));
   fig.nodes?.forEach(n => { if (n.parent) link(n.parent, n.id); });
-  const roots = fig.nodes?.filter(n => !n.parent).map(n => resolve(n.id)) ?? [];
+  const roots = fig.nodes?.filter(n => !n.parent).map(nodeKey) ?? [];
   const candidates = roots.length ? roots : [...labels.keys()];
-  const hub = candidates.reduce<string | undefined>((best, id) => best === undefined || neighbours.get(id)!.size > neighbours.get(best)!.size ? id : best, undefined);
+  const hub = candidates.reduce<string | undefined>((best, id) => best === undefined || (neighbours.get(id)?.size ?? 0) > (neighbours.get(best)?.size ?? 0) ? id : best, undefined);
   if (hub === undefined) return null;
   const spokeIds = [...neighbours.get(hub)!], placed = new Set([hub, ...spokeIds]);
   return { hub: labels.get(hub)!, spokes: spokeIds.map(id => ({ label: labels.get(id)!, children: [...neighbours.get(id)!].filter(child => {
@@ -129,10 +132,10 @@ export function mindMapLayout(fig: FigureInfo): { hub: string; spokes: MindMapBr
 export function figureToMermaid(fig: FigureInfo): string | null {
   if (['table', 'plot', 'sketch', 'cube', 'shape'].includes(fig.kind)) return null;
   if (!fig.edges.length && !fig.nodes?.some(n => n.parent)) return null;
-  const resolve = resolver(fig);
+  const { resolve, nodeKey } = resolver(fig);
   const nodes = new Map<string, { id: string; label: string; shape?: string; parent?: string }>();
   const add = (label: string, node?: FigureNode) => {
-    const name = resolve(label);
+    const name = node ? nodeKey(node) : resolve(label);
     if (!nodes.has(name)) nodes.set(name, { id: `n${nodes.size + 1}`, label: node?.label ?? label, shape: node?.shape, parent: node?.parent ? resolve(node.parent) : undefined });
   };
   fig.nodes?.forEach(n => add(n.label, n));
