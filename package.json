@@ -10,7 +10,8 @@
     "test": "vitest",
     "preview": "vite preview",
     "eval": "tsx scripts/eval.ts",
-    "gen:shapes": "tsx scripts/gen_shapes.ts"
+    "gen:shapes": "tsx scripts/gen_shapes.ts",
+    "eval:shapes": "tsx scripts/eval_shapes.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

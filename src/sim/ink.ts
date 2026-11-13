@@ -28,6 +28,37 @@ export const DEFAULT_INK_STYLE: InkStyle = {
   color: 0xff1b1b1f,
 };
 
+/** How carefully the simulated hand draws; scales jitter, wobble, corner overshoot, gaps and slant. */
+export type Messiness = 'neat' | 'normal' | 'messy';
+
+export const MESSINESS_LEVELS: Messiness[] = ['neat', 'normal', 'messy'];
+
+export interface MessProfile {
+  /** Multiplier for per-point jitter and slow wobble. */
+  shake: number;
+  /** Corner placement error, px. */
+  corner: number;
+  /** Multiplier for how far strokes overshoot corners / closing points. */
+  overshoot: number;
+  /** Probability that a polygon side or closing arc stops short, leaving a gap. */
+  gap: number;
+  /** Letter slant / baseline drift multiplier for handwriting. */
+  slant: number;
+  /** Probability that a straight connector bows noticeably. */
+  bow: number;
+}
+
+export const MESS_PROFILES: Record<Messiness, MessProfile> = {
+  neat: { shake: 0.45, corner: 1.2, overshoot: 0.4, gap: 0, slant: 0.5, bow: 0.3 },
+  normal: { shake: 1, corner: 2.5, overshoot: 1, gap: 0.1, slant: 1, bow: 1 },
+  messy: { shake: 2.1, corner: 5, overshoot: 2.2, gap: 0.35, slant: 2, bow: 2.2 },
+};
+
+export function inkStyleFor(messiness: Messiness, base: InkStyle = DEFAULT_INK_STYLE): InkStyle {
+  const m = MESS_PROFILES[messiness];
+  return { ...base, jitter: base.jitter * m.shake, wobble: base.wobble * m.shake };
+}
+
 export interface StrokeOptions {
   /** Pause before the pen touches down, ms (default: short in-word pause). */
   pauseMs?: number;

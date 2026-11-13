@@ -3,8 +3,8 @@
 
 
 ```json figures
-{ "figures": [
-  {"id":"fig1","type":"circle","description":"a hand-drawn circle","labels":[],"bbox":{"left":171,"top":80,"right":367,"bottom":322},"strokeIds":["s0","s1"]}
+{ "kind": "circle", "seed": 1, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"circle","description":"a hand-drawn circle","labels":[],"bbox":{"left":155,"top":97,"right":382,"bottom":305},"strokeIds":["s0"]}
 ] }
 ```
 
@@ -13,8 +13,8 @@
 
 
 ```json figures
-{ "figures": [
-  {"id":"fig1","type":"ellipse","description":"a hand-drawn ellipse, wider than tall","labels":[],"bbox":{"left":103,"top":159,"right":456,"bottom":279},"strokeIds":["s0"]}
+{ "kind": "ellipse", "seed": 2, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"ellipse","description":"a hand-drawn ellipse, wider than tall","labels":[],"bbox":{"left":100,"top":159,"right":460,"bottom":282},"strokeIds":["s0","s1"]}
 ] }
 ```
 
@@ -23,8 +23,8 @@
 
 
 ```json figures
-{ "figures": [
-  {"id":"fig1","type":"square","description":"a hand-drawn square","labels":[],"bbox":{"left":192,"top":129,"right":370,"bottom":310},"strokeIds":["s0","s1","s2","s3"]}
+{ "kind": "square", "seed": 3, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"square","description":"a hand-drawn square","labels":[],"bbox":{"left":193,"top":129,"right":370,"bottom":308},"strokeIds":["s0","s1","s2","s3"]}
 ] }
 ```
 
@@ -33,8 +33,8 @@
 
 
 ```json figures
-{ "figures": [
-  {"id":"fig1","type":"rectangle","description":"a hand-drawn rectangle, wider than tall","labels":[],"bbox":{"left":102,"top":146,"right":449,"bottom":295},"strokeIds":["s0","s1","s2","s3"]}
+{ "kind": "rectangle", "seed": 4, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"rectangle","description":"a hand-drawn rectangle, wider than tall","labels":[],"bbox":{"left":114,"top":143,"right":447,"bottom":294},"strokeIds":["s0","s1","s2","s3"]}
 ] }
 ```
 
@@ -43,8 +43,8 @@
 
 
 ```json figures
-{ "figures": [
-  {"id":"fig1","type":"triangle","description":"a hand-drawn triangle","labels":[],"bbox":{"left":155,"top":116,"right":408,"bottom":313},"strokeIds":["s0"]}
+{ "kind": "triangle", "seed": 5, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"triangle","description":"a hand-drawn triangle","labels":[],"bbox":{"left":154,"top":125,"right":407,"bottom":313},"strokeIds":["s0"]}
 ] }
 ```
 
@@ -53,7 +53,7 @@
 
 
 ```json figures
-{ "figures": [
+{ "kind": "line", "seed": 6, "messiness": "normal", "figures": [
   {"id":"fig1","type":"line","description":"a single straight line","labels":[],"bbox":{"left":90,"top":254,"right":469,"bottom":309},"strokeIds":["s0"]}
 ] }
 ```
@@ -63,7 +63,7 @@
 
 
 ```json figures
-{ "figures": [
+{ "kind": "arrow", "seed": 7, "messiness": "normal", "figures": [
   {"id":"fig1","type":"arrow","description":"a straight arrow pointing right","labels":[],"bbox":{"left":108,"top":175,"right":452,"bottom":272},"strokeIds":["s0","s1","s2"]}
 ] }
 ```
@@ -73,7 +73,7 @@
 
 
 ```json figures
-{ "figures": [
+{ "kind": "curved-arrow", "seed": 8, "messiness": "normal", "figures": [
   {"id":"fig1","type":"curved-arrow","description":"a curved arrow pointing right","labels":[],"bbox":{"left":94,"top":225,"right":467,"bottom":311},"strokeIds":["s0","s1"]}
 ] }
 ```

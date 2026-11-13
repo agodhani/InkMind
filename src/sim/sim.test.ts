@@ -4,8 +4,10 @@ import { glyphFor, layoutText, measureText, parseJhf } from './font';
 import { DEFAULT_INK_STYLE, InkWriter, resample } from './ink';
 import { drawCircle, drawRect, writeText, type Pen } from './shapes';
 import { DATASETS, SCENE_KINDS, buildScene, sceneReference } from './scenes';
-import { captionHasLabel, diagramMetrics, formatReferencePage, parseReferencePage } from './metrics';
+import { captionHasLabel, containmentFromCaption, containmentFromNodes, diagramMetrics, edgesFromCaption, formatReferencePage, kendallTau, normLabel, parseReferencePage, relationMetrics, stepPositions, stepPositionsInSequence, type FigureExpectation } from './metrics';
 import { strokesBounds } from '../transcribe/regions';
+import type { DigitalBlock } from '../model/page';
+import { SUITE_KINDS, suiteMarkdown, suitePlan, summariseSuite } from './suite';
 
 const pen = (seed = 1): Pen => {
   const rng = new Rng(seed);
@@ -133,6 +135,16 @@ describe('scenes', () => {
   it('changes with the seed', () => {
     expect(JSON.stringify(buildScene('circle', 1))).not.toBe(JSON.stringify(buildScene('circle', 2)));
   });
+  it('keeps every dataset page (normal and messy) inside its page bounds', () => {
+    for (const pages of Object.values(DATASETS)) {
+      for (const p of pages) {
+        const a = buildScene(p.kind, p.seed, p.messiness);
+        let out = 0;
+        for (const s of a.strokes) for (const q of s.inputs.inputs) if (!(q.x > 0 && q.x < a.width && q.y > 0 && q.y < a.height)) out++;
+        expect(out, `${p.kind} #${p.seed} ${p.messiness ?? 'normal'}`).toBe(0);
+      }
+    }
+  });
   it('mixed-notes has heading, bullets, a figure with labels and a footnote', () => {
     const s = buildScene('mixed-notes', 41);
     expect(s.text).toMatch(/^# /);
@@ -226,5 +238,202 @@ describe('diagram metrics', () => {
     expect(parsed.figures).toEqual(figures);
     expect(parseReferencePage('plain').figures).toEqual([]);
     expect(parseReferencePage('<!-- circle #1: a hand-drawn circle -->\n\n' + formatReferencePage('', figures)).text).toBe('');
+  });
+});
+
+describe('relation metrics', () => {
+  const fig = (over: Partial<FigureExpectation>): FigureExpectation => ({ id: 'fig1', type: 'flowchart-complex', labels: [], strokeIds: ['s1', 's2'], ...over });
+  const block = (text: string, figure?: DigitalBlock['figure']): Pick<DigitalBlock, 'kind' | 'text' | 'strokeIds' | 'figure'> => ({ kind: 'diagram', text, strokeIds: ['s1', 's2'], figure });
+
+  it('normalises labels and arrows', () => {
+    expect(normLabel('  Read Input. ')).toBe('read input');
+    expect(normLabel('A -> B')).toBe('a → b');
+    expect(normLabel('A => B')).toBe('a → b');
+  });
+
+  it('parses edges out of captions and tolerates -> vs →', () => {
+    expect(edgesFromCaption('Flowchart. Relations: start → read input, valid? -> process (yes), valid? → show error (no).')).toEqual([
+      { from: 'start', to: 'read input' },
+      { from: 'valid?', to: 'process', label: 'yes' },
+      { from: 'valid?', to: 'show error', label: 'no' },
+    ]);
+    expect(edgesFromCaption('a circle')).toEqual([]);
+  });
+
+  it('scores edge recall/precision by endpoint labels, case-insensitively', () => {
+    const f = fig({ edges: [{ from: 'start', to: 'read input' }, { from: 'valid?', to: 'process', label: 'yes' }, { from: 'process', to: 'save' }] });
+    const m = relationMetrics([f], [block('Flowchart: START -> Read input; valid? → process (yes); save → done')]);
+    expect(m.edges).toBe(3);
+    expect(m.edgesFound).toBe(2);
+    expect(m.predicted).toBe(3);
+    expect(m.predictedMatched).toBe(2);
+    expect(m.edgeRecall).toBeCloseTo(2 / 3);
+    expect(m.edgePrecision).toBeCloseTo(2 / 3);
+  });
+
+  it('prefers structured figure.edges and accepts either direction for undirected figures', () => {
+    const f = fig({ type: 'tree-deep', directed: false, edges: [{ from: 'root', to: 'A' }, { from: 'A', to: 'x' }] });
+    const m = relationMetrics([f], [block('tree', { kind: 'tree', shapes: [], labels: [], edges: [{ from: 'A', to: 'root' }, { from: 'x', to: 'A' }, { from: 'q', to: 'z' }] })]);
+    expect(m.edgesFound).toBe(2);
+    expect(m.edgePrecision).toBeCloseTo(2 / 3);
+    const d = relationMetrics([{ ...f, directed: true }], [block('tree', { kind: 'tree', shapes: [], labels: [], edges: [{ from: 'A', to: 'root' }] })]);
+    expect(d.edgesFound).toBe(0);
+    // Labelled transitions: a wrong label on the same endpoints is not a hit; an unlabelled prediction still is.
+    const sm = fig({ type: 'state-machine', edges: [{ from: 'q0', to: 'q1', label: 'a' }, { from: 'q0', to: 'q1', label: 'b' }] });
+    const wrong = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1', label: 'a' }] })]);
+    expect(wrong.edgesFound).toBe(1);
+    const bare = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1' }] })]);
+    expect(bare.edgesFound).toBe(2);
+  });
+
+  it('measures sequence order with Kendall tau and exact order', () => {
+    expect(kendallTau([0, 5, 9])).toBe(1);
+    expect(kendallTau([9, 5, 0])).toBe(-1);
+    expect(kendallTau([0, null, 9])).toBe(1);
+    expect(kendallTau([0, null, null])).toBeNull();
+    expect(stepPositions(['1', '2', '3'], 'steps 1, 2 and 3')).toEqual([6, 9, 15]);
+    expect(stepPositions(['1', '2', '10'], 'values 10 and 2')).toEqual([null, 14, 7]);
+    const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
+    const exact = relationMetrics([f], [block('Pipeline: collect → clean → train → eval')]);
+    expect(exact.sequences).toBe(1);
+    expect(exact.sequencesExact).toBe(1);
+    expect(exact.sequenceTau).toBe(1);
+    expect(exact.stepsFound).toBe(4);
+    const swapped = relationMetrics([f], [block('Pipeline: collect, train, clean, eval')]);
+    expect(swapped.sequencesExact).toBe(0);
+    expect(swapped.sequenceTau).toBeCloseTo(4 / 6);
+    const partial = relationMetrics([f], [block('Pipeline: collect then eval')]);
+    expect(partial.stepsFound).toBe(2);
+    expect(partial.sequencesExact).toBe(0);
+  });
+
+  it('scores order against the structured figure.sequence when present, caption text otherwise', () => {
+    expect(stepPositionsInSequence(['collect', 'clean', 'eval'], ['Collect data', 'clean', 'train', 'eval'])).toEqual([0, 1, 3]);
+    expect(stepPositionsInSequence(['1', '2', '10'], ['10', '2'])).toEqual([null, 1, 0]);
+    // One sequence entry can satisfy only one step: a merged "eval train" entry does not place both steps.
+    expect(stepPositionsInSequence(['collect', 'clean', 'train', 'eval'], ['collect', 'clean', 'eval train'])).toEqual([0, 1, 2, null]);
+    const merged = relationMetrics([fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] })], [block('x', { kind: 'sequence', shapes: [], labels: [], edges: [], sequence: ['collect', 'clean', 'eval train'] })]);
+    expect(merged.sequencesExact).toBe(0);
+    expect(merged.stepsFound).toBe(3);
+    // Signed ticks are whole numbers: "1" is not inside "-1", so a reversed number line is not in order.
+    expect(stepPositionsInSequence(['-1', '0', '1'], ['1', '0', '-1'])).toEqual([2, 1, 0]);
+    expect(stepPositions(['-1', '0', '1'], 'ticks 1, 0, -1')).toEqual([12, 9, 6]);
+    expect(stepPositions(['0', '1'], 'at 0.5 and 10')).toEqual([null, null]);
+    expect(stepPositions(['1', '2'], 'steps 1. then 2.')).toEqual([6, 14]);
+    expect(stepPositions(['eval', 'eval train'], 'eval train')).toEqual([0, null]);
+    const f = fig({ type: 'timeline', sequence: ['collect', 'clean', 'train', 'eval'] });
+    const info = (sequence: string[]): DigitalBlock['figure'] => ({ kind: 'sequence', shapes: [], labels: [], edges: [], sequence });
+    // Caption order is wrong but the structured sequence is right: the structured one wins.
+    const structured = relationMetrics([f], [block('Pipeline: eval, train, clean, collect', info(['collect', 'clean', 'train', 'eval']))]);
+    expect(structured.sequencesStructured).toBe(1);
+    expect(structured.sequencesExact).toBe(1);
+    expect(structured.sequenceTau).toBe(1);
+    expect(structured.perSequence).toEqual([{ id: 'fig1', positions: [0, 1, 2, 3], structured: true }]);
+    const swapped = relationMetrics([f], [block('Pipeline', info(['collect', 'train', 'clean', 'eval']))]);
+    expect(swapped.sequencesExact).toBe(0);
+    expect(swapped.sequenceTau).toBeCloseTo(4 / 6);
+    // A structured sequence that names none of the steps falls back to the caption.
+    const useless = relationMetrics([f], [block('Pipeline: collect → clean → train → eval', info(['a', 'b']))]);
+    expect(useless.sequencesStructured).toBe(0);
+    expect(useless.sequencesExact).toBe(1);
+    expect(useless.perSequence[0].structured).toBe(false);
+    const none = relationMetrics([f], [block('Pipeline: collect → clean → train → eval')]);
+    expect(none.sequencesStructured).toBe(0);
+    expect(none.sequencesExact).toBe(1);
+  });
+
+  it('scores containment from structured figure.nodes parents, caption phrases otherwise', () => {
+    const nodes = [
+      { id: 'n1', label: 'system' },
+      { id: 'n2', label: 'frontend', parent: 'n1' },
+      { id: 'n3', label: 'ui', parent: 'frontend' },
+      { id: 'n4', label: 'backend', parent: 'nope' },
+    ];
+    expect(containmentFromNodes(nodes)).toEqual([
+      { inner: 'frontend', outer: 'system' },
+      { inner: 'ui', outer: 'frontend' },
+    ]);
+    const f = fig({ type: 'nested-boxes', contains: [{ outer: 'system', inner: 'frontend' }, { outer: 'frontend', inner: 'ui' }, { outer: 'system', inner: 'backend' }] });
+    // Caption claims are ignored once a block carries structured nesting.
+    const m = relationMetrics([f], [block('system contains backend', { kind: 'shape', shapes: [], labels: [], edges: [], nodes })]);
+    expect(m.containsStructured).toBe(true);
+    expect(m.containsFound).toBe(2);
+    const c = relationMetrics([f], [block('system contains backend', { kind: 'shape', shapes: [], labels: [], edges: [], nodes: [{ id: 'n1', label: 'system' }] })]);
+    expect(c.containsStructured).toBe(false);
+    expect(c.containsFound).toBe(1);
+  });
+
+  it('scores containment from caption phrases and figure count', () => {
+    expect(containmentFromCaption('ui inside frontend; backend contains api')).toEqual([
+      { inner: 'ui', outer: 'frontend' },
+      { inner: 'api', outer: 'backend' },
+    ]);
+    const f = fig({ type: 'nested-boxes', contains: [{ outer: 'system', inner: 'frontend' }, { outer: 'frontend', inner: 'ui' }, { outer: 'system', inner: 'backend' }] });
+    const m = relationMetrics([f], [block('Nested boxes: the system box contains frontend and backend; ui is inside frontend.')]);
+    expect(m.contains).toBe(3);
+    expect(m.containsFound).toBe(2);
+    expect(m.containmentRecall).toBeCloseTo(2 / 3);
+    expect(m.containsStructured).toBe(false);
+    expect(m.figureCountExact).toBe(true);
+    const two = relationMetrics([f, fig({ id: 'fig2', strokeIds: ['s3'] })], [block('x')]);
+    expect(two.figureCountExact).toBe(false);
+    expect(two.expectedFigures).toBe(2);
+    expect(two.diagramBlocks).toBe(1);
+  });
+
+  it('exports relations in the reference and round-trips them with page meta', () => {
+    const scene = buildScene('flowchart-complex', 51, 'messy');
+    expect(scene.figures[0].edges!.length).toBeGreaterThan(4);
+    expect(scene.figures[0].edges!.some((e) => e.label === 'yes' || e.label === 'no' || e.label === 'hit' || e.label === 'int')).toBe(true);
+    const ref = parseReferencePage(sceneReference(scene));
+    expect(ref.meta).toEqual({ kind: 'flowchart-complex', seed: 51, messiness: 'messy' });
+    expect(ref.figures[0].edges).toEqual(scene.figures[0].edges);
+    const seq = buildScene('sequence-diagram', 71);
+    expect(seq.figures[0].sequence!.length).toBeGreaterThan(2);
+    const notes = buildScene('notes-complex', 131);
+    expect(notes.figures.length).toBeGreaterThanOrEqual(2);
+    expect(notes.links.length).toBe(notes.figures.length - 1);
+    expect(parseReferencePage(sceneReference(notes)).meta.links).toEqual(notes.links);
+    expect(notes.text).toMatch(/fig \d/);
+  });
+
+  it('messiness changes the ink but keeps determinism', () => {
+    const neat = buildScene('square', 3, 'neat'), messy = buildScene('square', 3, 'messy');
+    expect(buildScene('square', 3, 'messy').strokes).toEqual(messy.strokes);
+    expect(neat.strokes).not.toEqual(messy.strokes);
+    const spread = (s: typeof neat) => {
+      let d = 0, n = 0;
+      for (const st of s.strokes) for (let i = 1; i < st.inputs.inputs.length; i++) {
+        const a = st.inputs.inputs[i - 1], b = st.inputs.inputs[i];
+        d += Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - 2.8); n++;
+      }
+      return d / n;
+    };
+    expect(spread(messy)).toBeGreaterThan(spread(neat));
+  });
+});
+
+describe('suite', () => {
+  it('plans kinds at normal then messy with distinct seeds', () => {
+    const plan = suitePlan(SUITE_KINDS.length + 2, 10);
+    expect(plan).toHaveLength(SUITE_KINDS.length + 2);
+    expect(plan[0]).toEqual({ kind: SUITE_KINDS[0], seed: 10, messiness: 'normal' });
+    expect(plan[SUITE_KINDS.length]).toEqual({ kind: SUITE_KINDS[0], seed: 10 + SUITE_KINDS.length, messiness: 'messy' });
+    expect(new Set(plan.map((p) => p.seed)).size).toBe(plan.length);
+    expect(suitePlan(2, 1, ['circle'])).toEqual([{ kind: 'circle', seed: 1, messiness: 'normal' }, { kind: 'circle', seed: 2, messiness: 'messy' }]);
+  });
+  it('sums results into a summary and a markdown table', () => {
+    const scene = buildScene('timeline', 73);
+    const figures: FigureExpectation[] = scene.figures.map((f) => ({ id: f.id, type: f.type, labels: f.labels, strokeIds: f.strokeIds, edges: f.edges, sequence: f.sequence }));
+    const blocks = [{ kind: 'diagram' as const, text: `Pipeline: ${scene.figures[0].sequence!.join(' → ')}`, strokeIds: scene.strokes.map((s) => s.id) }];
+    const r = { kind: 'timeline' as const, seed: 73, messiness: 'normal' as const, title: scene.title, diagrams: diagramMetrics(figures, blocks), relations: relationMetrics(figures, blocks), seconds: 12 };
+    const s = summariseSuite([r, r]);
+    expect(s.scenes).toBe(2);
+    expect(s.edgesFound).toBe(s.edges);
+    expect(s.sequencesExact).toBe(2);
+    expect(s.countExact).toBe(2);
+    const md = suiteMarkdown([r]);
+    expect(md).toContain('| timeline | normal |');
+    expect(md).toContain('**total**');
   });
 });

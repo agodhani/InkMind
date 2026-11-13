@@ -34,10 +34,34 @@ export function parseJhf(line: string): Glyph {
   return { left, right, paths };
 }
 
+/** A few maths symbols the Hershey set lacks, in the same font units (baseline y = 9, cap top y = -12). */
+const EXTRA_GLYPHS: Record<string, Glyph> = {
+  '°': { left: -5, right: 5, paths: [ring(0, -9, 3)] },
+  'θ': { left: -8, right: 8, paths: [ellipse(0, -1.5, 5.5, 10.5), [{ x: -5, y: -1 }, { x: 5, y: -1 }]] },
+  'π': { left: -10, right: 10, paths: [[{ x: -9, y: -3 }, { x: -7, y: -5 }, { x: 9, y: -5 }], [{ x: -4, y: -5 }, { x: -4, y: 9 }], [{ x: 4, y: -5 }, { x: 4, y: 9 }]] },
+  '√': { left: -10, right: 12, paths: [[{ x: -9, y: 0 }, { x: -5, y: 9 }, { x: 2, y: -12 }, { x: 11, y: -12 }]] },
+  '∩': { left: -9, right: 9, paths: [[{ x: -6, y: 9 }, { x: -6, y: -4 }, { x: -5, y: -8 }, { x: -2, y: -11 }, { x: 2, y: -11 }, { x: 5, y: -8 }, { x: 6, y: -4 }, { x: 6, y: 9 }]] },
+  'β': { left: -8, right: 9, paths: [[{ x: -5, y: 13 }, { x: -5, y: -8 }, { x: -3, y: -11 }, { x: 1, y: -12 }, { x: 4, y: -10 }, { x: 4, y: -5 }, { x: 1, y: -2 }, { x: -3, y: -1 }, { x: 2, y: -1 }, { x: 6, y: 2 }, { x: 6, y: 6 }, { x: 3, y: 9 }, { x: -5, y: 9 }]] },
+};
+
+function ring(cx: number, cy: number, r: number): Offset[] {
+  return ellipse(cx, cy, r, r);
+}
+
+function ellipse(cx: number, cy: number, rx: number, ry: number): Offset[] {
+  const pts: Offset[] = [];
+  for (let i = 0; i <= 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    pts.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+  }
+  return pts;
+}
+
 function glyphs(): Map<string, Glyph> {
   if (cache) return cache;
   cache = new Map();
   FUTURAL_JHF.forEach((line, i) => cache!.set(String.fromCharCode(32 + i), parseJhf(line)));
+  for (const [ch, g] of Object.entries(EXTRA_GLYPHS)) cache.set(ch, g);
   return cache;
 }
 

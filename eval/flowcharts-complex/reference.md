@@ -1,0 +1,39 @@
+<!-- page 1 -->
+<!-- flowchart-complex #51: flowchart with 1 decision(s) and a loop: start, read input, valid?, process, show error, save, done -->
+
+
+```json figures
+{ "kind": "flowchart-complex", "seed": 51, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"flowchart-complex","description":"flowchart with 1 decision(s) and a loop: start, read input, valid?, process, show error, save, done","labels":["start","read input","valid?","process","show error","save","done","yes","no","retry"],"nodes":["start","read input","valid?","process","show error","save","done"],"edges":[{"from":"start","to":"read input"},{"from":"read input","to":"valid?"},{"from":"valid?","to":"process","label":"yes"},{"from":"valid?","to":"show error","label":"no"},{"from":"process","to":"save"},{"from":"show error","to":"read input","label":"retry"},{"from":"save","to":"done"}],"bbox":{"left":101,"top":120,"right":866,"bottom":964},"strokeIds":["s0","s1","s2","s3","s4","s5","s6","s7","s8","s9","s10","s11","s12","s13","s14","s15","s16","s17","s18","s19","s20","s21","s22","s23","s24","s25","s26","s27","s28","s29","s30","s31","s32","s33","s34","s35","s36","s37","s38","s39","s40","s41","s42","s43","s44","s45","s46","s47","s48","s49","s50","s51","s52","s53","s54","s55","s56","s57","s58","s59","s60","s61","s62","s63","s64","s65","s66","s67","s68","s69","s70","s71","s72","s73","s74","s75","s76","s77","s78","s79","s80","s81","s82","s83","s84","s85","s86","s87","s88","s89","s90","s91","s92","s93","s94","s95","s96","s97","s98","s99","s100","s101","s102","s103","s104","s105","s106","s107","s108","s109","s110","s111","s112","s113","s114","s115","s116","s117","s118","s119","s120","s121","s122","s123"]}
+] }
+```
+
+<!-- page 2 -->
+<!-- flowchart-complex #52 (messy): flowchart with 1 decision(s) and a loop: request, cached?, fetch, store, respond -->
+
+
+```json figures
+{ "kind": "flowchart-complex", "seed": 52, "messiness": "messy", "figures": [
+  {"id":"fig1","type":"flowchart-complex","description":"flowchart with 1 decision(s) and a loop: request, cached?, fetch, store, respond","labels":["request","cached?","fetch","store","respond","hit","miss"],"nodes":["request","cached?","fetch","store","respond"],"edges":[{"from":"request","to":"cached?"},{"from":"cached?","to":"respond","label":"hit"},{"from":"cached?","to":"fetch","label":"miss"},{"from":"fetch","to":"store"},{"from":"store","to":"respond"}],"bbox":{"left":114,"top":84,"right":1013,"bottom":324},"strokeIds":["s0","s1","s2","s3","s4","s5","s6","s7","s8","s9","s10","s11","s12","s13","s14","s15","s16","s17","s18","s19","s20","s21","s22","s23","s24","s25","s26","s27","s28","s29","s30","s31","s32","s33","s34","s35","s36","s37","s38","s39","s40","s41","s42","s43","s44","s45","s46","s47","s48","s49","s50","s51","s52","s53","s54","s55","s56","s57","s58","s59","s60","s61","s62","s63","s64","s65","s66","s67","s68","s69","s70","s71","s72","s73","s74","s75","s76","s77","s78","s79","s80","s81","s82","s83","s84","s85"]}
+] }
+```
+
+<!-- page 3 -->
+<!-- flowchart-complex #53: flowchart with 1 decision(s) and a loop: init, sample batch, compute loss, update weights, converged?, stop -->
+
+
+```json figures
+{ "kind": "flowchart-complex", "seed": 53, "messiness": "normal", "figures": [
+  {"id":"fig1","type":"flowchart-complex","description":"flowchart with 1 decision(s) and a loop: init, sample batch, compute loss, update weights, converged?, stop","labels":["init","sample batch","compute loss","update weights","converged?","stop","yes","no"],"nodes":["init","sample batch","compute loss","update weights","converged?","stop"],"edges":[{"from":"init","to":"sample batch"},{"from":"sample batch","to":"compute loss"},{"from":"compute loss","to":"update weights"},{"from":"update weights","to":"converged?"},{"from":"converged?","to":"stop","label":"yes"},{"from":"converged?","to":"sample batch","label":"no"}],"bbox":{"left":31,"top":115,"right":534,"bottom":825},"strokeIds":["s0","s1","s2","s3","s4","s5","s6","s7","s8","s9","s10","s11","s12","s13","s14","s15","s16","s17","s18","s19","s20","s21","s22","s23","s24","s25","s26","s27","s28","s29","s30","s31","s32","s33","s34","s35","s36","s37","s38","s39","s40","s41","s42","s43","s44","s45","s46","s47","s48","s49","s50","s51","s52","s53","s54","s55","s56","s57","s58","s59","s60","s61","s62","s63","s64","s65","s66","s67","s68","s69","s70","s71","s72","s73","s74","s75","s76","s77","s78","s79","s80","s81","s82","s83","s84","s85","s86","s87","s88","s89","s90","s91","s92","s93","s94","s95","s96","s97","s98","s99","s100","s101","s102","s103","s104","s105","s106","s107","s108","s109","s110","s111","s112","s113","s114","s115","s116","s117","s118","s119","s120","s121","s122","s123","s124","s125","s126"]}
+] }
+```
+
+<!-- page 4 -->
+<!-- flowchart-complex #54 (messy): flowchart with 1 decision(s) and a loop: request, cached?, fetch, store, respond -->
+
+
+```json figures
+{ "kind": "flowchart-complex", "seed": 54, "messiness": "messy", "figures": [
+  {"id":"fig1","type":"flowchart-complex","description":"flowchart with 1 decision(s) and a loop: request, cached?, fetch, store, respond","labels":["request","cached?","fetch","store","respond","hit","miss"],"nodes":["request","cached?","fetch","store","respond"],"edges":[{"from":"request","to":"cached?"},{"from":"cached?","to":"respond","label":"hit"},{"from":"cached?","to":"fetch","label":"miss"},{"from":"fetch","to":"store"},{"from":"store","to":"respond"}],"bbox":{"left":108,"top":99,"right":1019,"bottom":330},"strokeIds":["s0","s1","s2","s3","s4","s5","s6","s7","s8","s9","s10","s11","s12","s13","s14","s15","s16","s17","s18","s19","s20","s21","s22","s23","s24","s25","s26","s27","s28","s29","s30","s31","s32","s33","s34","s35","s36","s37","s38","s39","s40","s41","s42","s43","s44","s45","s46","s47","s48","s49","s50","s51","s52","s53","s54","s55","s56","s57","s58","s59","s60","s61","s62","s63","s64","s65","s66","s67","s68","s69","s70","s71","s72","s73","s74","s75","s76","s77","s78","s79","s80"]}
+] }
+```

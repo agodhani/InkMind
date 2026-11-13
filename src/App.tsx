@@ -516,7 +516,7 @@ export default function App() {
 
       {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
         </Suspense>
       )}
 
