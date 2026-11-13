@@ -68,3 +68,6 @@
   .sim-title span { display: none; }
   .sim-title button { margin-left: auto; }
 }
+@media (max-height: 819px) {
+  .sim-panel { max-height: 38vh; }
+}

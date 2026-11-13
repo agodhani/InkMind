@@ -54,7 +54,7 @@ export function figureLines(b: DigitalBlock): string[] {
   if (!fig) return [];
   const lines: string[] = [];
   const mermaid = figureToMermaid(fig);
-  if (fig.labels.length && !fig.nodes?.length && !mermaid) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
+  if (fig.labels.length && !fig.nodes?.length && !fig.cells?.length && !mermaid) lines.push(`Labels: ${fig.labels.map((l) => `\`${l}\``).join(', ')}`);
   if (fig.cells?.length) {
     const cell = (s: string) => s.replace(/\|/g, '\\|').trim();
     const [head, ...rows] = fig.cells;

@@ -47,7 +47,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
   const highlight = (step: string | null) => {
     onHighlightStrokes?.(step === null ? null : stepInk.get(step) ?? block.strokeIds);
   };
-  const summary = fig ? [fig.sequence?.length ? `${fig.sequence.length} steps` : '', fig.nodes?.length ? `${fig.nodes.length} nodes` : '', fig.edges.length ? `${fig.edges.length} links` : ''].filter(Boolean).join(' · ') : '';
+  const summary = fig ? [fig.kind === 'table' ? (fig.cells?.length ? `${fig.cells.length}×${Math.max(...fig.cells.map(row => row.length))} table` : 'table') : fig.sequence?.length ? `${fig.sequence.length} steps` : '', fig.nodes?.length ? `${fig.nodes.length} nodes` : '', fig.edges.length ? `${fig.edges.length} links` : ''].filter(Boolean).join(' · ') : '';
   if (editing) return <div className="diagram-card">
     <div className="diagram-preview">{rendered && <img className="diagram-thumbnail" src={rendered.dataUrl} alt={`Ink: ${block.text || 'diagram'}`} />}</div>
     <FigureEditor block={block} onSave={next => onEditFigure?.(next)} onCancel={() => onCancelEdit?.()} />
@@ -68,7 +68,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
           }}>{expanded ? 'Hide details' : 'Show details'} <span aria-hidden="true">{expanded ? '−' : '+'}</span></button>
         </header>
         <div id={panelId} className="diagram-panel" hidden={!expanded}>
-          {!!fig.sequence?.length && <section aria-label="Steps">
+          {fig.kind !== 'table' && !!fig.sequence?.length && <section aria-label="Steps">
             <h4>Steps</h4>
             <ol className="card-steps">
               {fig.sequence.map((step, i) => <li key={`${step}-${i}`}><button type="button" aria-pressed={active === step} title={stepNode(fig, step)?.shape} onClick={() => {
@@ -96,7 +96,7 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
               {fig.cells.slice(1).map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && fig.cells![0][0] === '' ? <th scope="row" key={j}>{cell}</th> : <td key={j}>{cell}</td>)}</tr>)}
             </tbody></table>
           </div></section>}
-          {!fig.nodes?.length && !!fig.labels.length && <section aria-label="Labels"><h4>Labels</h4><div className="diagram-labels">{fig.labels.map((label, i) => <span className="chip chip-label" key={i}>{label}</span>)}</div></section>}
+          {!fig.nodes?.length && !fig.cells?.length && !!fig.labels.length && <section aria-label="Labels"><h4>Labels</h4><div className="diagram-labels">{fig.labels.map((label, i) => <span className="chip chip-label" key={i}>{label}</span>)}</div></section>}
         </div>
       </>}
     </div>

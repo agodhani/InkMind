@@ -18,7 +18,7 @@ export function expectedBlocks(scene: Scene, idMap: Map<string, string>): Digita
         kind, shapes: shapes.size ? [...new Set(shapes.values())] : [f.type === 'table' ? 'rectangle' : f.type], labels: [...f.labels],
         nodes: f.nodes?.map(label => ({ id: label, label, shape: shapes.get(label), parent: f.contains?.find(c => c.inner === label)?.outer })),
         edges: (f.edges ?? []).map(e => ({ ...e, kind: e.from === e.to ? 'self-loop' : f.directed === false ? 'line' : 'arrow' })),
-        sequence: f.sequence ? [...f.sequence] : undefined,
+        sequence: f.type !== 'table' && f.sequence ? [...f.sequence] : undefined,
         cells: f.type === 'table' ? expectedTableCells(f.labels) : undefined,
       },
     };

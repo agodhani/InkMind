@@ -56,13 +56,14 @@ describe('pageToMarkdown', () => {
         },
         {
           id: 't', kind: 'diagram', text: '', bbox: { left: 0, top: 100, right: 10, bottom: 110 }, strokeIds: [], confidence: 1,
-          figure: { kind: 'table', shapes: [], labels: [], edges: [], cells: [['name', 'qty'], ['nut', '12']] },
+          figure: { kind: 'table', shapes: [], labels: ['name', 'qty', 'nut', '12'], edges: [], cells: [['name', 'qty'], ['nut', '12']] },
         },
       ],
     };
     const md = pageToMarkdown(page);
     expect(md).toContain('![[p/f.png]]\n*Shape: flow.*\n- system (rectangle)\n  - start\n  - end\n1. start\n2. end\n\n- start → end (yes)\n- end ↺\n- end → start *(from ink geometry)*');
     expect(md).toContain('![[p/t.png]]\n\n| name | qty |\n| --- | --- |\n| nut | 12 |');
+    expect(md).not.toContain('Labels: `name`');
   });
 
   it('escapes table pipes and exports mind map branches plus Mermaid', () => {

@@ -26,7 +26,10 @@ describe('expected simulator blocks', () => {
       expect(r.sequencesExact).toBe(r.sequences);
       expect(r.figureCountExact).toBe(true);
       expect(blocks.every(b => b.strokeIds.every(id => id.startsWith('page-')))).toBe(true);
-      if (kind === 'table') expect(blocks[0].figure!.cells!.length).toBeGreaterThan(1);
+      if (kind === 'table') {
+        expect(blocks[0].figure!.cells!.length).toBeGreaterThan(1);
+        expect(blocks[0].figure!.sequence).toBeUndefined();
+      }
       if (kind === 'nested-boxes') expect(blocks[0].figure!.nodes!.some(n => n.parent)).toBe(true);
     }
   });

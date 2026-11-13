@@ -73,7 +73,10 @@ describe('DiagramCard', () => {
     expect(container.querySelector('[aria-label="Labels"]')).toBeNull();
   });
   it('uses column and row headers for a table with an empty corner', () => {
-    render(block({ kind: 'table', cells: [['', 'AM', 'PM'], ['Mon', 'gym', 'code'], ['Tue', 'read', 'work']] }));
+    render(block({ kind: 'table', sequence: ['AM', 'PM'], labels: ['AM', 'PM', 'Mon', 'gym'], cells: [['', 'AM', 'PM'], ['Mon', 'gym', 'code'], ['Tue', 'read', 'work']] }));
+    expect(container.querySelector('.diagram-summary')!.textContent).toBe('3×3 table');
+    expect(container.querySelector('[aria-label="Steps"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Labels"]')).toBeNull();
     expect(container.querySelectorAll('th[scope="col"]')).toHaveLength(3);
     expect(container.querySelectorAll('th[scope="row"]')).toHaveLength(2);
     expect(container.querySelectorAll('td')).toHaveLength(4);
