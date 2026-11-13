@@ -26,7 +26,7 @@ export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<strin
   const label = (node: FigureNode) => labelsById.get(node.id) ?? node.label;
   const renameLabel = (value: string) => {
     const node = labelNode(value);
-    return node ? label(node) : value;
+    return node && label(node) !== node.label ? label(node) : value;
   };
   const endpoint = (value: string) => {
     const byId = nodes.find(node => key(node.id) === key(value));
@@ -35,7 +35,7 @@ export function renameFigureNodes(fig: FigureInfo, labelsById: ReadonlyMap<strin
     if (!node) return value;
     const next = label(node);
     const ambiguous = nodes.some(other => other.id !== node.id && (key(label(other)) === key(next) || key(other.id) === key(next)));
-    return ambiguous ? node.id : next;
+    return ambiguous ? node.id : next !== node.label ? next : value;
   };
   return { ...fig, nodes: nodes.map(node => ({ ...node, label: label(node) })), labels: fig.labels.map(renameLabel), sequence: fig.sequence?.map(renameLabel), edges: fig.edges.map(edge => ({ ...edge, from: endpoint(edge.from), to: endpoint(edge.to) })) };
 }

@@ -29,6 +29,15 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('preserves original references when a node rename is undone', () => {
+    const save = vi.fn(), cancel = vi.fn();
+    act(() => root.render(createElement(DiagramCard, { block: block({ labels: [' beta '], sequence: ['BETA'], nodes: [{ id: 'n', label: 'Beta' }], edges: [{ from: ' beta ', to: 'End' }] }), strokeById: new Map(), editing: true, onEditFigure: save, onCancelEdit: cancel })));
+    const input = container.querySelector<HTMLInputElement>('.figure-edit-grid input')!;
+    change(input, 'Other'); change(input, 'Beta');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
   it('shows only uncovered free annotations beside nodes, cells, links and steps', () => {
     render(block({ labels: [' start ', 'CELL', 'YES', 'step', 'Finish', 'Free note', 'free NOTE'], nodes: [{ id: 'n', label: 'Start' }], cells: [['Cell']], sequence: ['Step'], edges: [{ from: 'Start', to: 'Finish', label: 'yes' }] }));
     const labels = container.querySelector('[aria-label="Labels"]');
