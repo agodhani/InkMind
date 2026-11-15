@@ -261,6 +261,18 @@ describe('mergeBlocks', () => {
     incoming.figure.nodes = [{ id: 'n1', label: 'unrelated', strokeIds: ['unrelated'] }];
     expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes![0].label).toBe('unrelated');
   });
+  it('keeps unchanged node identities when shared ink makes overlap ambiguous', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { ...editedFigure, nodes: [
+      { id: 'n1', label: 'Start', strokeIds: ['shared-a', 'shared-b'] },
+      { id: 'n2', label: 'Work', strokeIds: ['shared-a', 'shared-b'] },
+    ] };
+    incoming.figure = { ...redrawnFigure, nodes: [
+      { id: 'n2', label: 'wrong work', strokeIds: ['shared-b', 'shared-a'] },
+      { id: 'n1', label: 'wrong start', strokeIds: ['shared-a', 'shared-b'] },
+    ] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes!.map((n) => n.label)).toEqual(['Work', 'Start']);
+  });
   it('preserves edited table cells, including blanks, while using fresh values for new rows and columns', () => {
     const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
     existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [['fixed', ''], ['kept', 'value']] };

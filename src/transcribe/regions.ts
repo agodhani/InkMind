@@ -423,10 +423,14 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
       return shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
     };
     const best = Math.max(0, ...oldNodes.filter((old) => !used.has(old)).map(overlap));
-    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'stroke' ? best > 0 && overlap(old) === best
+    let candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'stroke' ? best > 0 && overlap(old) === best
       : basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
       : basis === 'label' ? sameText(old.label, node.label)
       : node.group !== undefined && old.group === node.group && newNodes.filter((n) => n.group === node.group).length === 1));
+    if (basis === 'stroke' && candidates.length > 1 && best === 1) {
+      const unchanged = candidates.filter((old) => sameText(old.id, node.id));
+      if (unchanged.length === 1) candidates = unchanged;
+    }
     if (candidates.length === 1) { matches.set(node.id, candidates[0]); used.add(candidates[0]); }
   }
   const nodeFor = (nodes: FigureNode[], ref: string) => nodes.find((n) => sameText(n.id, ref)) ?? nodes.find((n) => sameText(n.label, ref));
