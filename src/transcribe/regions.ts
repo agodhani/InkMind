@@ -451,12 +451,16 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
   if (edited.sequence?.length === oldNodes.length) oldNodes.forEach((node, i) => {
     if (!sequenceWords.has(node.id) && !nodeFor(oldNodes, edited.sequence![i])) sequenceWords.set(node.id, edited.sequence![i]);
   });
-  const sequence = fresh.sequence?.map((word, i) => {
-    const node = nodeFor(newNodes, word), old = node && matches.get(node.id);
-    if (old) return sequenceWords.get(old.id) ?? old.label;
-    if (!node && edited.sequence && edited.sequence.length === fresh.sequence?.length) return edited.sequence[i];
-    return renamed(word);
-  }) ?? edited.sequence?.filter((word) => !nodeFor(oldNodes, word) || !!newNodeForOld(word)).map((word) => nodeFor(oldNodes, word)?.label ?? word);
+  const sequence = edited.sequence ? [
+    ...edited.sequence.flatMap((word, i) => {
+      const old = nodeFor(oldNodes, word) ?? (edited.sequence!.length === oldNodes.length ? oldNodes[i] : undefined);
+      return old ? newNodeForOld(old.id) ? [sequenceWords.get(old.id) ?? old.label] : [] : [word];
+    }),
+    ...(fresh.sequence ?? []).filter((word) => {
+      const node = nodeFor(newNodes, word);
+      return node && !matches.has(node.id);
+    }).map(renamed),
+  ] : fresh.sequence?.map(renamed);
   return {
     ...fresh, labels: [...edited.labels], edges,
     ...(edited.cells ? { cells: fresh.cells?.map((row, r) => row.map((cell, c) => edited.cells?.[r]?.[c] ?? cell)) ?? edited.cells.map((row) => [...row]) } : {}),

@@ -226,7 +226,7 @@ describe('mergeBlocks', () => {
     expect(result).toMatchObject({ id: 'edited', text: 'corrected caption', userEdited: true });
     expect(result.figure).toEqual({ ...redrawnFigure, labels: editedFigure.labels,
       nodes: redrawnFigure.nodes!.map((n) => ({ ...n, label: n.id === 'n1' ? 'Start' : n.id === 'n2' ? 'Work' : 'New' })),
-      edges: [{ from: 'Work', to: 'Start', label: 'approved', kind: 'arrow' }, { from: 'Start', to: 'New', label: 'new edge', kind: 'line' }], sequence: ['Work', 'Start', 'New'],
+      edges: [{ from: 'Work', to: 'Start', label: 'approved', kind: 'arrow' }, { from: 'Start', to: 'New', label: 'new edge', kind: 'line' }], sequence: ['Start', 'Work', 'New'],
     });
     expect(editedFigure).toEqual(before);
     expect(redrawnFigure).toEqual(redraw);
@@ -268,13 +268,20 @@ describe('mergeBlocks', () => {
     incoming.figure = { ...redrawnFigure, nodes: [{ id: 'different', label: 'wrong work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start' }], sequence: ['wrong work', 'Start'] };
     const result = mergeBlocks([editedDiagram()], ['edited'], [incoming])[0].figure!;
     expect(result.nodes).toEqual([{ id: 'different', label: 'Work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start', strokeIds: ['old-start'] }]);
-    expect(result.sequence).toEqual(['Work', 'Start']);
+    expect(result.sequence).toEqual(['Start', 'Work']);
   });
-  it('preserves independently corrected step words on matched nodes in their new order', () => {
+  it('preserves independently corrected step words in their edited order', () => {
     const existing = editedDiagram();
     existing.figure = { ...editedFigure, nodes: editedFigure.nodes!.slice(0, 2), sequence: ['Begin here', 'Do work'] };
     const result = mergeBlocks([existing], ['edited'], [redrawnDiagram('model caption')])[0];
-    expect(result.figure!.sequence).toEqual(['Do work', 'Begin here', 'New']);
+    expect(result.figure!.sequence).toEqual(['Begin here', 'Do work', 'New']);
+  });
+  it('keeps edited sequence omissions and appends only genuinely new nodes', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { ...editedFigure, sequence: ['Start'] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['Start', 'New']);
+    existing.figure.sequence = [];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['New']);
   });
   it('keeps unmatched new nodes and geometry when no corrected node matches', () => {
     const incoming = redrawnDiagram('model caption');
