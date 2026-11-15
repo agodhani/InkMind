@@ -240,6 +240,18 @@ describe('mergeBlocks', () => {
       ['n2', 'Work', ['new-work']], ['n1', 'Start', ['new-start']], ['n3', 'New', ['new-node']],
     ]);
   });
+  it('matches edited words by ink when an inserted node renumbers the existing nodes', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    incoming.figure = { ...redrawnFigure, nodes: [
+      { id: 'n1', label: 'New', strokeIds: ['inserted'] },
+      { id: 'n2', label: 'wrong start', strokeIds: ['old-start'] },
+      { id: 'n3', label: 'wrong work', strokeIds: ['old-work'] },
+    ] };
+    const result = mergeBlocks([existing], ['edited'], [incoming])[0].figure!;
+    expect(result.nodes!.map((n) => n.label)).toEqual(['New', 'Start', 'Work']);
+    incoming.figure.nodes = [{ id: 'n1', label: 'unrelated', strokeIds: ['unrelated'] }];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes![0].label).toBe('unrelated');
+  });
   it('matches corrected words by group and old label when node ids change', () => {
     const incoming = redrawnDiagram('model caption');
     incoming.figure = { ...redrawnFigure, nodes: [{ id: 'different', label: 'wrong work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start' }], sequence: ['wrong work', 'Start'] };

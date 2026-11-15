@@ -413,9 +413,15 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
   const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
   const matches = new Map<string, FigureNode>();
   const used = new Set<FigureNode>();
-  for (const basis of ['id', 'group', 'label'] as const) for (const node of newNodes) {
+  for (const basis of ['stroke', 'group', 'label', 'id'] as const) for (const node of newNodes) {
     if (matches.has(node.id)) continue;
-    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'id' ? sameText(old.id, node.id)
+    const overlap = (old: FigureNode) => {
+      const shared = (node.strokeIds ?? []).filter((id) => old.strokeIds?.includes(id)).length;
+      return shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
+    };
+    const best = Math.max(0, ...oldNodes.filter((old) => !used.has(old)).map(overlap));
+    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'stroke' ? best > 0 && overlap(old) === best
+      : basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
       : basis === 'label' ? sameText(old.label, node.label)
       : node.group !== undefined && old.group === node.group && newNodes.filter((n) => n.group === node.group).length === 1));
     if (candidates.length === 1) { matches.set(node.id, candidates[0]); used.add(candidates[0]); }
