@@ -233,6 +233,33 @@ describe('DiagramCard', () => {
       edges: [expect.objectContaining({ label: 'corrected ack', strokeIds: ['one'] }), expect.objectContaining({ label: 'ack', strokeIds: ['two'] }), expect.objectContaining({ label: 'ack', strokeIds: ['three'] })],
     }) }));
   });
+  it('keeps an originally standalone step standalone after its text passes through a node name', () => {
+    const save = vi.fn();
+    const b = block({ kind: 'sequence', labels: ['Client', 'note'], sequence: ['note', 'Client'],
+      nodes: [{ id: 'client', label: 'Client' }],
+    });
+    act(() => root.render(createElement(DiagramCard, { block: b, strokeById: new Map(), editing: true, onEditFigure: save })));
+    const firstStep = () => container.querySelector<HTMLInputElement>('.figure-edit-steps input')!;
+    change(firstStep(), 'Client');
+    change(firstStep(), 'Client note');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ figure: expect.objectContaining({
+      nodes: [{ id: 'client', label: 'Client' }], sequence: ['Client note', 'Client'],
+    }) }));
+  });
+  it.each(['move', 'remove'] as const)('keeps original step classifications aligned after %s', (action) => {
+    const save = vi.fn();
+    const b = block({ kind: 'sequence', sequence: ['Client', 'note'], nodes: [{ id: 'client', label: 'Client' }] });
+    act(() => root.render(createElement(DiagramCard, { block: b, strokeById: new Map(), editing: true, onEditFigure: save })));
+    click(container.querySelector(action === 'move' ? '[aria-label="Move step 2 up"]' : '[aria-label="Remove step 1"]')!);
+    const input = container.querySelector<HTMLInputElement>('.figure-edit-steps input')!;
+    change(input, 'Client');
+    change(input, 'Client note');
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ figure: expect.objectContaining({
+      nodes: [{ id: 'client', label: 'Client' }], sequence: action === 'move' ? ['Client note', 'Client'] : ['Client note'],
+    }) }));
+  });
   it('cancels with Escape without saving and skips unchanged saves', () => {
     const save = vi.fn(), b = block({ sequence: ['One'] });
     act(() => root.render(createElement(DigitalView, { blocks: [b], strokes: [], selectedBlockId: 'demo', onSelectBlock: vi.fn(), onEditBlock: vi.fn(), onEditFigure: save })));
