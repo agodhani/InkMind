@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DigitalBlock, FigureInfo } from '../model/page';
 import { figureEndpointLabel, renameFigureNodes } from './figureView';
+import { sequenceEdgeIndices } from '../transcribe/figure';
 
 export interface FigureEdit { text: string; figure: FigureInfo }
 
@@ -10,17 +11,33 @@ export function FigureEditor({ block, onSave, onCancel }: { block: DigitalBlock;
   const [figure, setFigure] = useState<FigureInfo>(() => structuredClone(initialFigure));
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
   const [stepLabels, setStepLabels] = useState<Map<string, string>>(() => new Map());
+  const [stepSources, setStepSources] = useState(() => (initialFigure.sequence ?? []).map((step, i) => {
+    const matches = initialFigure.nodes?.filter(node => node.label.trim().toLowerCase() === step.trim().toLowerCase()) ?? [];
+    const unbound = sequenceEdgeIndices(initialFigure)[i] === null;
+    return { node: unbound && matches.length === 1 ? matches[0].id : undefined,
+      endpoint: unbound && initialFigure.edges.some(edge => edge.from === step || edge.to === step) ? step : undefined };
+  }));
   const draft = renameFigureNodes(figure, nodeLabels, stepLabels);
   const setNodeLabel = (id: string, value: string) => setNodeLabels(current => new Map(current).set(id, value));
   const save = () => {
     if (text === block.text && JSON.stringify(draft) === JSON.stringify(initialFigure)) onCancel();
-    else onSave({ text, figure: draft });
+    else onSave({ text, figure: { ...draft, ...(draft.sequence ? {
+      sequenceEdges: sequenceEdgeIndices(figure),
+      sequenceBaseline: initialFigure.sequenceBaseline ?? initialFigure.sequence?.map((text, i) => ({ text, edge: sequenceEdgeIndices(initialFigure)[i] })),
+    } : {}) } });
   };
   const move = (index: number, direction: number) => {
+    setStepSources(current => {
+      const next = [...current];
+      [next[index], next[index + direction]] = [next[index + direction], next[index]];
+      return next;
+    });
     setFigure(current => {
       const sequence = [...(current.sequence ?? [])];
+      const sequenceEdges = sequenceEdgeIndices(current);
       [sequence[index], sequence[index + direction]] = [sequence[index + direction], sequence[index]];
-      return { ...current, sequence };
+      [sequenceEdges[index], sequenceEdges[index + direction]] = [sequenceEdges[index + direction], sequenceEdges[index]];
+      return { ...current, sequence, sequenceEdges };
     });
   };
   return <form className="figure-editor" aria-label="Edit diagram" onSubmit={e => { e.preventDefault(); save(); }} onDoubleClick={e => e.stopPropagation()} onKeyDown={e => {
@@ -33,19 +50,30 @@ export function FigureEditor({ block, onSave, onCancel }: { block: DigitalBlock;
     <label>Caption<textarea autoFocus value={text} onChange={e => setText(e.target.value)} /></label>
     {!!figure.sequence?.length && <fieldset><legend>Steps</legend><ol className="figure-edit-steps">{figure.sequence.map((step, i) => <li key={i}>
       <label>Step {i + 1}<input value={draft.sequence![i]} onChange={e => {
-        const matches = figure.nodes?.filter(node => node.label.trim().toLowerCase() === step.trim().toLowerCase()) ?? [];
-        if (matches.length === 1) setNodeLabel(matches[0].id, e.target.value);
-        else setStepLabels(current => {
+        const { node, endpoint } = stepSources[i];
+        if (node !== undefined) setNodeLabel(node, e.target.value);
+        else if (endpoint !== undefined) setStepLabels(current => {
           const next = new Map(current);
-          if (e.target.value === step) next.delete(step);
-          else next.set(step, e.target.value);
+          if (e.target.value === endpoint) next.delete(endpoint);
+          else next.set(endpoint, e.target.value);
           return next;
+        });
+        else setFigure(current => {
+          const value = e.target.value;
+          const sequenceEdges = sequenceEdgeIndices(current);
+          const sequence = current.sequence!.map((word, index) => index === i ? value : word);
+          const labels = sequence.includes(step) ? [...current.labels, value] : current.labels.map(word => word === step ? value : word);
+          const edges = current.edges.map((edge, index) => index === sequenceEdges[i] ? { ...edge, label: value } : edge);
+          return { ...current, sequence, sequenceEdges, labels, edges };
         });
       }} /></label>
       <div className="figure-step-actions">
         <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
         <button type="button" aria-label={`Move step ${i + 1} down`} disabled={i === figure.sequence!.length - 1} onClick={() => move(i, 1)}>↓</button>
-        <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => setFigure(current => ({ ...current, sequence: current.sequence!.filter((_, index) => index !== i) }))}>Remove</button>
+        <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => {
+          setStepSources(current => current.filter((_, index) => index !== i));
+          setFigure(current => ({ ...current, sequence: current.sequence!.filter((_, index) => index !== i), sequenceEdges: sequenceEdgeIndices(current).filter((_, index) => index !== i) }));
+        }}>Remove</button>
       </div>
     </li>)}</ol></fieldset>}
     {!!figure.nodes?.length && <fieldset><legend>Nodes</legend><div className="figure-edit-grid">{figure.nodes.map((node, i) => <label key={node.id}>Node {i + 1}<input value={draft.nodes![i].label} onChange={e => setNodeLabel(node.id, e.target.value)} /></label>)}</div></fieldset>}

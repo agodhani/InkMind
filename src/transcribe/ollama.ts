@@ -1,6 +1,8 @@
 import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
-import { SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
+import { ModelOutputError, SYSTEM_PROMPT, buildCompactSystemPrompt, buildUserPrompt, extractJson } from './prompt';
 import { looksDegenerate, normaliseBlocks, pickSaner } from './openaiCompat';
+import { closeJsonPrefix, detectLoop } from './loopGuard';
+import { preserveCompactNameWords } from './figure';
 
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_OLLAMA_MODEL = 'qwen2.5vl:3b';
@@ -12,10 +14,39 @@ export interface OllamaOptions {
   model?: string;
   /** Context window to request; Ollama's default 4k is too small for a page image + prompt. */
   numCtx?: number;
+  promptStyle?: 'full' | 'compact';
+  maxImageEdge?: number;
+}
+
+export function ollamaPromptStyle(model: string): 'full' | 'compact' {
+  const size = model.match(/(?:^|[:/_-])(\d+(?:\.\d+)?)b(?:$|[-_])/i);
+  return size && Number(size[1]) <= 4 ? 'compact' : 'full';
+}
+
+export function ollamaTokenBudget(groups: number): number {
+  // A short base plus 32 tokens per ink group keeps crops cheap while allowing full pages up to 2500.
+  return Math.min(2500, 256 + Math.max(0, groups) * 32);
 }
 
 export const OLLAMA_NUM_CTX = 16384;
 const MAX_EXAMPLES = 2;
+
+function compactBlocks(json: unknown): TranscribeResult['blocks'] {
+  const root = (json ?? {}) as { blocks?: unknown };
+  const blocks = Array.isArray(root.blocks) ? root.blocks : Array.isArray(json) ? json : [];
+  return normaliseBlocks({ blocks: blocks.map((block) => {
+    if (!block || typeof block !== 'object' || block.kind !== 'table') return block;
+    const figure = block.figure ?? block.table;
+    if (!figure || typeof figure !== 'object' || Array.isArray(figure)) return block;
+    return { ...block, kind: 'diagram', figure: { kind: 'table', ...figure } };
+  }) });
+}
+
+export function parseOllamaOutput(raw: string, style: 'full' | 'compact'): TranscribeResult['blocks'] {
+  const parsed = closeJsonPrefix(raw);
+  const json = extractJson(style === 'compact' ? preserveCompactNameWords(parsed) : parsed);
+  return style === 'compact' ? compactBlocks(json) : normaliseBlocks(json);
+}
 
 /**
  * Local transcriber via Ollama's native `/api/chat` (not the OpenAI shim) so we can set
@@ -25,14 +56,19 @@ const MAX_EXAMPLES = 2;
  */
 export class OllamaTranscriber implements Transcriber {
   readonly name: string;
+  readonly maxImageEdge?: number;
   private readonly url: string;
   private readonly model: string;
   private readonly numCtx: number;
+  private readonly promptStyle: 'full' | 'compact';
 
   constructor(opts: OllamaOptions = {}) {
     this.url = (opts.url ?? DEFAULT_OLLAMA_URL).replace(/\/$/, '');
     this.model = opts.model ?? DEFAULT_OLLAMA_MODEL;
     this.numCtx = opts.numCtx ?? OLLAMA_NUM_CTX;
+    this.promptStyle = opts.promptStyle ?? ollamaPromptStyle(this.model);
+    this.maxImageEdge = this.promptStyle === 'compact' ? opts.maxImageEdge ?? 1024 : undefined;
+    if (this.maxImageEdge !== undefined && (!Number.isInteger(this.maxImageEdge) || this.maxImageEdge <= 0)) throw new RangeError('maxImageEdge must be a positive integer');
     this.name = `ollama:${this.model}`;
   }
 
@@ -62,29 +98,81 @@ export class OllamaTranscriber implements Transcriber {
         `\nThe LAST image is the region to transcribe.\n\n`
       : '';
 
-    const response = await fetch(`${this.url}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal,
-      body: JSON.stringify({
-        model: this.model,
-        stream: false,
-        format: 'json',
-        options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: 2500 },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: exampleText + buildUserPrompt(req), images },
-        ],
-      }),
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`ollama ${response.status}: ${body.slice(0, 300)}`);
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal?.reason);
+    signal?.throwIfAborted();
+    signal?.addEventListener('abort', abort, { once: true });
+    let raw = '';
+    let guardedAt: number | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const response = await fetch(`${this.url}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: this.model,
+          stream: true,
+          format: 'json',
+          options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: ollamaTokenBudget(req.groups.length) },
+          messages: [
+            { role: 'system', content: this.promptStyle === 'compact' ? buildCompactSystemPrompt(req) : SYSTEM_PROMPT },
+            { role: 'user', content: exampleText + buildUserPrompt(req, this.promptStyle), images },
+          ],
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`ollama ${response.status}: ${body.slice(0, 300)}`);
+      }
+      if (!response.body) throw new Error('Ollama response has no stream');
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      let done = false;
+      let timing: Record<string, number | undefined> | undefined;
+      const consume = (line: string) => {
+        if (!line.trim()) return;
+        const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string; done?: boolean; prompt_eval_count?: number; prompt_eval_duration?: number; eval_count?: number; eval_duration?: number };
+        if (chunk.done) timing = { prompt_eval_count: chunk.prompt_eval_count, prompt_eval_duration: chunk.prompt_eval_duration, eval_count: chunk.eval_count, eval_duration: chunk.eval_duration };
+        if (chunk.error) throw new Error(chunk.error);
+        raw += chunk.message?.content ?? '';
+        const loop = detectLoop(raw);
+        if (loop) {
+          guardedAt = raw.length;
+          raw = closeJsonPrefix(raw.slice(0, loop.keepUntil));
+          controller.abort();
+          done = true;
+        } else if (chunk.done) done = true;
+      };
+      while (!done) {
+        const part = await reader.read();
+        pending += decoder.decode(part.value, { stream: !part.done });
+        let newline: number;
+        while (!done && (newline = pending.indexOf('\n')) >= 0) {
+          consume(pending.slice(0, newline));
+          pending = pending.slice(newline + 1);
+        }
+        if (part.done) {
+          if (!done) consume(pending);
+          break;
+        }
+      }
+      signal?.throwIfAborted();
+      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
+      let blocks: TranscribeResult['blocks'];
+      try {
+        blocks = parseOllamaOutput(raw, this.promptStyle);
+      } catch (e) {
+        if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
+        throw e;
+      }
+      return { blocks, model: this.model, durationMs: performance.now() - started, raw: debugRaw };
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      await reader?.cancel().catch(() => {});
+      reader?.releaseLock();
     }
-    const data = (await response.json()) as { message?: { content?: string } };
-    const raw = data.message?.content ?? '';
-    const blocks = normaliseBlocks(extractJson(raw));
-    return { blocks, model: this.model, durationMs: performance.now() - started, raw };
   }
 }
 

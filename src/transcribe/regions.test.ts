@@ -1,10 +1,91 @@
 import { describe, expect, it } from 'vitest';
 import { stroke } from '../__tests__/helpers';
-import type { DigitalBlock, InkStroke } from '../model/page';
+import type { DigitalBlock, FigureInfo, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
 import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
 import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
+import { normaliseFigure } from './figure';
+import type { FigureHint } from '../ink/shapeHints';
+
+describe('geometry-first structure', () => {
+  const hint: FigureHint = { id: 0, groupIndices: [], kind: 'flowchart', shapes: ['rectangle'], labelGroups: [], labelInside: {}, labelHostGroups: [], nodes: [], relations: [], edges: [], order: [], orderBasis: '', summary: '' };
+  const geo = {
+    nodes: [{ id: 'n1', label: 'rectangle 1', shape: 'rectangle', group: 1 }, { id: 'n2', label: 'rectangle 2', shape: 'rectangle', group: 2, parent: 'n1' }, { id: 'n3', label: 'rectangle 3', shape: 'rectangle', group: 3 }],
+    edges: [{ from: 'rectangle 1', to: 'rectangle 2', kind: 'arrow' as const }, { from: 'rectangle 2', to: 'rectangle 3', kind: 'line' as const }],
+    sequence: ['rectangle 1', 'rectangle 2', 'rectangle 3'], unnamed: ['rectangle 1', 'rectangle 2', 'rectangle 3'],
+  };
+  it('assigns exact unused labels in node reading order without changing arrow order', () => {
+    const out = mergeWithGeometry(undefined, { ...hint, order: ['n3', 'n1', 'n2'], orderBasis: 'arrow order' }, ['first', 'second', 'third'], { ...geo, sequence: ['rectangle 3', 'rectangle 1', 'rectangle 2'] });
+    expect(out.nodes!.map((n) => n.label)).toEqual(['first', 'second', 'third']);
+    expect(out.edges[0]).toMatchObject({ from: 'first', to: 'second', kind: 'arrow' });
+    expect(out.sequence).toEqual(['third', 'first', 'second']);
+    expect(out.nodes![1].parent).toBe('n1');
+  });
+  it('uses the figure order when its basis is explicitly spatial', () => {
+    const out = mergeWithGeometry(undefined, { ...hint, order: ['n3', 'n1', 'n2'], orderBasis: 'left→right' }, ['first', 'second', 'third'], geo);
+    expect(out.nodes!.map((n) => n.label)).toEqual(['second', 'third', 'first']);
+  });
+  it('excludes words already named on nodes, edges, cells or sequences before exact matching', () => {
+    const prior = normaliseFigure({ names: { n1: 'start' }, labels: ['start', 'yes', 'header', 'message', 'middle', 'end'], cells: [['header']], sequence: ['message'] })!;
+    const out = mergeWithGeometry(prior, hint, prior.labels, { ...geo, edges: geo.edges.map((e, i) => i === 0 ? { ...e, label: 'yes' } : e) });
+    expect(out.nodes!.map((n) => n.label)).toEqual(['start', 'middle', 'end']);
+  });
+  it.each([{ labels: [] }, { labels: ['one', 'two'] }, { labels: ['one', 'two', 'three', 'extra'] }, { labels: ['n1', 'n2', 'n3'] }])('leaves unmatched placeholders for $labels', ({ labels }) => {
+    const out = mergeWithGeometry(undefined, hint, labels, geo);
+    expect(out.nodes!.map((n) => n.label)).toEqual(geo.unnamed);
+  });
+  it('uses hint ids when several geometry nodes share a label group', () => {
+    const prior = normaliseFigure({ nodes: [{ id: 'n1', group: 0, label: 'outer' }, { id: 'n2', group: 0, label: 'inner' }, { id: 'n3', group: 0, label: 'core' }] })!;
+    const out = mergeWithGeometry(prior, hint, prior.labels, { ...geo, nodes: geo.nodes.map((n) => ({ ...n, group: 0 })) });
+    expect(out.nodes!.map((n) => n.label)).toEqual(['outer', 'inner', 'core']);
+    expect(out.nodes![1].parent).toBe('n1');
+    expect(out.edges[0]).toMatchObject({ from: 'outer', to: 'inner', kind: 'arrow' });
+  });
+  it('keeps model words as labels when text-group naming or a smaller geometry grid wins', () => {
+    const prior = normaliseFigure({ names: { n1: 'model word' }, cells: [['header', 'extra column'], ['last row']] })!;
+    const out = mergeWithGeometry(prior, { ...hint, kind: 'table' }, prior.labels, { ...geo, nodes: [{ ...geo.nodes[0], label: 'group word' }], unnamed: [], cells: [['']] });
+    expect(out.nodes![0].label).toBe('group word');
+    expect(out.cells).toEqual([['header']]);
+    expect(out.labels).toEqual(expect.arrayContaining(['model word', 'group word', 'header', 'extra column', 'last row']));
+  });
+  it('keeps geometry nodes, directions, kinds, missing edges, order and nesting', () => {
+    const prior = normaliseFigure({ kind: 'flowchart', names: { n1: 'start', n2: 'work', n3: 'end', n9: 'extra' }, edges: [{ from: 'n2', to: 'n1', label: 'yes', kind: 'line' }, { from: 'n1', to: 'n3' }], sequence: ['n3', 'n1', 'n2'] })!;
+    const out = mergeWithGeometry(prior, hint, prior.labels, geo);
+    expect(out.nodes).toEqual([{ id: 'n1', label: 'start', shape: 'rectangle', group: 1 }, { id: 'n2', label: 'work', shape: 'rectangle', group: 2, parent: 'n1' }, { id: 'n3', label: 'end', shape: 'rectangle', group: 3 }, { id: 'n9', label: 'extra' }]);
+    expect(out.edges).toEqual([{ from: 'start', to: 'work', kind: 'arrow', label: 'yes', inferred: true }, { from: 'work', to: 'end', kind: 'line', inferred: true }]);
+    expect(out.sequence).toEqual(['start', 'work', 'end']);
+  });
+  it('uses text-group names before model node names and ignores model nesting when geometry has nesting', () => {
+    const prior = normaliseFigure({ nodes: [{ id: 'n1', label: 'wrong', parent: 'n3' }, { id: 'n2', label: 'child' }, { id: 'n3', label: 'outside', parent: 'n1' }], edges: [] })!;
+    const out = mergeWithGeometry(prior, hint, ['n1', 'n2'], { ...geo, nodes: geo.nodes.map((n) => n.id === 'n1' ? { ...n, label: 'read' } : n), edges: [], unnamed: ['rectangle 2', 'rectangle 3'] });
+    expect(out.nodes![0].label).toBe('read');
+    expect(out.nodes![0].parent).toBeUndefined();
+    expect(out.nodes![1].parent).toBe('n1');
+    expect(out.nodes![2].parent).toBeUndefined();
+    expect(out.labels).toEqual(expect.arrayContaining(['read', 'child']));
+  });
+  it('accepts model edges only between distinct known nodes when geometry has no relations', () => {
+    const prior = normaliseFigure({ names: { n1: 'start', n2: 'end' }, edges: [{ from: 'n1', to: 'n2' }, { from: 'n1', to: 'n1' }, { from: 'start', to: 'unknown' }] })!;
+    expect(mergeWithGeometry(prior, hint, [], { nodes: geo.nodes.slice(0, 2), edges: [], unnamed: geo.unnamed }).edges).toEqual([{ from: 'start', to: 'end', inferred: false }]);
+  });
+  it('does not copy a reverse arrow label onto the other direction of a bidirectional pair', () => {
+    const geometry = { nodes: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }], edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }], unnamed: [] };
+    const prior = normaliseFigure({ edges: [{ from: 'b', to: 'a', label: 'return' }] })!;
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual([undefined, 'return']);
+    prior.edges.push({ from: 'a', to: 'b', label: 'send' });
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['send', 'return']);
+    prior.edges.pop();
+    expect(mergeWithGeometry(prior, hint, [], { ...geometry, edges: geometry.edges.slice(0, 1) }).edges[0].label).toBe('return');
+  });
+  it('resolves fallback sequence ids and preserves the drawn table dimensions', () => {
+    const prior = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], cells: [['a', 'b', 'extra'], ['c'], ['extra']] })!;
+    const out = mergeWithGeometry(prior, { ...hint, kind: 'table' }, prior.labels, { nodes: geo.nodes, edges: [], unnamed: geo.unnamed, cells: [['', ''], ['', '']] });
+    expect(out.sequence).toEqual(['rectangle 1', 'rectangle 3']);
+    expect(out.labels).not.toEqual(expect.arrayContaining(['n1', 'N3']));
+    expect(out.cells).toEqual([['a', 'b'], ['c', '']]);
+  });
+});
 
 const block = (id: string, strokeIds: string[], bbox: DigitalBlock['bbox'], extra: Partial<DigitalBlock> = {}): DigitalBlock => ({
   id,
@@ -133,6 +214,259 @@ describe('protectEditedBlocks', () => {
 });
 
 describe('mergeBlocks', () => {
+  const editedFigure: FigureInfo = {
+    kind: 'flowchart', shapes: ['rectangle'], labels: ['Start', 'Work', 'custom label'],
+    nodes: [{ id: 'n1', label: 'Start', shape: 'rectangle', group: 1, strokeIds: ['old-start'] }, { id: 'n2', label: 'Work', shape: 'rectangle', group: 2, strokeIds: ['old-work'] }, { id: 'gone', label: 'Removed' }],
+    edges: [{ from: 'Start', to: 'Work', label: 'approved', kind: 'line' }], sequence: ['Start', 'Work', 'Removed'],
+  };
+  const redrawnFigure: FigureInfo = {
+    kind: 'flowchart', shapes: ['ellipse', 'diamond'], labels: ['wrong start', 'wrong work', 'New'],
+    nodes: [{ id: 'n2', label: 'wrong work', shape: 'ellipse', group: 2, parent: 'n1', strokeIds: ['new-work'] }, { id: 'n1', label: 'wrong start', shape: 'diamond', group: 1, strokeIds: ['new-start'] }, { id: 'n3', label: 'New', shape: 'rectangle', strokeIds: ['new-node'] }],
+    edges: [{ from: 'wrong work', to: 'wrong start', label: 'wrong', kind: 'arrow' }, { from: 'wrong start', to: 'New', label: 'new edge', kind: 'line' }], sequence: ['wrong work', 'wrong start', 'New'],
+  };
+  const editedDiagram = () => block('edited', ['a', 'b'], { left: 0, top: 0, right: 100, bottom: 100 }, { kind: 'diagram', text: 'corrected caption', figure: editedFigure, userEdited: true });
+  const redrawnDiagram = (text: string) => block('redraw', ['a', 'b', 'new-work'], { left: 0, top: 0, right: 110, bottom: 100 }, { kind: 'diagram', text, figure: redrawnFigure });
+
+  it.each(['corrected caption', 'model caption'])('keeps corrected figure words after a redraw with %s', (caption) => {
+    const before = structuredClone(editedFigure), redraw = structuredClone(redrawnFigure);
+    const existing = editedDiagram(), incoming = redrawnDiagram(caption);
+    const protectedResult = protectEditedBlocks([existing], [incoming], new Set(['a']));
+    const result = mergeBlocks([existing], protectedResult.replacedIds, protectedResult.incoming)[0];
+    expect(result).toMatchObject({ id: 'edited', text: 'corrected caption', userEdited: true });
+    expect(result.figure).toEqual({ ...redrawnFigure, labels: editedFigure.labels,
+      nodes: redrawnFigure.nodes!.map((n) => ({ ...n, label: n.id === 'n1' ? 'Start' : n.id === 'n2' ? 'Work' : 'New' })),
+      edges: [{ from: 'Work', to: 'Start', label: 'approved', kind: 'arrow' }, { from: 'Start', to: 'New', label: 'new edge', kind: 'line' }], sequence: ['Start', 'Work', 'New'],
+    });
+    expect(editedFigure).toEqual(before);
+    expect(redrawnFigure).toEqual(redraw);
+  });
+  it('updates geometry when new ink extends a corrected diagram without changing its old strokes', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    const protectedResult = protectEditedBlocks([existing], [incoming], new Set(['new-work']));
+    expect(protectedResult.replacedIds).toEqual(['edited']);
+    const result = mergeBlocks([existing], protectedResult.replacedIds, protectedResult.incoming)[0];
+    expect(result.figure!.nodes!.map((n) => [n.id, n.label, n.strokeIds])).toEqual([
+      ['n2', 'Work', ['new-work']], ['n1', 'Start', ['new-start']], ['n3', 'New', ['new-node']],
+    ]);
+  });
+  it('matches edited words by ink when an inserted node renumbers the existing nodes', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    incoming.figure = { ...redrawnFigure, nodes: [
+      { id: 'n1', label: 'New', strokeIds: ['inserted'] },
+      { id: 'n2', label: 'wrong start', strokeIds: ['old-start'] },
+      { id: 'n3', label: 'wrong work', strokeIds: ['old-work'] },
+    ] };
+    const result = mergeBlocks([existing], ['edited'], [incoming])[0].figure!;
+    expect(result.nodes!.map((n) => n.label)).toEqual(['New', 'Start', 'Work']);
+    incoming.figure.nodes = [{ id: 'n1', label: 'unrelated', strokeIds: ['unrelated'] }];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes![0].label).toBe('unrelated');
+  });
+  it('keeps unchanged node identities when shared ink makes overlap ambiguous', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { ...editedFigure, nodes: [
+      { id: 'n1', label: 'Start', strokeIds: ['shared-a', 'shared-b'] },
+      { id: 'n2', label: 'Work', strokeIds: ['shared-a', 'shared-b'] },
+    ] };
+    incoming.figure = { ...redrawnFigure, nodes: [
+      { id: 'n2', label: 'wrong work', strokeIds: ['shared-b', 'shared-a'] },
+      { id: 'n1', label: 'wrong start', strokeIds: ['shared-a', 'shared-b'] },
+    ] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes!.map((n) => n.label)).toEqual(['Work', 'Start']);
+  });
+  it('preserves edited table cells, including blanks, while using fresh values for new rows and columns', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [['item', 'qty'], ['kept', '']] };
+    incoming.figure = { ...existing.figure, cells: [['item', 'qty'], ['kept', 'wrong']] };
+    const cells = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells;
+    expect(cells()).toEqual([['item', 'qty'], ['kept', '']]);
+    incoming.figure.cells = [['item', 'qty', 'status'], ['kept', 'wrong', 'more'], ['new row', '3', 'active']];
+    expect(cells()).toEqual([['item', 'qty', 'status'], ['kept', '', 'more'], ['new row', '3', 'active']]);
+    incoming.figure.cells = [];
+    expect(cells()).toEqual([]);
+  });
+  it('anchors corrected table cells when a new left column shifts and reorders existing cells', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [
+      ['item', 'qty'], ['apple', '12 corrected'], ['pear', ''],
+    ] };
+    incoming.figure = { ...existing.figure, cells: [
+      ['id', 'item', 'qty'], ['p', 'pear', 'wrong pear'], ['a', 'apple', 'wrong apple'], ['n', 'new', '5'],
+    ] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells).toEqual([
+      ['id', 'item', 'qty'], ['p', 'pear', ''], ['a', 'apple', '12 corrected'], ['n', 'new', '5'],
+    ]);
+  });
+  it.each([
+    [['item', 'qty', 'qty'], ['apple', 'edited first', 'edited second']],
+    [['item', 'qty'], ['apple', 'edited first'], ['apple', 'edited second']],
+    [['different header', 'different quantity'], ['apple', 'edited']],
+    [],
+  ].map((cells) => ({ cells })))('keeps fresh values when table identities are missing or ambiguous: %j', ({ cells }) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells };
+    incoming.figure = { ...existing.figure, cells: [['item', 'qty', 'qty'], ['apple', 'fresh first', 'fresh second']] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells).toEqual(incoming.figure.cells);
+  });
+  it('matches corrected words by group and old label when node ids change', () => {
+    const incoming = redrawnDiagram('model caption');
+    incoming.figure = { ...redrawnFigure, nodes: [{ id: 'different', label: 'wrong work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start' }], sequence: ['wrong work', 'Start'] };
+    const result = mergeBlocks([editedDiagram()], ['edited'], [incoming])[0].figure!;
+    expect(result.nodes).toEqual([{ id: 'different', label: 'Work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start', strokeIds: ['old-start'] }]);
+    expect(result.sequence).toEqual(['Start', 'Work']);
+  });
+  it('preserves independently corrected step words in their edited order', () => {
+    const existing = editedDiagram();
+    existing.figure = { ...editedFigure, nodes: editedFigure.nodes!.slice(0, 2), sequence: ['Begin here', 'Do work'] };
+    const result = mergeBlocks([existing], ['edited'], [redrawnDiagram('model caption')])[0];
+    expect(result.figure!.sequence).toEqual(['Begin here', 'Do work', 'New']);
+  });
+  it('keeps edited sequence omissions and appends only genuinely new nodes', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { ...editedFigure, sequence: ['Start'] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['Start', 'New']);
+    existing.figure.sequence = [];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['New']);
+  });
+  it('appends new messages between existing actors without restoring deliberately removed messages', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = {
+      kind: 'sequence', shapes: [], labels: ['send', 'reply', 'cancelled'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: [{ from: 'Client', to: 'Server', label: 'send' }, { from: 'Server', to: 'Client', label: 'reply' }, { from: 'Client', to: 'Server', label: 'cancelled' }],
+      sequence: ['reply', 'send'],
+    };
+    incoming.figure = { ...existing.figure, sequence: ['send', 'cancelled', 'reply', 'notify'],
+      edges: [...existing.figure.edges, { from: 'Server', to: 'Client', label: 'notify' }],
+    };
+    const steps = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence;
+    expect(steps()).toEqual(['reply', 'send', 'notify']);
+    const next = mergeBlocks([existing], ['edited'], [incoming])[0];
+    next.figure = { ...next.figure!, sequence: ['send'] };
+    expect(mergeBlocks([next], [next.id], [incoming])[0].figure!.sequence).toEqual(['send']);
+    existing.figure.sequence = [];
+    expect(steps()).toEqual(['notify']);
+  });
+  it('appends a second identical message when it belongs to a new geometry arrow', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'],
+      nodes: [{ id: 'a', label: 'Client' }, { id: 'b', label: 'Server' }],
+      edges: [{ from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-1'] }],
+      sequence: ['ack'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure,
+      edges: [...existing.figure.edges, { from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-2'] }],
+      sequence: ['ack', 'ack'], sequenceEdges: [0, 1],
+    };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['ack', 'ack']);
+  });
+  it('keeps a corrected non-node step without appending the original wording for the same arrow', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['corrected reply'],
+      nodes: [{ id: 'a', label: 'Client' }, { id: 'b', label: 'Server' }],
+      edges: [{ from: 'Server', to: 'Client', strokeIds: ['arrow-1'] }],
+      sequence: ['corrected reply'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure, labels: ['ack'], sequence: ['ack'],
+      edges: [{ from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-1'] }],
+    };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['corrected reply']);
+    incoming.figure.edges = [];
+    incoming.figure.sequence = [];
+    incoming.figure.sequenceEdges = [];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it.each([
+    { oldInk: undefined, newInk: undefined },
+    { oldInk: undefined, newInk: ['shaft', 'head'] },
+    { oldInk: ['shaft', 'old-head'], newInk: ['shaft', 'new-head'] },
+  ])('keeps corrected connector wording across renumbered endpoints and incomplete ink metadata: %j', ({ oldInk, newInk }) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['corrected reply'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: [{ from: 'b', to: 'a', label: 'corrected reply', strokeIds: oldInk }],
+      sequence: ['corrected reply'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure,
+      nodes: [{ id: 'c', label: 'wrong client', strokeIds: ['client'] }, { id: 'd', label: 'wrong server', strokeIds: ['server'] }],
+      edges: [{ from: 'd', to: 'c', label: 'ack', strokeIds: newInk }], sequence: ['ack'], sequenceEdges: [0],
+    };
+    const result = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!;
+    expect(result().edges[0].label).toBe('corrected reply');
+    expect(result().sequence).toEqual(['corrected reply']);
+    existing.figure.sequence = [];
+    existing.figure.sequenceEdges = [];
+    expect(result().sequence).toEqual([]);
+  });
+  it('uses arrow anchors for repeated-message removals, edited order and renumbered actors', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: ['first', 'second', 'third'].map((id) => ({ from: 'Server', to: 'Client', label: 'ack', strokeIds: [id, `${id}-head`] })),
+      sequence: ['third corrected', 'second corrected'], sequenceEdges: [2, 1],
+    };
+    incoming.figure = { ...existing.figure,
+      nodes: [{ id: 'c', label: 'wrong client', strokeIds: ['client'] }, { id: 'd', label: 'wrong server', strokeIds: ['server'] }],
+      edges: ['first', 'second', 'third', 'fourth'].map((id) => ({ from: 'wrong server', to: 'wrong client', label: 'ack', strokeIds: [`${id}-head`, id] })),
+      sequence: ['ack', 'ack', 'ack', 'ack'], sequenceEdges: [0, 1, 2, 3],
+    };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['third corrected', 'second corrected', 'ack']);
+    expect(out.figure!.sequenceEdges).toEqual([2, 1, 3]);
+    out.figure!.sequence = [];
+    out.figure!.sequenceEdges = [];
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it('matches unanchored message occurrences as a multiset, retaining corrections and omissions', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: [], edges: [], sequence: ['corrected ack'], sequenceBaseline: [{ text: 'ack', edge: null }, { text: 'ack', edge: null }] };
+    incoming.figure = { ...existing.figure, sequence: ['ack', 'ack', 'ack'] };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['corrected ack', 'ack']);
+    out.figure!.sequence = [];
+    out.figure!.sequenceEdges = [];
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it('uses count-aware fallback for legacy steps and binds them when arrow anchors become available', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'], edges: [], sequence: ['ack'] };
+    incoming.figure = { ...existing.figure,
+      edges: ['one', 'two'].map(id => ({ from: 'server', to: 'client', label: 'ack', strokeIds: [id] })),
+      sequence: ['ack', 'ack'], sequenceEdges: [0, 1],
+    };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['ack', 'ack']);
+    expect(out.figure!.sequenceEdges).toEqual([0, 1]);
+    out.figure!.sequence = ['fixed'];
+    out.figure!.sequenceEdges = [0];
+    incoming.figure.edges.push({ from: 'server', to: 'client', label: 'ack', strokeIds: ['three'] });
+    incoming.figure.sequence!.push('ack');
+    incoming.figure.sequenceEdges!.push(2);
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual(['fixed', 'ack']);
+  });
+  it.each([
+    { labels: ['removed'], edges: [] },
+    { labels: [], edges: [{ from: 'a', to: 'b', label: 'removed' }] },
+  ])('uses retained figure words to recognize deliberate non-node step removals: %j', (words) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], ...words, sequence: ['keep'] };
+    incoming.figure = { ...existing.figure, sequence: ['removed', 'keep', 'new'] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['keep', 'new']);
+  });
+  it('keeps unmatched new nodes and geometry when no corrected node matches', () => {
+    const incoming = redrawnDiagram('model caption');
+    incoming.figure = { kind: 'shape', shapes: ['triangle'], labels: ['new word'], nodes: [{ id: 'new', label: 'new word', strokeIds: ['new-shape'] }], edges: [], sequence: ['new word'] };
+    const result = mergeBlocks([editedDiagram()], ['edited'], [incoming])[0];
+    expect(result.figure).toEqual({ ...incoming.figure, labels: editedFigure.labels });
+    const noFigure = { ...incoming, figure: undefined };
+    expect(mergeBlocks([editedDiagram()], ['edited'], [noFigure])[0].figure).toEqual(editedFigure);
+  });
+  it('unions persisted node strokes when merging figure descriptions without mutating inputs', () => {
+    const a: FigureInfo = { kind: 'shape', shapes: [], labels: ['node'], nodes: [{ id: 'n1', label: 'node', strokeIds: ['shape', 'label'] }], edges: [] };
+    const b: FigureInfo = { ...a, nodes: [{ id: 'n1', label: 'node', strokeIds: ['label', 'more'] }] };
+    expect(mergeFigures(a, b).nodes![0].strokeIds).toEqual(['shape', 'label', 'more']);
+    expect(a.nodes![0].strokeIds).toEqual(['shape', 'label']);
+    expect(b.nodes![0].strokeIds).toEqual(['label', 'more']);
+  });
   it('keeps ids for unchanged text and preserves user edits', () => {
     const old1 = block('old1', ['a'], { left: 0, top: 0, right: 100, bottom: 20 }, { text: 'same' });
     const old2 = block('old2', ['b'], { left: 0, top: 40, right: 100, bottom: 60 }, { text: 'my fix', userEdited: true });
@@ -242,8 +576,8 @@ describe('reconcileFigureBlocks', () => {
     const diagram = out.find((b) => b.kind === 'diagram')!;
     expect(diagram.id).toBe(incoming[0].id);
     expect(diagram.text).toMatch(/^Shape: two boxes/);
-    expect(diagram.figure).toMatchObject({ kind: 'flowchart', shapes: ['two rectangles', 'arrow'], labels: ['go'], edges: [{ from: 'go', to: 'B' }] });
-    // Geometry knows the second box but not its word: no placeholder edge is added next to the model's.
+    expect(diagram.figure).toMatchObject({ kind: 'flowchart', labels: ['go'], edges: [{ from: 'go', to: 'rectangle 2', kind: 'arrow', inferred: true }] });
+    expect(diagram.figure!.shapes).toEqual(expect.arrayContaining(['two rectangles', 'arrow']));
     expect(diagram.figure!.edges).toHaveLength(1);
     expect(diagram.figure!.nodes?.map((n) => n.label)).toEqual(['go', 'rectangle 2']);
     expect(diagram.strokeIds).toContain(label[0].id);
@@ -300,7 +634,7 @@ describe('reconcileFigureBlocks', () => {
     expect(out[0].strokeIds).not.toContain(note[0].id);
   });
 
-  it('fills in an edge the arrow clearly draws but the model left out, marked as inferred, and keeps the model edges', () => {
+  it('keeps drawn edges and discards model-only edges when geometry found relations', () => {
     const { groups, strokes, groupOf, block, box1, arrow, box2, label } = scene();
     const second = textLine(270, 50, 3, 16, 40000);
     const all = [...strokes, ...second];
@@ -313,12 +647,12 @@ describe('reconcileFigureBlocks', () => {
     });
     const out = reconcileFigureBlocks([diagram, block('paragraph', 'go', [g(label[0])]), block('paragraph', 'stop', [g(second[0])])], groups2, all);
     const fig = out.find((b) => b.kind === 'diagram')!.figure!;
-    expect(fig.edges).toEqual([{ from: 'stop', to: 'elsewhere' }, { from: 'go', to: 'stop', kind: 'arrow', inferred: true }]);
+    expect(fig.edges).toEqual([{ from: 'go', to: 'stop', kind: 'arrow', inferred: true }]);
     expect(fig.nodes?.map((n) => n.label)).toEqual(['go', 'stop']);
     expect(fig.sequence).toEqual(['go', 'stop']);
   });
 
-  it('folds two diagram blocks the model returned for one figure into one, keeping both their labels and edges', () => {
+  it('folds diagram blocks while retaining geometry edges even when their nodes are unnamed', () => {
     const { groups, strokes, groupOf, block, box1, arrow, box2, label } = scene();
     const d1 = block('diagram', 'Shape: a box.', [groupOf(box1), groupOf(label[0])], { figure: { kind: 'flowchart', shapes: ['box'], labels: ['go'], edges: [] } });
     const d2 = block('diagram', '', [groupOf(arrow[0]), groupOf(box2)], { figure: { kind: 'other', shapes: ['box', 'arrow'], labels: ['B'], edges: [{ from: 'go', to: 'B' }] } });
@@ -326,22 +660,23 @@ describe('reconcileFigureBlocks', () => {
     const diagrams = out.filter((b) => b.kind === 'diagram');
     expect(diagrams).toHaveLength(1);
     expect(diagrams[0].text).toBe('Shape: a box.');
-    expect(diagrams[0].figure).toMatchObject({ kind: 'flowchart', shapes: ['box', 'arrow'], labels: ['go', 'B'], edges: [{ from: 'go', to: 'B' }] });
+    expect(diagrams[0].figure).toMatchObject({ kind: 'flowchart', labels: ['go', 'B'] });
+    expect(diagrams[0].figure!.edges).toEqual([{ from: 'rectangle 1', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
   });
 
   it('completes a model edge with the label and kind the geometry read for it', () => {
     const geo = { nodes: [{ id: 'n1', label: 'a' }, { id: 'n2', label: 'b' }], edges: [{ from: 'a', to: 'b', kind: 'arrow' as const, label: 'yes' }], sequence: ['a', 'b'], unnamed: [] };
     const hint = { id: 0, groupIndices: [0], kind: 'flowchart' as const, shapes: [], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
     const fig = mergeWithGeometry({ kind: 'flowchart', shapes: [], labels: ['a', 'b'], edges: [{ from: 'A', to: 'b' }] }, hint, ['a', 'b'], geo);
-    expect(fig.edges).toEqual([{ from: 'A', to: 'b', label: 'yes', kind: 'arrow' }]);
+    expect(fig.edges).toEqual([{ from: 'a', to: 'b', label: 'yes', kind: 'arrow', inferred: true }]);
     expect(fig.sequence).toEqual(['a', 'b']);
     expect(fig.nodes).toEqual(geo.nodes);
   });
 
-  it('does not add geometry edges to unnamed shapes next to the model edges, but uses them when the model gave none', () => {
+  it('retains geometry edges to unnamed shapes instead of unsupported model edges', () => {
     const geo = { nodes: [{ id: 'n1', label: 'a' }, { id: 'n2', label: 'rectangle 2' }], edges: [{ from: 'a', to: 'rectangle 2', kind: 'arrow' as const }], unnamed: ['rectangle 2'] };
     const hint = { id: 0, groupIndices: [0], kind: 'flowchart' as const, shapes: ['rectangle'], labelGroups: [], labelInside: {}, labelHostGroups: [], edges: [], nodes: [], relations: [], order: [], orderBasis: '', summary: '' };
-    expect(mergeWithGeometry({ kind: 'flowchart', shapes: [], labels: ['a'], edges: [{ from: 'a', to: 'c' }] }, hint, ['a'], geo).edges).toEqual([{ from: 'a', to: 'c' }]);
+    expect(mergeWithGeometry({ kind: 'flowchart', shapes: [], labels: ['a'], edges: [{ from: 'a', to: 'c' }] }, hint, ['a'], geo).edges).toEqual([{ from: 'a', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
     expect(mergeWithGeometry(undefined, hint, ['a'], geo).edges).toEqual([{ from: 'a', to: 'rectangle 2', kind: 'arrow', inferred: true }]);
     expect(mergeWithGeometry({ kind: 'table', shapes: [], labels: [], edges: [] }, hint, [], { ...geo, cells: [['x', ''], ['', '']] }).cells).toEqual([['x', ''], ['', '']]);
   });
@@ -355,6 +690,17 @@ describe('reconcileFigureBlocks', () => {
     expect(diagrams).toHaveLength(1);
     expect(diagrams[0].strokeIds.length).toBeGreaterThan(0);
     expect(diagrams[0].figure).toMatchObject({ labels: ['go', 'stop'], edges: [{ from: 'go', to: 'stop', kind: 'arrow', inferred: true }], sequence: ['go', 'stop'] });
+  });
+
+  it('resolves ids without model nodes through geometry and prefers text read on label groups', () => {
+    const { groups, strokes, block, groupOf, box1, label } = scene();
+    const prior = normaliseFigure({ kind: 'flowchart', labels: ['N1'], sequence: ['n1', 'n2'], edges: [{ from: 'n2', to: 'N1', label: 'back' }] });
+    const out = reconcileFigureBlocks([block('diagram', '', [groupOf(box1)], { figure: prior }), block('paragraph', 'go', [groupOf(label[0])])], groups, strokes);
+    const figure = out.find((b) => b.kind === 'diagram')!.figure!;
+    expect(figure.labels).toContain('go');
+    expect(figure.labels).not.toContain('N1');
+    expect(figure.sequence).toEqual(['go', 'rectangle 2']);
+    expect(figure.edges).toEqual([{ from: 'go', to: 'rectangle 2', label: 'back', kind: 'arrow', inferred: true }]);
   });
 
   it('turns a model "table" text block on a drawn grid into the figure cells', () => {
@@ -378,7 +724,7 @@ describe('reconcileFigureBlocks', () => {
     const prior = { kind: 'sketch' as const, shapes: [], labels: ['topic', 'a'], edges: [], nodes: [{ id: 'n1', label: 'topic', shape: 'box 2', group: 8, parent: 'n2' }, { id: 'n2', label: 'a', group: 1 }] };
     const fig = mergeWithGeometry(prior, hint, ['topic', 'a'], geo);
     expect(fig.edges).toEqual([{ from: 'topic', to: 'a', kind: 'line', inferred: true }]);
-    expect(fig.nodes).toEqual([{ id: 'n1', label: 'topic', shape: 'circle', group: 8 }, { id: 'n2', label: 'a', shape: 'circle', group: 1 }]);
+    expect(fig.nodes).toEqual([{ id: 'n1', label: 'a', shape: 'circle', group: 1 }, { id: 'n2', label: 'topic', shape: 'circle', group: 8, parent: 'n1' }]);
     // A wrong group number on the model side still lets the hint id name the node.
     const byId = mergeWithGeometry({ ...prior, nodes: [{ id: 'n1', label: 'top', group: 99 }, { id: 'n2', label: 'side', group: 98 }] }, hint, [], geo);
     expect(byId.edges[0]).toMatchObject({ from: 'side', to: 'top' });

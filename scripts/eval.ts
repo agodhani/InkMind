@@ -21,11 +21,12 @@ import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
 import { buildStrokeGroups, mergeBlocks, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
 import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
-import { OllamaTranscriber } from '../src/transcribe/ollama';
+import { OllamaTranscriber, ollamaPromptStyle } from '../src/transcribe/ollama';
+import { replayResponses } from '../src/transcribe/replay';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
 import { MODEL_RENDER, renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
 import { unionBounds } from '../src/model/page';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { Agent, setGlobalDispatcher } from 'undici';
 
 // CPU inference can take >5 min per page; lift Node's default 300 s headers timeout.
@@ -33,12 +34,15 @@ setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0 }));
 
 const nodeCanvas: CanvasFactory = (w, h) => createCanvas(w, h) as unknown as ReturnType<CanvasFactory>;
 import { ModelOutputError } from '../src/transcribe/prompt';
+import { resolveFigureRefs } from '../src/transcribe/figure';
 import { diagramMetrics, parseReferencePage, pct, relationMetrics, type DiagramMetrics, type RelationMetrics } from '../src/sim/metrics';
 
 export interface Args {
   dataset: string;
-  provider: 'ollama' | 'openrouter';
+  provider: 'ollama' | 'openrouter' | 'geometry';
   model: string;
+  prompt?: 'compact' | 'full';
+  maxImageEdge?: number;
   pages?: number[];
   /** pdf = raster of the original page; strokes = the app's own rendering of the extracted ink. */
   image: 'pdf' | 'strokes';
@@ -51,6 +55,7 @@ export interface Args {
   /** Directory (under the dataset) holding page-N.png rasters; e.g. pages220 for a 220 dpi render. */
   raster: string;
   run?: string;
+  replay?: string;
   url: string;
   /** Only score pages generated at this messiness (`neat|normal|messy`; synthetic datasets record it in reference.md). */
   messiness?: string;
@@ -65,14 +70,17 @@ export function parseArgs(): Args {
   return {
     dataset: a.dataset ?? 'eval/l8-workflow',
     provider,
-    model: a.model ?? (provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
+    model: a.model ?? (provider === 'geometry' ? 'geometry' : provider === 'ollama' ? 'qwen2.5vl:3b' : 'dots-studio/dots-3-note-preview:free'),
     pages: a.pages ? a.pages.split(',').map(Number) : undefined,
+    prompt: a.prompt === 'compact' || a.prompt === 'full' ? a.prompt : undefined,
+    maxImageEdge: a['image-edge'] ? Number(a['image-edge']) : undefined,
     image: (a.image as Args['image']) ?? 'pdf',
     band: Number(a.band ?? 0),
     context: Number(a.context ?? 0),
     render: (a.render as Args['render']) ?? 'model',
     raster: a.raster ?? 'pages',
     run: a.run,
+    replay: a.replay,
     url: a.url ?? 'http://localhost:11434',
     messiness: a.messiness,
     reconcile: !(a.reconcile === '0' || a.reconcile === 'off' || a.reconcile === 'false'),
@@ -230,13 +238,18 @@ export function score(hyp: string, ref: string) {
 export async function runEval(args: Args): Promise<EvalResult> {
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}${args.reconcile ? '' : '-raw'}${args.messiness ? `-${args.messiness}` : ''}`;
+  const run = args.run ?? (args.replay ? `replay-${args.replay}` : `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}${args.reconcile ? '' : '-raw'}${args.messiness ? `-${args.messiness}` : ''}`);
+  if (args.replay === run) throw new Error('Replay output must not overwrite its source run');
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
   const transcriber: Transcriber =
-    args.provider === 'ollama'
-      ? new OllamaTranscriber({ url: args.url, model: args.model })
+    args.replay
+      ? { name: `replay:${args.replay}`, maxImageEdge: args.maxImageEdge ?? ((args.prompt ?? ollamaPromptStyle(args.model)) === 'compact' ? 1024 : undefined), transcribe: async () => { throw new Error('Replay must not call a model'); } }
+      : args.provider === 'geometry'
+      ? { name: 'geometry', transcribe: async () => ({ blocks: [], model: 'geometry', durationMs: 0 }) }
+      : args.provider === 'ollama'
+      ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt, maxImageEdge: args.maxImageEdge })
       : new OpenRouterTranscriber({ apiKey: process.env.OPENROUTER_API_KEY ?? process.env.VITE_OPENROUTER_API_KEY ?? '', model: args.model, siteName: 'InkMind eval' });
 
   const rows: string[] = [];
@@ -265,6 +278,9 @@ export async function runEval(args: Args): Promise<EvalResult> {
       }
     } else bands.push({ target: pageGroups, all: pageGroups });
 
+    const saved = args.replay ? replayResponses(readFileSync(join(args.dataset, 'results', args.replay, `page-${page.index}.raw.txt`), 'utf8'), args.prompt ?? ollamaPromptStyle(args.model)) : [];
+    if (args.replay && saved.length !== bands.length) throw new Error('Replay request count differs; use the original band settings');
+
     process.stderr.write(`page ${page.index}: ${page.strokes.length} strokes, ${pageGroups.length} groups, ${bands.length} request(s) → ${transcriber.name} … `);
     const started = Date.now();
     const result: { blocks: ReturnType<typeof rawToDigitalBlock>[]; model: string; durationMs: number } = { blocks: [], model: transcriber.name, durationMs: 0 };
@@ -276,7 +292,14 @@ export async function runEval(args: Args): Promise<EvalResult> {
       const targetBounds = band.target.map((g) => g.bbox).reduce(unionBounds);
       let req: TranscribeRequest;
       if (args.band === 0 && args.image === 'pdf') {
-        const png = readFileSync(join(args.dataset, args.raster, `page-${page.index}.png`));
+        let png: Buffer = readFileSync(join(args.dataset, args.raster, `page-${page.index}.png`));
+        const size = pngSize(png);
+        if (transcriber.maxImageEdge && Math.max(size.width, size.height) > transcriber.maxImageEdge) {
+          const scale = transcriber.maxImageEdge / Math.max(size.width, size.height);
+          const canvas = createCanvas(Math.round(size.width * scale), Math.round(size.height * scale));
+          canvas.getContext('2d').drawImage(await loadImage(png), 0, 0, canvas.width, canvas.height);
+          png = canvas.toBuffer('image/png');
+        }
         req = {
           imageDataUrl: `data:image/png;base64,${png.toString('base64')}`,
           imageBounds: { left: 0, top: 0, right: page.width, bottom: page.height },
@@ -288,7 +311,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
           profile,
         };
       } else {
-        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.render === 'model' ? MODEL_RENDER : {}) });
+        const rendered = renderStrokesToPng(strokes, band.all.map((g) => g.bbox).reduce(unionBounds), { createCanvas: nodeCanvas, ...(args.render === 'model' ? MODEL_RENDER : {}), maxEdge: transcriber.maxImageEdge });
         if (!rendered) continue;
         req = {
           imageDataUrl: rendered.dataUrl,
@@ -302,7 +325,9 @@ export async function runEval(args: Args): Promise<EvalResult> {
         };
       }
       try {
-        const r = await transcriber.transcribe(req);
+        const replay = saved.shift();
+        if (replay?.imageSize) req.imageSize = replay.imageSize;
+        const r = replay ?? await transcriber.transcribe(req);
         result.durationMs += r.durationMs;
         if (r.raw) {
           rawLog.set(page.index, (rawLog.get(page.index) ?? '') + r.raw + '\n---\n');
@@ -345,7 +370,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
     if (args.reconcile) {
       const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
       const unclaimed = page.strokes.filter((st) => !claimed.has(st.id)).map((st) => st.id);
-      if (unclaimed.length && incoming.length) {
+      if (args.provider !== 'geometry' && unclaimed.length && incoming.length) {
         incoming = [...incoming];
         incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
       }
@@ -355,7 +380,7 @@ export async function runEval(args: Args): Promise<EvalResult> {
     const hyp = blocks.filter((b) => b.kind !== 'diagram').map((b) => b.text).join('\n');
     const s = score(hyp, ref);
     const dm: DiagramMetrics = diagramMetrics(figures, blocks);
-    const rm: RelationMetrics = relationMetrics(figures, blocks);
+    const rm: RelationMetrics = relationMetrics(figures, blocks.map((b) => b.figure ? { ...b, figure: resolveFigureRefs(b.figure) } : b));
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     process.stderr.write(`${secs}s WER ${s.wer} CER ${s.cer} (${blocks.length} blocks)${figures.length ? ` figures ${dm.detected}/${dm.figures} leak ${pct(dm.textLeak)} labels ${dm.labelsFound}/${dm.labels}` : ''}${rm.edges ? ` edges ${rm.edgesFound}/${rm.edges} (P ${rm.predictedMatched}/${rm.predicted})` : ''}${rm.sequences ? ` seq ${rm.sequencesExact}/${rm.sequences} τ ${rm.sequenceTau ?? '—'}` : ''}${rm.contains ? ` nesting ${rm.containsFound}/${rm.contains}` : ''}\n`);
     writeFileSync(join(outDir, `page-${page.index}.json`), JSON.stringify({ model: result.model, durationMs: result.durationMs, kind, messiness: meta.messiness, score: s, diagrams: dm, relations: rm, blocks, hyp, ref }, null, 2));

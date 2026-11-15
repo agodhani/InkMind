@@ -1,5 +1,13 @@
 import { FIGURE_KINDS, type FigureEdge, type FigureEdgeKind, type FigureInfo, type FigureKind, type FigureNode } from '../model/page';
 
+/** Keep every compact name value before JSON.parse overwrites repeated keys. */
+export function preserveCompactNameWords(text: string): string {
+  return text.replace(/"names"\s*:\s*\{((?:[^{}"]|"(?:\\.|[^"\\])*")*)\}/g, (map, contents: string) => {
+    const words = [...contents.matchAll(/("(?:\\.|[^"\\])*")\s*:\s*("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/g)].flatMap((m) => /^n\d+$/i.test(JSON.parse(m[1])) ? [m[2]] : [m[1], m[2]]);
+    return `${map},"_nameWords":[${words.join(',')}]`;
+  });
+}
+
 /**
  * Lenient parser for the optional `figure` object on diagram blocks. Small vision models produce
  * messy JSON: strings where arrays were asked for, objects for labels, "a -> b" strings for edges,
@@ -11,25 +19,70 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   if (!obj) return undefined;
   const kind = normaliseFigureKind(firstString(obj, ['kind', 'type', 'figure_kind', 'figureKind', 'category']), fallbackKind);
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
-  const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices']);
+  const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  const boxedWords: FigureNode[] = [];
+  const messages: string[] = stringList(obj.messages);
+  for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
+    for (const [id, value] of Object.entries(box)) {
+      if (!/^n\d+$/i.test(id) || !value || typeof value !== 'object') continue;
+      const label = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      if (!label || isGroupRef(label)) continue;
+      boxedWords.push({ id, label });
+      if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
+      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
+    }
+  }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
-  const byRef = (ref: string) => ref.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);
+  const byRef = (ref: string) => resolveNodeRefs(ref, nodes);
+  const unwantedRef = (ref: string) => isGroupRef(ref) && !(nodes.length === 0 && /^n\d+$/i.test(ref));
   const labels = dedupeText([
-    ...stringList(firstDefined(obj, ['labels', 'label', 'texts', 'text_labels', 'annotations'])).map(byRef),
+    ...['labels', 'label', 'texts', 'text_labels', 'annotations', 'text', '_nameWords'].flatMap((key) => stringList(obj[key])).map(byRef),
     ...(nodes.length ? nodes.map((n) => n.label) : stringList(rawNodes)),
-  ]).filter((l) => !isGroupRef(l));
-  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef);
+    ...boxedWords.map((n) => n.label),
+  ]).filter((l) => !unwantedRef(l));
+  const edges = edgeList(firstDefined(obj, ['edges', 'edge', 'relations', 'relationships', 'connections', 'arrows', 'links', 'transitions']), byRef, nodes.length === 0);
   // "a → b" written as a step is two steps (arrow glyphs only: "ready to ship" is one step).
-  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !isGroupRef(l));
+  const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !unwantedRef(l));
   // Cells only describe tables; small models echo the placeholder grid onto every figure.
   const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
+  labels.push(...cells.flat().filter((word) => word && !labels.includes(word)));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
-  if (sequence.length) fig.sequence = sequence;
+  if (sequence.length || messages.length) fig.sequence = sequence.length ? sequence : messages;
   if (nodes.length) fig.nodes = nodes;
   if (cells.length) fig.cells = cells;
   return fig;
+}
+
+export function sequenceEdgeIndices(figure: FigureInfo): (number | null)[] {
+  const used = new Set<number>();
+  return (figure.sequence ?? []).map((word, i) => {
+    const explicit = figure.sequenceEdges?.[i];
+    const index = figure.sequenceEdges ? explicit ?? -1 : figure.edges.findIndex((edge, j) => !used.has(j) && edge.label?.trim().toLowerCase() === word.trim().toLowerCase());
+    if (index < 0 || !figure.edges[index] || used.has(index)) return null;
+    used.add(index);
+    return index;
+  });
+}
+
+export function resolveNodeRefs(value: string, nodes: FigureNode[]): string {
+  if (!/^\s*n\d+(?:\s*(?:,|;|\||->|→|=>|⇒)\s*n\d+)*\s*$/i.test(value)) return value;
+  return value.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);
+}
+
+/** Resolve ids before scoring, without changing the figure's geometry or node ids. */
+export function resolveFigureRefs(figure: FigureInfo): FigureInfo {
+  const nodes = figure.nodes ?? [];
+  const resolve = (s: string) => resolveNodeRefs(s, nodes);
+  return {
+    ...figure,
+    labels: figure.labels.map(resolve),
+    edges: figure.edges.map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) })),
+    ...(figure.sequence ? { sequence: figure.sequence.flatMap((s) => stringList(s).map(resolve)) } : {}),
+    ...(figure.nodes ? { nodes: nodes.map((n) => ({ ...n, label: resolve(n.label), ...(n.parent ? { parent: nodes.find((p) => p.id.toLowerCase() === n.parent!.toLowerCase())?.id ?? resolve(n.parent) } : {}) })) } : {}),
+  };
 }
 
 function dedupeText(xs: string[]): string[] {
@@ -63,6 +116,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     const n: FigureNode = { id, label };
     if (node.shape) n.shape = node.shape;
     if (node.parent) n.parent = node.parent;
+    if (node.parents?.length) n.parents = [...node.parents];
     if (node.group !== undefined) n.group = node.group;
     out.push(n);
     return n;
@@ -91,6 +145,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
           // "box 2" / "shape 1" are the prompt's placeholders, not a shape.
           shape: shapeText && !/^(box|shape|node)\s*\d+$/.test(shapeText) && !isGroupRef(shapeText) ? shapeText : undefined,
           parent: typeof own === 'string' ? cleanText(own) || undefined : parent,
+          parents: stringList(o.parents),
           ...(Number.isInteger(groupNum) && groupNum >= 0 ? { group: groupNum } : {}),
         });
         if (node && kids !== undefined) visit(kids, node.id);
@@ -127,6 +182,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
   }
   // A node can't contain itself through a cycle or reference a missing parent.
   for (const n of out) {
+    if (n.parents?.length) n.parents = [...new Set(n.parents.map(find).filter((p): p is FigureNode => !!p && p !== n).map((p) => p.id))];
     if (n.parent !== undefined) {
       const p = find(n.parent);
       if (!p || p === n) delete n.parent;
@@ -302,12 +358,12 @@ function isEdgeEcho(label: string, from: string, to: string): boolean {
 }
 
 /** Edges from: objects {from,to,label}, [from,to,label] arrays, or "a -> b (label)" / "a → b: label" strings. */
-export function edgeList(value: unknown, resolve: (ref: string) => string = (r) => r): FigureEdge[] {
+export function edgeList(value: unknown, resolve: (ref: string) => string = (r) => r, keepNodeIds = true): FigureEdge[] {
   const out: FigureEdge[] = [];
   const add = (from: unknown, to: unknown, label?: unknown, kind?: unknown, inferred?: unknown) => {
     const f0 = typeof from === 'string' || typeof from === 'number' ? resolve(cleanText(String(from))) : stringList(from)[0];
     const t0 = typeof to === 'string' || typeof to === 'number' ? resolve(cleanText(String(to))) : stringList(to)[0];
-    if (isGroupRef(f0) || isGroupRef(t0)) return;
+    if ([f0, t0].some((s) => isGroupRef(s) && !(keepNodeIds && typeof s === 'string' && /^n\d+$/i.test(s)))) return;
     const f = f0 && cleanText(f0), t = t0 && cleanText(t0);
     if (!f || !t || out.length >= MAX_ITEMS) return;
     const cleaned = typeof label === 'string' ? cleanText(label) : undefined;
@@ -392,7 +448,7 @@ export function nodeTree(nodes: FigureNode[]): { node: FigureNode; depth: number
 }
 
 export function hasNesting(fig: FigureInfo): boolean {
-  return !!fig.nodes?.some((n) => n.parent !== undefined);
+  return !!fig.nodes?.some((n) => n.parent !== undefined || n.parents?.length);
 }
 
 /** "Shape: … Labels: … Steps: … Relations: a → b" caption for a figure with no usable model caption. */
@@ -404,7 +460,7 @@ export function figureCaption(fig: FigureInfo): string {
   if (fig.labels.length) parts.push(`Labels: ${fig.labels.join(', ')}.`);
   if (fig.sequence?.length) parts.push(`Steps: ${fig.sequence.join(' → ')}.`);
   if (hasNesting(fig)) {
-    const nested = nodeTree(fig.nodes!).filter((n) => n.depth > 0).map((n) => `${n.node.label} inside ${fig.nodes!.find((p) => p.id === n.node.parent)?.label ?? n.node.parent}`);
+    const nested = nodeTree(fig.nodes!).flatMap(({ node }) => [...new Set([...(node.parents ?? []), ...(node.parent ? [node.parent] : [])])].map((parent) => `${node.label} inside ${fig.nodes!.find((p) => p.id === parent)?.label ?? parent}`));
     parts.push(`Nested: ${nested.join(', ')}.`);
   }
   if (fig.edges.length) parts.push(`Relations: ${fig.edges.map(edgeText).join(', ')}.`);

@@ -103,6 +103,24 @@ export interface GroupLike {
   bbox: BoundingBox;
 }
 
+function textRegions(ink: StrokeShape[]): BoundingBox[] {
+  if (!ink.length) return [];
+  const heights = ink.map((s) => height(s.bbox)).sort((a, b) => a - b);
+  const h = Math.max(8, heights[Math.floor(heights.length * 0.8)]);
+  const regions: BoundingBox[] = [];
+  for (const s of ink) {
+    let box = s.bbox;
+    for (let i = regions.length - 1; i >= 0; i--) {
+      const r = regions[i];
+      if (Math.abs(center(r).y - center(box).y) <= h * 0.85 && Math.max(r.left - box.right, box.left - r.right) <= h * 1.3) {
+        box = unionBox(box, r); regions.splice(i, 1); i = regions.length;
+      }
+    }
+    regions.push(box);
+  }
+  return regions.sort((a, b) => Math.abs(center(a).y - center(b).y) > h ? a.top - b.top : a.left - b.left);
+}
+
 export interface GroupAnalysis {
   index: number;
   bbox: BoundingBox;
@@ -135,6 +153,8 @@ export interface FigureNodeHint {
   bbox: BoundingBox;
   /** Group whose text is this node's label (written inside the shape, or above a lifeline). */
   labelGroup?: number;
+  labelBounds?: BoundingBox;
+  parents?: string[];
   /** id of the node this one is drawn inside. */
   parent?: string;
   /** A diamond among arrows: a decision / branch point. */
@@ -145,6 +165,7 @@ export interface FigureRelationHint {
   from: string;
   to: string;
   kind: 'arrow' | 'line' | 'self-loop';
+  strokeIds?: string[];
   /** Group of the text written beside the arrow. */
   labelGroup?: number;
   /** Points against the figure's main flow (a loop back to an earlier step). */
@@ -170,6 +191,8 @@ export interface FigureHint {
   order: string[];
   /** How `order` was derived ("arrow order", "left→right", "top→bottom", "clockwise from top"). */
   orderBasis: string;
+  /** Sequence diagrams: message label groups in top-to-bottom time order. */
+  messageGroups?: number[];
   /** Tables: group index of the text in each cell, row-major; -1 for an empty cell. */
   cells?: number[][];
   summary: string;
@@ -370,7 +393,11 @@ export function classifyStroke(stroke: InkStroke): StrokeShape {
   const length = pathLength(pts);
   const gap = dist(pts[0], pts[pts.length - 1]);
   const closed = gap < Math.max(0.22 * diag, 6) && length > 1.8 * diag;
-  return closed ? classifyClosed(base, pts, length) : classifyOpen(base, pts, length);
+  const open = closed ? null : classifyOpen(base, pts, length);
+  if (open && open.kind !== 'arrow' && length > 1.8 * diag && ellipseFitError(pts, bbox) < 0.12) {
+    return { ...base, kind: Math.max(width(bbox), height(bbox)) / Math.max(1, Math.min(width(bbox), height(bbox))) < 1.3 ? 'circle' : 'ellipse', length, closed: true, vertices: [], segments: [] };
+  }
+  return closed ? classifyClosed(base, pts, length) : open!;
 }
 
 type Base = Pick<StrokeShape, 'strokeId' | 'bbox' | 'diag' | 'start' | 'end'>;
@@ -410,7 +437,7 @@ function classifyClosed(base: Base, pts: Offset[], length: number): StrokeShape 
   });
   const round = (): StrokeShape => ({ ...base, kind: aspect < 1.3 ? 'circle' : 'ellipse', length, closed: true, vertices: corners, segments: [] });
 
-  if (sharp.length <= 1 && fit < 0.12 && areaRatio > 0.6 && areaRatio < 0.93) return round();
+  if (fit < 0.12 && areaRatio > 0.6) return round();
   if (sharp.length === 3 && areaRatio > 0.3) return polygon('triangle', sharpCorners);
   if (sharp.length === 4) {
     const rightAngles = sharp.every((t) => Math.abs(t - 90) <= 28);
@@ -561,7 +588,7 @@ function classifyCorners(corners: Offset[]): ClosedShape['kind'] {
 export function chainSegments(pieces: { strokeId: string; segments: Segment[] }[]): { corners: Offset[]; strokeIds: string[] } | null {
   const segs = pieces.flatMap((p) => p.segments.map((s) => ({ ...s, strokeId: p.strokeId })));
   if (segs.length < 3 || segs.length > 8) return null;
-  const tol = Math.max(10, 0.22 * Math.min(...segs.map(segLen)));
+  const tol = Math.max(18, 0.22 * Math.min(...segs.map(segLen)));
   const used = new Set<number>();
   const corners: Offset[] = [segs[0].a];
   let cur = segs[0].b;
@@ -602,16 +629,22 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
     if (shaft.kind === 'curve' && shaft.length < 2 * MIN_LINE_SIZE) continue;
     const ends: [Offset, Offset][] = [[shaft.start, shaft.end], [shaft.end, shaft.start]];
     for (const [tip, tail] of ends) {
+      const axisTail = shaft.kind === 'curve' && shaft.vertices.length >= 2 ? (tip === shaft.end ? shaft.vertices[shaft.vertices.length - 2] : shaft.vertices[1]) : tail;
       const heads = marks.filter((m) => {
         if (used.has(m.strokeId) || m.strokeId === shaft.strokeId) return false;
-        if (!HEAD_KINDS.has(m.kind)) return false;
-        if (m.diag > 0.45 * shaft.length || m.diag < 3) return false;
+        if (!HEAD_KINDS.has(m.kind) && m.kind !== 'line') return false;
+        if (m.diag > Math.min(32, 0.55 * shaft.length) || m.diag < 3) return false;
+        if (Math.min(...m.vertices.map((p) => dist(p, tip))) > Math.max(8, Math.min(16, 0.08 * shaft.length))) return false;
+        if (m.kind === 'line' && (angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) < 10 || angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) > 80)) return false;
         // The shaft tip touches the head, and the head sits on the shaft's axis (straight shafts).
         if (!contains(m.bbox, tip, Math.max(4, 0.05 * shaft.length))) return false;
         if (shaft.kind !== 'curve' && perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.4 * m.diag + 2) return false;
         return dist(center(m.bbox), tip) <= Math.max(14, 0.3 * shaft.length);
       });
-      if (heads.length >= 1 && heads.length <= 3) {
+      const wings = heads.filter((h) => h.kind === 'line');
+      const cross = (p: Offset) => (tip.x - axisTail.x) * (p.y - tip.y) - (tip.y - axisTail.y) * (p.x - tip.x);
+      const splitHead = wings.some((p) => wings.some((q) => p !== q && cross(center(p.bbox)) * cross(center(q.bbox)) < 0));
+      if (heads.length >= 1 && heads.length <= 3 && (heads.some((h) => h.kind !== 'line') || splitHead)) {
         arrows.push({ strokeIds: [shaft.strokeId, ...heads.map((h) => h.strokeId)], tail, head: tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
         used.add(shaft.strokeId);
         heads.forEach((h) => used.add(h.strokeId));
@@ -640,8 +673,6 @@ function findAxes(segments: { seg: Segment; strokeId: string }[], groupIndex: nu
           const origin = mid(he, ve);
           const xEnd = hEnds.find((p) => p !== he)!;
           const yEnd = vEnds.find((p) => p !== ve)!;
-          const otherEnds = segments.filter((s) => s.seg !== h.seg && s.seg !== v.seg).flatMap((s) => [s.seg.a, s.seg.b]);
-          if (otherEnds.some((p) => dist(p, xEnd) <= tol || dist(p, yEnd) <= tol)) continue;
           // Standard orientation: x grows to the right, y grows upward from the corner.
           if (xEnd.x > origin.x && yEnd.y < origin.y) return { strokeIds: [...new Set([h.strokeId, v.strokeId])], origin, xEnd, yEnd, groupIndex, crossing: false };
         }
@@ -680,7 +711,13 @@ export function looksLikeCube(segments: Segment[]): boolean {
     else clusters.push({ angle: a, n: 1 });
   }
   const big = clusters.filter((c) => c.n >= 2);
-  return clusters.length === 3 && big.length === 3;
+  const junctions: Offset[] = [];
+  const tol = Math.max(8, 0.08 * maxLen);
+  for (const p of edges.flatMap((s) => [s.a, s.b])) {
+    if (junctions.some((q) => dist(p, q) <= tol)) continue;
+    if (edges.filter((s) => Math.min(dist(p, s.a), dist(p, s.b)) <= tol).length >= 3) junctions.push(p);
+  }
+  return clusters.length === 3 && big.length === 3 && junctions.length >= 4;
 }
 
 export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnalysis {
@@ -690,19 +727,42 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   const gw = width(group.bbox), gh = height(group.bbox);
 
   // A closed loop is a drawn shape only when it is big in absolute terms and relative to its neighbours.
-  const bigEnough = (s: StrokeShape) => s.diag >= MIN_SHAPE_SIZE && (shapes.length <= 3 || height(s.bbox) >= 1.6 * median(heights.filter((_, i) => shapes[i] !== s)));
+  const glyphHeights = shapes.filter((s) => s.diag < MIN_SHAPE_SIZE).map((s) => height(s.bbox));
+  const glyphHeight = [...glyphHeights].sort((a, b) => a - b)[Math.floor(glyphHeights.length * 0.75)] ?? 0;
+  const bigEnough = (s: StrokeShape) => s.diag >= MIN_SHAPE_SIZE && (shapes.length <= 3 || height(s.bbox) >= 1.6 * glyphHeight);
   const closed: ClosedShape[] = shapes.filter((s) => CLOSED_KINDS.has(s.kind) && s.kind !== 'blob' && bigEnough(s)).map((s) => closedFromStroke(s, group.index));
   const usedIds = new Set(closed.flatMap((c) => c.strokeIds));
+  for (let i = 0; i + 1 < shapes.length; i++) {
+    const a = shapes[i], b = shapes[i + 1];
+    if (usedIds.has(a.strokeId) || usedIds.has(b.strokeId) || a.closed || b.closed || a.diag < MIN_SHAPE_SIZE || b.diag < MIN_SHAPE_SIZE) continue;
+    const box = unionBox(a.bbox, b.bbox), tol = Math.max(18, 0.08 * diagOf(box));
+    let points = pointsOf(strokes[i + 1]);
+    if (dist(a.end, b.end) < dist(a.end, b.start)) points = points.reverse();
+    if (dist(a.end, points[0]) > tol || a.length + b.length < 1.8 * diagOf(box)) continue;
+    const pts = smooth(resample([...pointsOf(strokes[i]), ...points], Math.max(1.5, diagOf(box) / 80)));
+    const shape = classifyClosed({ ...a, bbox: box, diag: diagOf(box) }, pts, pathLength(pts));
+    if ((shape.kind !== 'circle' && shape.kind !== 'ellipse') || !bigEnough(shape)) continue;
+    closed.push({ ...closedFromStroke(shape, group.index), strokeIds: [a.strokeId, b.strokeId] });
+    usedIds.add(a.strokeId); usedIds.add(b.strokeId);
+  }
 
   // Straight pieces that could form a polygon, axes or cube edges.
-  const straight = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline') && s.length >= Math.max(12, 0.8 * medH));
+  const longPieces = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline' || s.kind === 'vee') && s.diag >= MIN_SHAPE_SIZE);
+  const straight = shapes.filter((s) => !usedIds.has(s.strokeId) && s.segments.length > 0 && !s.closed && (longPieces.includes(s) || (s.length >= 18 && longPieces.some((p) => [p.start, p.end].some((v) => Math.min(dist(v, s.start), dist(v, s.end)) <= 18)))));
   const straightSegments = straight.flatMap((s) => s.segments);
   const cube = straightSegments.length >= 7 && looksLikeCube(straightSegments);
   if (cube) straight.forEach((s) => usedIds.add(s.strokeId));
-  const chained = !cube && straight.length >= 2 ? chainSegments(straight.map((s) => ({ strokeId: s.strokeId, segments: s.segments }))) : null;
-  if (chained && diagOf(bboxOf(chained.corners)) >= MIN_SHAPE_SIZE) {
-    closed.push({ kind: classifyCorners(chained.corners), strokeIds: chained.strokeIds, bbox: bboxOf(chained.corners), corners: chained.corners, groupIndex: group.index });
-    chained.strokeIds.forEach((id) => usedIds.add(id));
+  if (!cube) for (let i = 0; i < straight.length; i++) {
+    if (usedIds.has(straight[i].strokeId)) continue;
+    for (let n = 2; n <= 4 && i + n <= straight.length; n++) {
+      const pieces = straight.slice(i, i + n);
+      if (pieces.some((s) => usedIds.has(s.strokeId))) break;
+      const chained = chainSegments(pieces.map((s) => ({ strokeId: s.strokeId, segments: s.segments })));
+      if (!chained || diagOf(bboxOf(chained.corners)) < MIN_SHAPE_SIZE || height(bboxOf(chained.corners)) < 1.6 * glyphHeight) continue;
+      closed.push({ kind: classifyCorners(chained.corners), strokeIds: chained.strokeIds, bbox: bboxOf(chained.corners), corners: chained.corners, groupIndex: group.index });
+      chained.strokeIds.forEach((id) => usedIds.add(id));
+      break;
+    }
   }
 
   const arrows: Arrow[] = shapes
@@ -711,7 +771,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   arrows.forEach((a) => a.strokeIds.forEach((id) => usedIds.add(id)));
   const shaftCandidates = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline' || s.kind === 'curve'));
   const marks = shapes.filter((s) => !usedIds.has(s.strokeId) && (shapes.length <= 2 || s.diag <= Math.max(2.5 * medH, 0.35 * Math.max(gw, gh))));
-  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(25, 2 * medH) : 25);
+  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20);
   arrows.push(...composite.arrows);
   composite.used.forEach((id) => usedIds.add(id));
 
@@ -720,13 +780,24 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
     ...segmentSources.flatMap((s) => s.segments.map((seg) => ({ seg, strokeId: s.strokeId }))),
     ...arrows.map((a) => ({ seg: { a: a.tail, b: a.head }, strokeId: a.strokeIds[0] })),
   ];
-  const axes = findAxes(axisSegments, group.index);
+  const axes = closed.filter((c) => c.kind === 'circle' || c.kind === 'ellipse').length >= 2 || detectGrid(axisSegments.map((s) => s.seg)) ? null : findAxes(axisSegments, group.index);
   axes?.strokeIds.forEach((id) => usedIds.add(id));
 
   const rest = shapes.filter((s) => !usedIds.has(s.strokeId));
   const looseMin = shapes.length <= 2 ? MIN_LINE_SIZE : Math.max(MIN_LINE_SIZE * 0.5, 2 * medH);
   const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= looseMin);
   const looseSegments = looseStrokes.flatMap((s) => s.segments);
+  const dashes = rest.filter((s) => s.length >= 6 && s.length <= 32 && height(s.bbox) > 1.5 * width(s.bbox));
+  const usedDashes = new Set<string>();
+  const columnSize = (dash: StrokeShape) => dashes.filter((s) => Math.abs(center(s.bbox).x - center(dash.bbox).x) <= 10).length;
+  for (const dash of [...dashes].sort((a, b) => columnSize(b) - columnSize(a))) {
+    if (usedDashes.has(dash.strokeId)) continue;
+    const column = dashes.filter((s) => !usedDashes.has(s.strokeId) && Math.abs(center(s.bbox).x - center(dash.bbox).x) <= 10);
+    const ends = column.flatMap((s) => [s.start, s.end]).sort((a, b) => a.y - b.y);
+    if (column.length < 4 || ends[ends.length - 1].y - ends[0].y < 120) continue;
+    looseSegments.push({ a: ends[0], b: ends[ends.length - 1] });
+    column.forEach((s) => { usedIds.add(s.strokeId); usedDashes.add(s.strokeId); });
+  }
   // Big smooth curves are drawings; angular polylines/vees only when clearly larger than a letter (Λ, L, V are letters too).
   const curves = rest.filter((s) => {
     if (s.kind !== 'curve' && s.kind !== 'polyline' && s.kind !== 'vee') return false;
@@ -739,7 +810,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   const textLike = !!textBox && (textStrokes.length >= 3 ? width(textBox) >= 1.2 * height(textBox) || textStrokes.length >= 6 : textStrokes.every((s) => s.diag < MIN_SHAPE_SIZE * 1.5));
   // Letter stems (l, i, t, k) are short straight lines: a text line is only a drawing if its lines are long or it has no text.
   const longLines = looseSegments.filter((seg) => segLen(seg) >= MIN_LINE_SIZE).length;
-  const graphic = cube || closed.length > 0 || arrows.length > 0 || !!axes || curves.length > 0 || longLines >= 3 || (looseStrokes.length >= 5 && !textLike);
+  const graphic = cube || closed.length > 0 || arrows.length > 0 || !!axes || curves.length > 0 || longLines >= 3 || (!textLike && looseSegments.some((s) => segLen(s) >= 3 * MIN_LINE_SIZE)) || (looseStrokes.length >= 5 && !textLike);
 
   const analysis: GroupAnalysis = { index: group.index, bbox: group.bbox, shapes, closed, arrows, axes, cube, looseSegments, curves, textStrokes, textLike, graphic, hint: '' };
   analysis.hint = describeGroup(analysis);
@@ -975,7 +1046,16 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     a.looseSegments
       .filter((sg) => isVertical(sg) && segLen(sg) >= 3 * MIN_LINE_SIZE)
       .map((sg) => ({ seg: sg, groupIndex: a.index, x: (sg.a.x + sg.b.x) / 2, top: Math.min(sg.a.y, sg.b.y), bottom: Math.max(sg.a.y, sg.b.y) })),
-  );
+  ).reduce<Lifeline[]>((out, line) => {
+    const same = out.find((l) => l.groupIndex === line.groupIndex && Math.abs(l.x - line.x) <= 24 && Math.min(l.bottom, line.bottom) > Math.max(l.top, line.top));
+    if (!same) out.push(line);
+    else {
+      if (line.bottom - line.top > same.bottom - same.top) same.x = line.x;
+      same.top = Math.min(same.top, line.top); same.bottom = Math.max(same.bottom, line.bottom);
+      same.seg = { a: { x: same.x, y: same.top }, b: { x: same.x, y: same.bottom } };
+    }
+    return out;
+  }, []);
   const lifelineAt = (p: Offset, len: number) => {
     const tol = Math.max(20, 0.12 * len);
     let best: number | undefined, bestD = Infinity;
@@ -1022,7 +1102,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   const lineLinks: { from: number; to: number; toLabel?: number; groupIndex: number }[] = [];
   const linkGroups = new Set<number>();
   for (const g of analyses) {
-    if (g.cube || g.axes || g.textLike) continue;
+    if (g.cube || g.axes || (g.textLike && !g.graphic)) continue;
     for (const sg of g.looseSegments) {
       if (segLen(sg) < MIN_LINE_SIZE) continue;
       const from = nearestShape(sg.a, []), to = nearestShape(sg.b, []);
@@ -1044,7 +1124,18 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       }
     }
   }
-  const isDrawing = (a: GroupAnalysis) => a.graphic || lifelineGroups.has(a.index) || linkGroups.has(a.index);
+  const externalGroups = new Set<number>();
+  const standaloneFigure = (g: GroupAnalysis) => g.closed.length >= 2 || !!g.axes || g.cube || !!detectGrid(g.looseSegments);
+  const component = (g: GroupAnalysis) => analyses.filter((h) => uf.find(h.index) === uf.find(g.index));
+  for (const g of analyses) {
+    if (g.closed.length || g.axes || g.cube) continue;
+    for (const arrow of g.arrows) {
+      const host = (p: Offset) => analyses.filter((h) => h !== g && (component(h).some(standaloneFigure) || component(h).flatMap((m) => m.closed).length >= 2) && boxDistance(h.bbox, p) <= 24).sort((a, b) => boxDistance(a.bbox, p) - boxDistance(b.bbox, p))[0];
+      const from = host(arrow.tail), to = host(arrow.head);
+      if (from && to && uf.find(from.index) !== uf.find(to.index) && Math.max(height(component(from).map((h) => h.bbox).reduce(unionBox)), height(component(to).map((h) => h.bbox).reduce(unionBox))) >= 3 * MIN_LINE_SIZE) externalGroups.add(g.index);
+    }
+  }
+  const isDrawing = (a: GroupAnalysis) => !externalGroups.has(a.index) && (a.graphic || lifelineGroups.has(a.index) || linkGroups.has(a.index));
 
   for (const g of analyses) {
     if (!isDrawing(g)) continue;
@@ -1088,9 +1179,9 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       }
       if (from && to && from !== to) edges.push({ from: from.groupIndex, to: to.groupIndex });
     }
-    // Drawn things that overlap each other are one figure (cube faces, axes + curve, nested shapes).
+    if (externalGroups.has(g.index)) continue;
     for (const h of analyses) {
-      if (h.index <= g.index) continue;
+      if (h.index <= g.index || externalGroups.has(h.index)) continue;
       if ((isDrawing(h) || h.looseSegments.length > 0) && intersects(g.bbox, h.bbox, 12)) uf.union(g.index, h.index);
     }
   }
@@ -1098,6 +1189,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   // text goes to the arrow it sits closest to, relative to that arrow's size.
   const labelCandidates: { g: GroupAnalysis; a: Arrow; t: GroupAnalysis; score: number }[] = [];
   for (const g of analyses) {
+    if (externalGroups.has(g.index)) continue;
     for (const a of g.arrows) {
       const m = mid(a.tail, a.head);
       const len = Math.max(dist(a.tail, a.head), diagOf(arrowBox(g, a)));
@@ -1190,12 +1282,15 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const arrows = gs.flatMap((g) => g.arrows);
     const curves = gs.flatMap((g) => g.curves);
     const lifelines = tall.map((l, i) => ({ l, i })).filter(({ l, i }) => usedLifelines.has(i) && inFigure(l.groupIndex)).sort((a, b) => a.l.x - b.l.x);
-    const grid = !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.looseSegments), ...rectEdges]) : null;
+    const nested = closedHere.some((c) => closedHere.some((outer) => c !== outer && shapeArea(outer) > 1.2 * shapeArea(c) && boxInside(c.bbox, outer.bbox)));
+    const grid = !nested && !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.looseSegments), ...rectEdges]) : null;
     const figBox = gs.map((g) => g.bbox).reduce(unionBox);
 
     // ---- nodes
     const nodes: FigureNodeHint[] = [];
     const nodeOfShape = new Map<number, FigureNodeHint>();
+    const ink = gs.flatMap((g) => g.textStrokes);
+    const regions = textRegions(ink);
     const nodeOfText = new Map<number, FigureNodeHint>();
     const nodeOfLifeline = new Map<number, FigureNodeHint>();
     const rowTol = Math.max(18, 0.1 * height(figBox));
@@ -1203,11 +1298,11 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       for (const { l, i } of lifelines) {
         const own = byIndex.get(l.groupIndex)!;
         // A box sitting on top of the line is the lifeline's head: it names the lifeline rather than being a node.
-        const head = closedHere.find((c) => Math.abs(c.bbox.bottom - l.top) <= 16 && Math.abs(center(c.bbox).x - l.x) <= Math.max(12, 0.5 * width(c.bbox)));
+        const head = closedHere.find((c) => c.bbox.bottom >= l.top - 24 && c.bbox.bottom <= l.top + 60 && Math.abs(center(c.bbox).x - l.x) <= Math.max(12, 0.5 * width(c.bbox)));
         const headLabel = head ? [...labelShape.entries()].find(([, ci]) => closed[ci] === head)?.[0] : undefined;
         const above = textGroups.find((t) => t.bbox.bottom <= l.top + 10 && t.bbox.bottom >= l.top - 90 && Math.abs(center(t.bbox).x - l.x) <= Math.max(30, 0.6 * width(t.bbox)));
         const labelGroup = headLabel ?? (head && labelInside[head.groupIndex] === head.groupIndex ? head.groupIndex : undefined) ?? above?.index ?? (own.textStrokes.length ? own.index : undefined);
-        const node: FigureNodeHint = { id: '', groupIndex: l.groupIndex, shape: 'lifeline', bbox: head ? unionBox(head.bbox, bboxOf([l.seg.a, l.seg.b])) : bboxOf([l.seg.a, l.seg.b]) };
+        const node: FigureNodeHint = { id: '', groupIndex: l.groupIndex, shape: 'lifeline', bbox: head ? unionBox(head.bbox, bboxOf([l.seg.a, l.seg.b])) : bboxOf([l.seg.a, l.seg.b]), ...(head ? { labelBounds: head.bbox } : {}) };
         if (labelGroup !== undefined) node.labelGroup = labelGroup;
         nodes.push(node);
         nodeOfLifeline.set(i, node);
@@ -1241,6 +1336,12 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       if (a.toLabel !== undefined && inFigure(a.toLabel)) textNode(a.toLabel);
     }
     for (const l of lineLinks) if (inFigure(l.groupIndex) && l.toLabel !== undefined) textNode(l.toLabel);
+    const radial = nodes.length === 1 && gs.flatMap((g) => g.looseSegments).filter((s) => Math.min(boxDistance(nodes[0].bbox, s.a), boxDistance(nodes[0].bbox, s.b)) < 25 && dist(s.a, s.b) > 45).length >= 2;
+    if (radial) for (const box of regions) {
+      if (nodes.some((n) => contains(n.bbox, center(box)))) continue;
+      const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
+      if (host) nodes.push({ id: '', shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box });
+    }
     // Nesting from bbox containment (innermost enclosing shape = parent); ids in reading order,
     // a container right before the nodes drawn inside it.
     const area = (b: BoundingBox) => Math.max(1, width(b) * height(b));
@@ -1265,6 +1366,26 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     }
     nodes.splice(0, nodes.length, ...numbered);
     for (const [n, p] of parentOf) n.parent = p.id;
+    const circles = nodes.filter((n) => n.shape === 'circle' || n.shape === 'ellipse');
+    const inEllipse = (n: FigureNodeHint, p: Offset) => ((p.x - center(n.bbox).x) / (width(n.bbox) / 2)) ** 2 + ((p.y - center(n.bbox).y) / (height(n.bbox) / 2)) ** 2 <= 1;
+    const venn = circles.length >= 2 && circles.some((a) => circles.some((b) => a !== b && Math.max(a.bbox.left, b.bbox.left) < Math.min(a.bbox.right, b.bbox.right) && Math.max(a.bbox.top, b.bbox.top) < Math.min(a.bbox.bottom, b.bbox.bottom) && !boxInside(a.bbox, b.bbox) && !boxInside(b.bbox, a.bbox)));
+    for (const n of nodes) {
+      const local = ink.filter((s) => contains(n.labelBounds ?? n.bbox, center(s.bbox)) && !nodes.some((child) => child !== n && child.parent === n.id && contains(child.bbox, center(s.bbox))));
+      const boxes = textRegions(local);
+      if (boxes.length) n.labelBounds = venn && circles.includes(n)
+        ? boxes.filter((b) => circles.filter((c) => inEllipse(c, center(b))).length === 1).sort((a, b) => dist(center(b), center(figBox)) - dist(center(a), center(figBox)))[0] ?? boxes[0]
+        : local.map((s) => s.bbox).reduce(unionBox);
+      if (n.labelBounds) {
+        const pad = Math.max(4, height(n.labelBounds) * 0.3);
+        n.labelBounds = { left: n.labelBounds.left - pad, top: n.labelBounds.top - pad, right: n.labelBounds.right + pad, bottom: n.labelBounds.bottom + pad };
+      }
+    }
+    if (venn) for (const box of regions) {
+      if (circles.some((n) => n.labelBounds && contains(n.labelBounds, center(box)))) continue;
+      const parents = circles.filter((n) => inEllipse(n, center(box))).map((n) => n.id);
+      const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
+      if (parents.length && host) nodes.push({ id: `n${nodes.length + 1}`, shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box, parent: parents[0], parents });
+    }
 
     // ---- relations
     const relations: FigureRelationHint[] = [];
@@ -1279,9 +1400,10 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const arrowRelations: { rel: FigureRelationHint; a: Arrow }[] = [];
     const seenRel = new Set<string>();
     const pushRel = (rel: FigureRelationHint, a?: Arrow) => {
-      const key = `${rel.from}>${rel.to}>${rel.kind}>${rel.labelGroup ?? ''}`;
+      const key = `${rel.from}>${rel.to}>${rel.kind}>${rel.labelGroup ?? ''}${lifelines.length && a ? `>${a.strokeIds.join(',')}` : ''}`;
       if (seenRel.has(key)) return;
       seenRel.add(key);
+      if (a) rel.strokeIds = [...a.strokeIds];
       relations.push(rel);
       if (a) arrowRelations.push({ rel, a });
     };
@@ -1300,6 +1422,11 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const from = nodeOfShape.get(l.from);
       const to = l.toLabel !== undefined ? nodeOfText.get(l.toLabel) : nodeOfShape.get(l.to);
       if (from && to && from !== to) pushRel({ from: from.id, to: to.id, kind: 'line' });
+    }
+    if (radial) for (const segment of gs.flatMap((g) => g.looseSegments)) {
+      const closest = (p: Offset) => [...nodes].sort((a, b) => boxDistance(a.bbox, p) - boxDistance(b.bbox, p))[0];
+      const a = closest(segment.a), b = closest(segment.b);
+      if (a && b && a !== b && boxDistance(a.bbox, segment.a) < 45 && boxDistance(b.bbox, segment.b) < 45) pushRel({ from: a.id, to: b.id, kind: 'line' });
     }
     // Back-edges: arrows pointing against the main flow direction.
     const directed = arrowRelations.filter((r) => r.rel.kind === 'arrow');
@@ -1455,14 +1582,14 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       return `${r.from} → ${r.to}${label}${r.back ? ' (back-edge)' : ''}`;
     };
     const summaryParts: string[] = [];
+    if (axes && !cube) summaryParts.push('possible axes; read all visible writing without inferring plotted content');
     if (cube) summaryParts.push(`a cube / 3D box drawn with ${allSegments.length} edges`);
-    if (axes && !cube) summaryParts.push(`${axes.crossing ? 'crossing' : 'L-shaped'} x/y axes${curves.length ? ` with ${curves.length} curve${curves.length > 1 ? 's' : ''} plotted` : ''}`);
     if (grid && cells) {
       summaryParts.push(`table grid ${cells.length} rows × ${cells[0].length} columns`);
       summaryParts.push(`cells row by row: ${cells.map((row) => `[${row.map((c) => (c >= 0 ? `group ${c}` : '—')).join(', ')}]`).join(', ')}`);
     } else if (lifelines.length >= 2) {
       summaryParts.push(`lifelines (vertical lines) left→right: ${nodes.filter((n) => n.shape === 'lifeline').map(nameOf).join(', ')}`);
-      if (relations.length) summaryParts.push(`messages in time order (top→bottom): ${relations.map(relText).join(', ')}`);
+      summaryParts.push(`${relations.length} messages in time order (top→bottom): read their handwriting separately from participant names`);
     } else if (!cube && nodes.length) {
       summaryParts.push(`nodes: ${nodes.map(nameOf).join(', ')}`);
       if (hub) summaryParts.push(`hub ${hub.h.id} with ${hub.spokes.length} branches around it (mind map)`);
@@ -1493,9 +1620,10 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       relations,
       order,
       orderBasis,
-      summary: `${figureName(id)} (${kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
+      summary: `${figureName(id)} (${axes && !cube ? 'sketch' : kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
     };
     if (cells) fig.cells = cells;
+    if (lifelines.length >= 2) fig.messageGroups = relations.map((r) => r.labelGroup ?? -1);
     figures.push(fig);
   });
 
@@ -1503,6 +1631,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   for (const a of analyses) {
     const fig = figures.find((f) => f.groupIndices.includes(a.index));
     let hint = a.hint;
+    if (fig?.kind === 'plot') hint = 'drawing with writing; read every visible label';
     if (fig) {
       const node = fig.nodes.find((n) => n.labelGroup === a.index && n.groupIndex !== a.index);
       const edge = fig.relations.find((r) => r.labelGroup === a.index);
@@ -1547,12 +1676,12 @@ export function nodeName(fig: FigureHint, node: FigureNodeHint, labelFor: (group
  * relations as edges, the step order and table cells, using `labelFor` to turn label groups
  * into the words the model read there.
  */
-export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'sequence' | 'cells'> {
+export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'sequence' | 'sequenceEdges' | 'cells'> {
   /** Node names that are shape placeholders ("rectangle 2") because no label text was read for them. */
   unnamed: string[];
 }
 
-export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined): GeometryFigure {
+export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined, groups?: Pick<GroupLike, 'index' | 'strokeIds'>[]): GeometryFigure {
   const names = new Map<string, string>();
   const used = new Map<string, number>();
   const unnamed: string[] = [];
@@ -1568,17 +1697,26 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
   const nodes: FigureNode[] = fig.nodes.map((n) => {
     const node: FigureNode = { id: n.id, label: names.get(n.id)!, shape: n.decision ? 'decision diamond' : n.shape };
     if (n.parent !== undefined) node.parent = n.parent;
+    if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
+    if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {
     const e: FigureEdge = { from: names.get(r.from)!, to: names.get(r.to)!, kind: r.kind };
+    if (fig.kind === 'sequence' && r.strokeIds?.length) e.strokeIds = [...r.strokeIds];
     const label = r.labelGroup !== undefined ? labelFor(r.labelGroup) : undefined;
     if (label) e.label = label;
     return e;
   });
   const out: GeometryFigure = { nodes, edges, unnamed };
-  if (fig.order.length >= 2) out.sequence = fig.order.map((id) => names.get(id)!).filter((s, i, arr) => arr.indexOf(s) === i);
+  if (fig.messageGroups) {
+    const labels = fig.messageGroups.map((g) => labelFor(g)?.replace(/^\s*\d+[.)]\s*/, ''));
+    if (labels.length >= 1 && labels.every((s) => !!s)) {
+      out.sequence = labels as string[];
+      out.sequenceEdges = labels.map((_, i) => i);
+    }
+  } else if (fig.order.length >= 2) out.sequence = fig.order.map((id) => names.get(id)!).filter((s, i, arr) => arr.indexOf(s) === i);
   if (fig.cells) out.cells = fig.cells.map((row) => row.map((g) => (g >= 0 ? labelFor(g) ?? '' : '')));
   return out;
 }

@@ -24,7 +24,37 @@ can be loaded into the app via Pages → Import… to see and correct the transc
 WER/CER are computed on lower-cased text with punctuation, bullets, arrows and Markdown stripped,
 so they measure *reading* accuracy, not formatting.
 
+Ollama's compact prompt (auto-selected for models up to 4b) caps the image long edge at 1024 px,
+in both the app and evaluator. `--image-edge 1280` overrides that budget for resolution comparisons;
+it applies to PDF rasters and stroke renders. Full prompts, 7b+ defaults and OpenRouter keep their
+existing render settings. Raw Ollama outputs include input dimensions and prompt/generation counters.
+For cold comparisons run `ollama stop <model>` before each page; subsecond prompt evaluations on
+repeated requests should not be treated as cold performance.
+
 ## Synthetic shape / diagram datasets
+
+For an offline detector-only pass over all 14 datasets (58 pages), run
+`npm run eval:shapes -- --provider geometry --run geometry-baseline`.
+This provider returns no model blocks and reconciles geometry only, without calling a model.
+Unclaimed text is not appended to a diagram, so figure coverage/contamination reflects the detector.
+Use `--messiness normal` or `--messiness messy` to compare drawing quality levels.
+
+Replay saved model output without calling a model:
+
+```sh
+npm run eval:shapes -- --replay after-3b --run replay-after-3b
+npm run eval:shapes -- --replay after-7b --model qwen2.5vl:7b --dataset graphs --pages 3 --run replay-after-7b
+```
+
+Replay reads `results/<source>/page-N.raw.txt`, strips Ollama debug markers, repairs partial JSON,
+and uses the current model-output normalizer, geometry reconciliation and scorer. Input image
+sizes and prompt styles are recovered from saved markers where available. Use the original
+image/band settings (and model for runs without markers). Missing or mismatched saved requests
+are errors, never live-model fallbacks. The output run must differ from the source. Replay
+duration is post-processing time, not inference time; retain live runs for timing comparisons.
+Label-dependent relation scores will generally be zero: without recognised words, geometry nodes
+have shape placeholders rather than the reference labels. Inspect page JSON nodes, edges, parents
+and order alongside the figure coverage/count metrics when iterating on the detector.
 
 `npm run gen:shapes` (scripts/gen_shapes.ts, generator in `src/sim/`) writes reproducible, seed-based
 datasets in the same layout — `strokes.json`, `pages/page-N.png` rendered with the app's own

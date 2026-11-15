@@ -1,7 +1,70 @@
 import { describe, expect, it } from 'vitest';
-import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, stringList } from './figure';
+import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserveCompactNameWords, resolveFigureRefs, sequenceEdgeIndices, stringList } from './figure';
+import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it('binds repeated message occurrences once each and rejects missing or invalid edge indices', () => {
+    const figure = { kind: 'sequence' as const, shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'ack' }, { from: 'a', to: 'b', label: 'ack' }], sequence: ['ack', 'ack', 'unbound'] };
+    expect(sequenceEdgeIndices(figure)).toEqual([0, 1, null]);
+    expect(sequenceEdgeIndices({ ...figure, sequenceEdges: [1, 1, 99] })).toEqual([1, null, null]);
+    expect(sequenceEdgeIndices({ ...figure, sequence: [] })).toEqual([]);
+  });
+  it('uses model words keyed by hint ids without importing their predicted boxes', () => {
+    const figure = normaliseFigure({ names: { n1: '' }, 'node boxes': [{ n1: { bbox: [12, 20, 40, 60], labels: ['plan'] } }, { n2: { label: 'build' } }] })!;
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'plan' }, { id: 'n2', label: 'build' }]);
+    expect(figure.labels).toEqual(['plan', 'build']);
+    expect(normaliseFigure({ 'node boxes': [{ n1: { bbox: [1, 2, 3, 4] }, nope: { label: 'ignored' } }, null] })).toBeUndefined();
+    expect(normaliseFigure({ 'node boxes': null })).toBeUndefined();
+  });
+  it('retains every word when compact name keys repeat, without changing node ids', () => {
+    const raw = '{"names":{"n1":"first","n1":"last","n2":"a } b\\\" c"}}';
+    const figure = normaliseFigure(JSON.parse(preserveCompactNameWords(raw)))!;
+    expect(figure.labels).toEqual(['first', 'last', 'a } b" c']);
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'last' }, { id: 'n2', label: 'a } b" c' }]);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{"score":41,"score":58}}')))!.labels).toEqual(['score', '41', '58']);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{"A":"3b","B":"7b"}}')))!.labels).toEqual(['A', '3b', 'B', '7b']);
+    expect(normaliseFigure(JSON.parse(preserveCompactNameWords('{"names":{}}')))).toBeUndefined();
+    expect(preserveCompactNameWords('{"names":{"n1":{}}}')).toBe('{"names":{"n1":{}}}');
+    expect(() => JSON.parse(preserveCompactNameWords('{"names":{"n1":'))).toThrow();
+  });
+  it('retains words in text detections alongside labels and compact names', () => {
+    const figure = normaliseFigure({ labels: ['axis'], names: { n1: 'node' }, text: [{ bbox_2d: [1, 2, 3, 4], label: 'outer' }, { label: 'inner' }, { label: 'core' }] })!;
+    expect(figure.labels).toEqual(['axis', 'outer', 'inner', 'core', 'node']);
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'node' }]);
+    expect(normaliseFigure({ text: [] })).toBeUndefined();
+    expect(normaliseFigure({ text: null })).toBeUndefined();
+  });
+  it('preserves all table words as labels even without a labels list', () => {
+    const figure = normaliseFigure({ kind: 'table', cells: [['heading', 'value'], ['row', '12']] })!;
+    expect(figure.labels).toEqual(['heading', 'value', 'row', '12']);
+    expect(figure.cells).toEqual([['heading', 'value'], ['row', '12']]);
+  });
+  it('resolves case-insensitive ids and comma lists through compact names or model nodes', () => {
+    for (const data of [{ names: { n1: 'start', n3: 'end' } }, { nodes: [{ id: 'n1', label: 'start' }, { id: 'n3', label: 'end' }] }]) {
+      const figure = normaliseFigure({ ...data, labels: ['n1, N3'], sequence: ['n1', 'N3'], edges: [{ from: 'N1', to: 'n3' }] })!;
+      expect(figure.labels).toEqual(['start', 'end']);
+      expect(figure.sequence).toEqual(['start', 'end']);
+      expect(figure.edges).toEqual([{ from: 'start', to: 'end' }]);
+    }
+  });
+  it('preserves unresolved node ids until geometry can name them', () => {
+    const figure = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], edges: [{ from: 'n1', to: 'N3' }] })!;
+    expect(figure.labels).toEqual(['n1', 'N3']);
+    expect(figure.sequence).toEqual(['n1', 'N3']);
+    expect(figure.edges).toEqual([{ from: 'n1', to: 'N3' }]);
+    expect(normaliseFigure({ names: { n1: '<word in n1>' }, labels: ['n1 receptor'] })!.labels).toEqual(['n1 receptor', '<word in n1>']);
+  });
+  it('resolves ids for evaluator edge, sequence and nesting metrics without changing node ids', () => {
+    const figure = resolveFigureRefs({ kind: 'flowchart', shapes: [], labels: ['n1', 'N3'], nodes: [{ id: 'n1', label: 'start' }, { id: 'n3', label: 'end', parent: 'N1' }], edges: [{ from: 'N1', to: 'n3' }], sequence: ['n1, N3'] });
+    const metrics = relationMetrics([{ id: 'f', type: 'flowchart', labels: [], strokeIds: ['s'], edges: [{ from: 'start', to: 'end' }], sequence: ['start', 'end'], contains: [{ outer: 'start', inner: 'end' }] }], [{ kind: 'diagram', text: '', strokeIds: ['s'], figure }]);
+    expect(metrics).toMatchObject({ edgesFound: 1, sequencesExact: 1, containsFound: 1 });
+    expect(figure.nodes?.map((n) => n.id)).toEqual(['n1', 'n3']);
+  });
+  it('normalises compact names without invented geometry', () => {
+    expect(normaliseFigure({ kind: 'flowchart', labels: ['start'], names: { n1: 'start', n2: 'end' } })).toEqual({ kind: 'flowchart', shapes: [], labels: ['start', 'end'], edges: [], nodes: [{ id: 'n1', label: 'start' }, { id: 'n2', label: 'end' }] });
+    expect(normaliseFigure({ names: {} })).toBeUndefined();
+    expect(normaliseFigure({ names: null })).toBeUndefined();
+  });
   it('does not split edge names on "to" inside a word', () => {
     expect(normaliseFigure({ kind: 'flowchart', edges: 'motor -> stop' })?.edges).toEqual([{ from: 'motor', to: 'stop' }]);
     expect(normaliseFigure({ kind: 'flowchart', edges: 'start to stop' })?.edges).toEqual([{ from: 'start', to: 'stop' }]);

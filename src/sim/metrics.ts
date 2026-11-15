@@ -358,10 +358,10 @@ export function stepPositionsFor(steps: string[], source: { text: string; figure
 export function containmentFromNodes(nodes: FigureNode[]): ContainmentExpectation[] {
   const out: ContainmentExpectation[] = [];
   for (const n of nodes) {
-    const parent = n.parent;
-    if (!parent) continue;
-    const p = nodes.find((x) => x.id === parent) ?? nodes.find((x) => x !== n && labelsMatch(x.label, parent));
-    if (p && p !== n) out.push({ inner: n.label, outer: p.label });
+    for (const parent of new Set([...(n.parents ?? []), ...(n.parent ? [n.parent] : [])])) {
+      const p = nodes.find((x) => x.id === parent) ?? nodes.find((x) => x !== n && labelsMatch(x.label, parent));
+      if (p && p !== n) out.push({ inner: n.label, outer: p.label });
+    }
   }
   return out;
 }

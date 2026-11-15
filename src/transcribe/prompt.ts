@@ -44,7 +44,24 @@ Rules:
   content for regions you cannot read.
 - confidence reflects how sure you are of the text, not the layout.`;
 
-export function buildUserPrompt(req: TranscribeRequest): string {
+export const COMPACT_SYSTEM_PROMPT = `Read the ink in the image. Output JSON only:
+{"blocks":[{"kind":"diagram","groupIndices":[],"figure":{"labels":[],"names":{}}}]}.
+Use one diagram block per listed Figure with exactly its groupIndices.
+names: fill the listed ids with handwriting INSIDE each node box. Values are strings, not objects. Do not use surrounding step numbers or invent ids.
+labels: a FLAT array of all other readable writing in the figure. Do not repeat names values. Read the image, never copy these instructions or coordinates.
+For TABLE figures ONLY add cells as rows of strings: "cells":[[]]. Include every cell and header even if grid hints are incomplete. No objects inside cells. Omit cells on other figures.
+For lifeline/sequence figures also read every arrow's words top-to-bottom into "messages":[], separate from participant names.
+Never output coordinates, shapes, nodes, edges, sequence or parent.
+For writing outside figures use paragraph, heading, list or math blocks with text and groupIndices.
+Omit crossed-out writing. Never invent words. Keep the response short.`;
+
+export function buildCompactSystemPrompt(req: Pick<TranscribeRequest, 'groups'>): string {
+  if (!req.groups.some((g) => !g.figure)) return COMPACT_SYSTEM_PROMPT;
+  return 'FIRST read every ordinary text group into paragraph, heading, list or math blocks. Keep its words in text, never in figure.labels. Do not skip titles, bullets or footnotes. Then read the figures.\n' +
+    COMPACT_SYSTEM_PROMPT.replace('{"blocks":[', '{"blocks":[{"kind":"paragraph","groupIndices":[],"text":""},');
+}
+
+export function buildUserPrompt(req: TranscribeRequest, style: 'full' | 'compact' = 'full'): string {
   const parts: string[] = [];
   parts.push(`Page title: ${req.pageTitle || '(untitled)'}`);
   if (req.contextText.trim()) parts.push(`Already-transcribed nearby text (context only, do not repeat):\n${req.contextText.trim().slice(0, 1500)}`);
@@ -56,23 +73,34 @@ export function buildUserPrompt(req: TranscribeRequest): string {
       req.groups
         .map((g) => {
           const b = toImagePx(g.bbox, req);
+          if (style === 'compact') return `${g.index}:[${b.left},${b.top},${b.right},${b.bottom}]${g.figure ? '' : ' text'}`;
           return `${g.index}: [${b.left},${b.top},${b.right},${b.bottom}] n=${g.strokeIds.length} order=${g.writtenOrder}${g.hint ? ` — ${g.hint}` : ''}`;
         })
         .join('\n'),
   );
-  const figures = figureSummaries(req.groups);
+  const figures = figureSummaries(req, style);
+  if (style === 'compact') {
+    const textGroups = req.groups.filter((g) => !g.figure).map((g) => g.index);
+    parts.push(textGroups.length ? `Read ALL ordinary text first: groups [${textGroups.join(',')}]. These are not diagram labels.` : 'All groups belong to drawings. Return diagram blocks with every readable word, not blank paragraphs.');
+  }
   if (figures.length) {
     parts.push(
-      `Figures found by geometry (each must be exactly ONE diagram block with all of its groups; read the words in each label group and put them in figure.labels, on the matching node/edge/cell, and in the caption; keep every listed edge and the step order; never transcribe the drawing groups as text):\n${figures.join('\n')}`,
+      style === 'compact'
+        ? `Geometry Figures: one diagram per figure, ALL its groups. Read labels and node names only:\n${figures.join('\n')}`
+        : `Figures found by geometry (each must be exactly ONE diagram block with all of its groups; read the words in each label group and put them in figure.labels, on the matching node/edge/cell, and in the caption; keep every listed edge and the step order; never transcribe the drawing groups as text):\n${figures.join('\n')}`,
     );
   }
   parts.push('Transcribe the region in the image into blocks.');
   return parts.join('\n\n');
 }
 
-function figureSummaries(groups: TranscribeRequest['groups']): string[] {
+function figureSummaries(req: TranscribeRequest, style: 'full' | 'compact'): string[] {
   const seen = new Map<number, string>();
-  for (const g of groups) if (g.figure && !seen.has(g.figure.id)) seen.set(g.figure.id, g.figure.summary);
+  for (const g of req.groups) if (g.figure && !seen.has(g.figure.id)) {
+    const f = g.figure;
+    const boxes = f.nodes.map((n) => { const b = toImagePx(n.labelBounds ?? n.bbox, req); return `${n.id}:[${b.left},${b.top},${b.right},${b.bottom}]`; }).join(' ');
+    seen.set(f.id, style === 'full' ? `${f.summary}${boxes ? `; handwriting reading boxes (not shape extents): ${boxes}` : ''}` : `Figure ${f.id} ${f.kind}: groupIndices=[${f.groupIndices.join(',')}]; names=${JSON.stringify(Object.fromEntries(f.nodes.map((n) => [n.id, ''])))}; label reading boxes: ${boxes}; fill EVERY listed id, read ALL labels${f.kind === 'table' ? ' and cells' : ''}${f.messageGroups ? ' and messages top-to-bottom' : ''}.`);
+  }
   return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s);
 }
 
