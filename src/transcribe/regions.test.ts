@@ -301,7 +301,7 @@ describe('mergeBlocks', () => {
     [['item', 'qty'], ['apple', 'edited first'], ['apple', 'edited second']],
     [['different header', 'different quantity'], ['apple', 'edited']],
     [],
-  ])('keeps fresh values when table identities are missing or ambiguous: %j', (cells) => {
+  ].map((cells) => ({ cells })))('keeps fresh values when table identities are missing or ambiguous: %j', ({ cells }) => {
     const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
     existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells };
     incoming.figure = { ...existing.figure, cells: [['item', 'qty', 'qty'], ['apple', 'fresh first', 'fresh second']] };
