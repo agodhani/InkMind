@@ -412,6 +412,28 @@ export function rawToDigitalBlock(
   };
 }
 
+function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] {
+  const uniqueIndex = (values: string[], value: string) => {
+    if (!value.trim()) return undefined;
+    const indices = values.flatMap((word, i) => sameText(word, value) ? [i] : []);
+    return indices.length === 1 ? indices[0] : undefined;
+  };
+  const headers = fresh[0] ?? [];
+  const columns = headers.map((word) => uniqueIndex(headers, word) === undefined ? undefined : uniqueIndex(edited[0] ?? [], word));
+  const keyColumn = columns.indexOf(0);
+  const oldKeys = edited.slice(1).map((row) => row[0] ?? '');
+  const newKeys = fresh.slice(1).map((row) => row[keyColumn] ?? '');
+  return fresh.map((row, r) => {
+    const key = row[keyColumn] ?? '';
+    const match = keyColumn >= 0 && uniqueIndex(newKeys, key) !== undefined ? uniqueIndex(oldKeys, key) : undefined;
+    const oldRow = r === 0 ? 0 : match === undefined ? undefined : match + 1;
+    return row.map((cell, c) => {
+      const oldColumn = columns[c];
+      return oldRow === undefined || oldColumn === undefined ? cell : edited[oldRow]?.[oldColumn] ?? cell;
+    });
+  });
+}
+
 function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo {
   const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
   const matches = new Map<string, FigureNode>();
@@ -470,7 +492,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
   ] : fresh.sequence?.map(renamed);
   return {
     ...fresh, labels: [...edited.labels], edges,
-    ...(edited.cells ? { cells: fresh.cells?.map((row, r) => row.map((cell, c) => edited.cells?.[r]?.[c] ?? cell)) ?? edited.cells.map((row) => [...row]) } : {}),
+    ...(edited.cells ? { cells: fresh.cells ? preserveEditedCells(edited.cells, fresh.cells) : edited.cells.map((row) => [...row]) } : {}),
     ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
       const old = matches.get(n.id);
       return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };

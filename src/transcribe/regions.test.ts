@@ -275,14 +275,37 @@ describe('mergeBlocks', () => {
   });
   it('preserves edited table cells, including blanks, while using fresh values for new rows and columns', () => {
     const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
-    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [['fixed', ''], ['kept', 'value']] };
-    incoming.figure = { ...existing.figure, cells: [['wrong', 'wrong'], ['wrong', 'wrong']] };
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [['item', 'qty'], ['kept', '']] };
+    incoming.figure = { ...existing.figure, cells: [['item', 'qty'], ['kept', 'wrong']] };
     const cells = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells;
-    expect(cells()).toEqual([['fixed', ''], ['kept', 'value']]);
-    incoming.figure.cells = [['wrong', 'wrong', 'new column'], ['wrong', 'wrong', 'more'], ['new row']];
-    expect(cells()).toEqual([['fixed', '', 'new column'], ['kept', 'value', 'more'], ['new row']]);
+    expect(cells()).toEqual([['item', 'qty'], ['kept', '']]);
+    incoming.figure.cells = [['item', 'qty', 'status'], ['kept', 'wrong', 'more'], ['new row', '3', 'active']];
+    expect(cells()).toEqual([['item', 'qty', 'status'], ['kept', '', 'more'], ['new row', '3', 'active']]);
     incoming.figure.cells = [];
     expect(cells()).toEqual([]);
+  });
+  it('anchors corrected table cells when a new left column shifts and reorders existing cells', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [
+      ['item', 'qty'], ['apple', '12 corrected'], ['pear', ''],
+    ] };
+    incoming.figure = { ...existing.figure, cells: [
+      ['id', 'item', 'qty'], ['p', 'pear', 'wrong pear'], ['a', 'apple', 'wrong apple'], ['n', 'new', '5'],
+    ] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells).toEqual([
+      ['id', 'item', 'qty'], ['p', 'pear', ''], ['a', 'apple', '12 corrected'], ['n', 'new', '5'],
+    ]);
+  });
+  it.each([
+    [['item', 'qty', 'qty'], ['apple', 'edited first', 'edited second']],
+    [['item', 'qty'], ['apple', 'edited first'], ['apple', 'edited second']],
+    [['different header', 'different quantity'], ['apple', 'edited']],
+    [],
+  ])('keeps fresh values when table identities are missing or ambiguous: %j', (cells) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells };
+    incoming.figure = { ...existing.figure, cells: [['item', 'qty', 'qty'], ['apple', 'fresh first', 'fresh second']] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells).toEqual(incoming.figure.cells);
   });
   it('matches corrected words by group and old label when node ids change', () => {
     const incoming = redrawnDiagram('model caption');
