@@ -459,6 +459,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
   }) ?? edited.sequence?.filter((word) => !nodeFor(oldNodes, word) || !!newNodeForOld(word)).map((word) => nodeFor(oldNodes, word)?.label ?? word);
   return {
     ...fresh, labels: [...edited.labels], edges,
+    ...(edited.cells ? { cells: fresh.cells?.map((row, r) => row.map((cell, c) => edited.cells?.[r]?.[c] ?? cell)) ?? edited.cells.map((row) => [...row]) } : {}),
     ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
       const old = matches.get(n.id);
       return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };

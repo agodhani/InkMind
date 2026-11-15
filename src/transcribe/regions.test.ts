@@ -252,6 +252,17 @@ describe('mergeBlocks', () => {
     incoming.figure.nodes = [{ id: 'n1', label: 'unrelated', strokeIds: ['unrelated'] }];
     expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.nodes![0].label).toBe('unrelated');
   });
+  it('preserves edited table cells, including blanks, while using fresh values for new rows and columns', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'table', shapes: [], labels: [], edges: [], cells: [['fixed', ''], ['kept', 'value']] };
+    incoming.figure = { ...existing.figure, cells: [['wrong', 'wrong'], ['wrong', 'wrong']] };
+    const cells = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!.cells;
+    expect(cells()).toEqual([['fixed', ''], ['kept', 'value']]);
+    incoming.figure.cells = [['wrong', 'wrong', 'new column'], ['wrong', 'wrong', 'more'], ['new row']];
+    expect(cells()).toEqual([['fixed', '', 'new column'], ['kept', 'value', 'more'], ['new row']]);
+    incoming.figure.cells = [];
+    expect(cells()).toEqual([]);
+  });
   it('matches corrected words by group and old label when node ids change', () => {
     const incoming = redrawnDiagram('model caption');
     incoming.figure = { ...redrawnFigure, nodes: [{ id: 'different', label: 'wrong work', group: 2, strokeIds: ['redrawn'] }, { id: 'other', label: 'Start' }], sequence: ['wrong work', 'Start'] };
