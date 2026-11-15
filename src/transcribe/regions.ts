@@ -477,21 +477,27 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     const old = nodeFor(oldNodes, word);
     if (old) sequenceWords.set(old.id, sameText(word, old.id) ? old.label : word);
   }
-  if (edited.sequence?.length === oldNodes.length) oldNodes.forEach((node, i) => {
+  const positionalSteps = edited.kind !== 'sequence' && edited.sequence?.length === oldNodes.length;
+  if (positionalSteps) oldNodes.forEach((node, i) => {
     if (!sequenceWords.has(node.id) && !nodeFor(oldNodes, edited.sequence![i])) sequenceWords.set(node.id, edited.sequence![i]);
   });
+  const oldWords = new Set([
+    ...edited.labels, ...(edited.sequence ?? []), ...oldNodes.flatMap((n) => [n.id, n.label]),
+    ...edited.edges.flatMap((e) => e.label ? [e.label] : []),
+  ].map((word) => word.trim().toLowerCase()));
+  const newMessages = edited.sequence ? (fresh.sequence ?? []).filter((word) => !nodeFor(newNodes, word) && !oldWords.has(word.trim().toLowerCase())) : [];
   const sequence = edited.sequence ? [
     ...edited.sequence.flatMap((word, i) => {
-      const old = nodeFor(oldNodes, word) ?? (edited.sequence!.length === oldNodes.length ? oldNodes[i] : undefined);
+      const old = nodeFor(oldNodes, word) ?? (positionalSteps ? oldNodes[i] : undefined);
       return old ? newNodeForOld(old.id) ? [sequenceWords.get(old.id) ?? old.label] : [] : [word];
     }),
     ...(fresh.sequence ?? []).filter((word) => {
       const node = nodeFor(newNodes, word);
-      return node && !matches.has(node.id);
+      return node ? !matches.has(node.id) : newMessages.includes(word);
     }).map(renamed),
   ] : fresh.sequence?.map(renamed);
   return {
-    ...fresh, labels: [...edited.labels], edges,
+    ...fresh, labels: [...edited.labels, ...dedupe(newMessages)], edges,
     ...(edited.cells ? { cells: fresh.cells ? preserveEditedCells(edited.cells, fresh.cells) : edited.cells.map((row) => [...row]) } : {}),
     ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
       const old = matches.get(n.id);

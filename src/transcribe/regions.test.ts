@@ -327,6 +327,34 @@ describe('mergeBlocks', () => {
     existing.figure.sequence = [];
     expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['New']);
   });
+  it('appends new messages between existing actors without restoring deliberately removed messages', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = {
+      kind: 'sequence', shapes: [], labels: ['send', 'reply', 'cancelled'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: [{ from: 'Client', to: 'Server', label: 'send' }, { from: 'Server', to: 'Client', label: 'reply' }, { from: 'Client', to: 'Server', label: 'cancelled' }],
+      sequence: ['reply', 'send'],
+    };
+    incoming.figure = { ...existing.figure, sequence: ['send', 'cancelled', 'reply', 'notify'],
+      edges: [...existing.figure.edges, { from: 'Server', to: 'Client', label: 'notify' }],
+    };
+    const steps = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence;
+    expect(steps()).toEqual(['reply', 'send', 'notify']);
+    const next = mergeBlocks([existing], ['edited'], [incoming])[0];
+    next.figure = { ...next.figure!, sequence: ['send'] };
+    expect(mergeBlocks([next], [next.id], [incoming])[0].figure!.sequence).toEqual(['send']);
+    existing.figure.sequence = [];
+    expect(steps()).toEqual(['notify']);
+  });
+  it.each([
+    { labels: ['removed'], edges: [] },
+    { labels: [], edges: [{ from: 'a', to: 'b', label: 'removed' }] },
+  ])('uses retained figure words to recognize deliberate non-node step removals: %j', (words) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], ...words, sequence: ['keep'] };
+    incoming.figure = { ...existing.figure, sequence: ['removed', 'keep', 'new'] };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['keep', 'new']);
+  });
   it('keeps unmatched new nodes and geometry when no corrected node matches', () => {
     const incoming = redrawnDiagram('model caption');
     incoming.figure = { kind: 'shape', shapes: ['triangle'], labels: ['new word'], nodes: [{ id: 'new', label: 'new word', strokeIds: ['new-shape'] }], edges: [], sequence: ['new word'] };
