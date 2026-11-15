@@ -474,20 +474,30 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     const old = nodeFor(oldNodes, oldRef), node = nodeFor(newNodes, ref);
     return old && node ? matches.get(node.id) === old : !old && !node && sameText(oldRef, ref);
   };
-  const edges = fresh.edges.map((edge, i) => {
-    const index = edited.edges.findIndex((old, j) => {
-      if (usedEdges.has(j)) return false;
+  for (const basis of ['stroke', 'endpoint'] as const) fresh.edges.forEach((edge, i) => {
+    if (edgeMatches.has(i)) return;
+    const overlap = (old: FigureEdge) => {
+      const a = new Set(old.strokeIds), b = new Set(edge.strokeIds);
+      const shared = [...a].filter((id) => b.has(id)).length;
+      return shared / Math.max(1, a.size + b.size - shared);
+    };
+    let candidates = edited.edges.flatMap((old, j) => {
+      if (usedEdges.has(j)) return [];
       const forward = sameEndpoint(old.from, edge.from) && sameEndpoint(old.to, edge.to);
-      if (old.strokeIds?.length || edge.strokeIds?.length) {
-        const a = new Set(old.strokeIds), b = new Set(edge.strokeIds);
-        return forward && a.size > 0 && a.size === b.size && [...a].every((id) => b.has(id));
-      }
-      return edited.kind === 'sequence'
-        ? forward && old.label !== undefined && edge.label !== undefined && sameText(old.label, edge.label)
-        : forward || (sameEndpoint(old.from, edge.to) && sameEndpoint(old.to, edge.from));
+      const compatible = forward || (edited.kind !== 'sequence' && sameEndpoint(old.from, edge.to) && sameEndpoint(old.to, edge.from));
+      if (!compatible) return [];
+      return (basis === 'stroke' ? overlap(old) > 0 : !old.strokeIds?.length || !edge.strokeIds?.length) ? [j] : [];
     });
-    const match = edited.edges[index];
-    if (match) { edgeMatches.set(i, index); usedEdges.add(index); }
+    if (basis === 'stroke') {
+      const best = Math.max(0, ...candidates.map((j) => overlap(edited.edges[j])));
+      candidates = candidates.filter((j) => overlap(edited.edges[j]) === best);
+      if (candidates.length !== 1) return;
+    }
+    if (candidates.length) { edgeMatches.set(i, candidates[0]); usedEdges.add(candidates[0]); }
+  });
+  const edges = fresh.edges.map((edge, i) => {
+    const index = edgeMatches.get(i);
+    const match = index === undefined ? undefined : edited.edges[index];
     return { ...edge, from: renamed(edge.from), to: renamed(edge.to), ...(match?.label !== undefined ? { label: match.label } : {}) };
   });
   const sequenceWords = new Map<string, string>();
@@ -527,14 +537,16 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     } else { append(word, edge); newMessages.push(word); }
   };
   if (edited.sequence) {
-    if (!edited.sequenceBaseline) edited.edges.forEach((edge, i) => {
-      if (!edge.strokeIds?.length) return;
-      const words = [edge.label, ...edited.sequence!.filter((_, j) => oldStepEdges[j] === i)];
+    edited.edges.forEach((edge, i) => {
+      const matched = [...edgeMatches.values()].includes(i);
+      if (edited.sequenceBaseline ? edge.strokeIds?.length || !matched : !edge.strokeIds?.length && !matched) return;
+      const words = [edge.label, ...edited.sequence!.filter((_, j) => oldStepEdges[j] === i),
+        ...(edited.sequenceBaseline ?? []).filter((step) => step.edge === i).map((step) => step.text)];
       for (const key of new Set(words.filter((w): w is string => w !== undefined).map(wordKey))) consume(key);
     });
     edited.sequence.forEach((word, i) => {
       const oldEdge = oldStepEdges[i];
-      const anchored = oldEdge !== null && edited.edges[oldEdge]?.strokeIds?.length;
+      const anchored = oldEdge !== null;
       const old = anchored ? undefined : nodeFor(oldNodes, word) ?? (positionalSteps ? oldNodes[i] : undefined);
       const freshEdge = oldEdge === null ? undefined : [...edgeMatches].find(([, index]) => index === oldEdge)?.[0];
       if (old) {
@@ -547,7 +559,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     (fresh.sequence ?? []).forEach((word, i) => {
       const edge = freshStepEdges[i];
       const node = nodeFor(newNodes, word);
-      if (edge !== null && fresh.edges[edge].strokeIds?.length) {
+      if (edge !== null && (edgeMatches.has(edge) || fresh.edges[edge].strokeIds?.length)) {
         const oldEdge = edgeMatches.get(edge);
         if (oldEdge === undefined) textStep(word, edge);
       } else if (node) {

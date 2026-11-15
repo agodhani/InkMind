@@ -375,6 +375,28 @@ describe('mergeBlocks', () => {
     incoming.figure.sequenceEdges = [];
     expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual([]);
   });
+  it.each([
+    { oldInk: undefined, newInk: undefined },
+    { oldInk: undefined, newInk: ['shaft', 'head'] },
+    { oldInk: ['shaft', 'old-head'], newInk: ['shaft', 'new-head'] },
+  ])('keeps corrected connector wording across renumbered endpoints and incomplete ink metadata: %j', ({ oldInk, newInk }) => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['corrected reply'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: [{ from: 'b', to: 'a', label: 'corrected reply', strokeIds: oldInk }],
+      sequence: ['corrected reply'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure,
+      nodes: [{ id: 'c', label: 'wrong client', strokeIds: ['client'] }, { id: 'd', label: 'wrong server', strokeIds: ['server'] }],
+      edges: [{ from: 'd', to: 'c', label: 'ack', strokeIds: newInk }], sequence: ['ack'], sequenceEdges: [0],
+    };
+    const result = () => mergeBlocks([existing], ['edited'], [incoming])[0].figure!;
+    expect(result().edges[0].label).toBe('corrected reply');
+    expect(result().sequence).toEqual(['corrected reply']);
+    existing.figure.sequence = [];
+    existing.figure.sequenceEdges = [];
+    expect(result().sequence).toEqual([]);
+  });
   it('uses arrow anchors for repeated-message removals, edited order and renumbered actors', () => {
     const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
     existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'],
