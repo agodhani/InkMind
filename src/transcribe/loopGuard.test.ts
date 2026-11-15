@@ -6,7 +6,7 @@ describe('loop guard', () => {
   it.each([
     '"shapes":[' + '"box", '.repeat(12),
     '"labels":["' + 'a cube / 3D box inside '.repeat(12),
-    '"groupIndices":[' + Array.from({ length: 80 }, (_, i) => i + 1).join(', '),
+    '"labels":[' + Array.from({ length: 80 }, (_, i) => i + 1).join(', '),
   ])('cuts and closes a looping prefix: %s', (tail) => {
     const raw = prefix + tail;
     const loop = detectLoop(raw)!;
@@ -25,5 +25,13 @@ describe('loop guard', () => {
     expect(closeJsonPrefix('{"blocks":[]}')).toBe('{"blocks":[]}');
     expect(JSON.parse(closeJsonPrefix('[{"kind":"diagram"'))).toEqual([{ kind: 'diagram' }]);
     expect(closeJsonPrefix('')).toBe('');
+  });
+  it('allows consecutive group indices without exempting numeric label or free-text loops', () => {
+    const numbers = Array.from({ length: 41 }, (_, i) => i).join(',');
+    expect(detectLoop(`{"blocks":[{"groupIndices":[${numbers}]}]}`)).toBeUndefined();
+    expect(detectLoop(`{"groupIndices":[${numbers}`)).toBeUndefined();
+    const counting = Array.from({ length: 496 }, (_, i) => i + 1).join(',');
+    expect(detectLoop(counting)).toBeDefined();
+    expect(detectLoop(`{"groupIndices":[${numbers}],"labels":[${counting}`)).toBeDefined();
   });
 });

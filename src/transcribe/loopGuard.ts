@@ -13,6 +13,7 @@ export function detectLoop(text: string): LoopMatch | undefined {
     return { start: offset + match.index, keepUntil: offset + match.index + match[1].length };
   }
   for (const match of tail.matchAll(/\b\d+(?:\s*,\s*\d+){30,}/g)) {
+    if (/"groupIndices"\s*:\s*\[\s*(?:\d+\s*,\s*)*$/.test(text.slice(0, offset + match.index))) continue;
     const values = match[0].split(',').map(Number);
     if (values.every((n, i) => i === 0 || n === values[i - 1] + 1)) {
       return { start: offset + match.index, keepUntil: offset + match.index + String(values[0]).length };
