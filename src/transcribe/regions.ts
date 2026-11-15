@@ -338,7 +338,10 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   }
   const modelEdges = (prior?.edges ?? []).map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) }));
   const edges: FigureEdge[] = geo.edges.map((e, i) => {
-    const match = modelEdges.find((m) => sameEdge(e, m) || (sameText(e.from, m.to) && sameText(e.to, m.from)));
+    const reverse = { from: e.to, to: e.from };
+    const single = geo.edges.filter((g) => sameEdge(g, e) || sameEdge(g, reverse)).length === 1;
+    const match = modelEdges.find((m) => sameEdge(e, m)) ?? (single && !geo.edges.some((g) => sameEdge(g, reverse))
+      ? modelEdges.find((m) => sameEdge(reverse, m)) : undefined);
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
     return { ...e, ...(label ? { label } : {}), inferred: true };
   });

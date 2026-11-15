@@ -69,6 +69,15 @@ describe('geometry-first structure', () => {
     const prior = normaliseFigure({ names: { n1: 'start', n2: 'end' }, edges: [{ from: 'n1', to: 'n2' }, { from: 'n1', to: 'n1' }, { from: 'start', to: 'unknown' }] })!;
     expect(mergeWithGeometry(prior, hint, [], { nodes: geo.nodes.slice(0, 2), edges: [], unnamed: geo.unnamed }).edges).toEqual([{ from: 'start', to: 'end', inferred: false }]);
   });
+  it('does not copy a reverse arrow label onto the other direction of a bidirectional pair', () => {
+    const geometry = { nodes: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }], edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }], unnamed: [] };
+    const prior = normaliseFigure({ edges: [{ from: 'b', to: 'a', label: 'return' }] })!;
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual([undefined, 'return']);
+    prior.edges.push({ from: 'a', to: 'b', label: 'send' });
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['send', 'return']);
+    prior.edges.pop();
+    expect(mergeWithGeometry(prior, hint, [], { ...geometry, edges: geometry.edges.slice(0, 1) }).edges[0].label).toBe('return');
+  });
   it('resolves fallback sequence ids and preserves the drawn table dimensions', () => {
     const prior = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], cells: [['a', 'b', 'extra'], ['c'], ['extra']] })!;
     const out = mergeWithGeometry(prior, { ...hint, kind: 'table' }, prior.labels, { nodes: geo.nodes, edges: [], unnamed: geo.unnamed, cells: [['', ''], ['', '']] });
