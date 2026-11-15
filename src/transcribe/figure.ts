@@ -56,6 +56,17 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   return fig;
 }
 
+export function sequenceEdgeIndices(figure: FigureInfo): (number | null)[] {
+  const used = new Set<number>();
+  return (figure.sequence ?? []).map((word, i) => {
+    const explicit = figure.sequenceEdges?.[i];
+    const index = figure.sequenceEdges ? explicit ?? -1 : figure.edges.findIndex((edge, j) => !used.has(j) && edge.label?.trim().toLowerCase() === word.trim().toLowerCase());
+    if (index < 0 || !figure.edges[index] || used.has(index)) return null;
+    used.add(index);
+    return index;
+  });
+}
+
 export function resolveNodeRefs(value: string, nodes: FigureNode[]): string {
   if (!/^\s*n\d+(?:\s*(?:,|;|\||->|→|=>|⇒)\s*n\d+)*\s*$/i.test(value)) return value;
   return value.replace(/\b(n\d+)\b/gi, (id) => nodes.find((n) => n.id.toLowerCase() === id.toLowerCase())?.label ?? id);

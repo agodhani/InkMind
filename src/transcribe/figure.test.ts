@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserveCompactNameWords, resolveFigureRefs, stringList } from './figure';
+import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserveCompactNameWords, resolveFigureRefs, sequenceEdgeIndices, stringList } from './figure';
 import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it('binds repeated message occurrences once each and rejects missing or invalid edge indices', () => {
+    const figure = { kind: 'sequence' as const, shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'ack' }, { from: 'a', to: 'b', label: 'ack' }], sequence: ['ack', 'ack', 'unbound'] };
+    expect(sequenceEdgeIndices(figure)).toEqual([0, 1, null]);
+    expect(sequenceEdgeIndices({ ...figure, sequenceEdges: [1, 1, 99] })).toEqual([1, null, null]);
+    expect(sequenceEdgeIndices({ ...figure, sequence: [] })).toEqual([]);
+  });
   it('uses model words keyed by hint ids without importing their predicted boxes', () => {
     const figure = normaliseFigure({ names: { n1: '' }, 'node boxes': [{ n1: { bbox: [12, 20, 40, 60], labels: ['plan'] } }, { n2: { label: 'build' } }] })!;
     expect(figure.nodes).toEqual([{ id: 'n1', label: 'plan' }, { id: 'n2', label: 'build' }]);

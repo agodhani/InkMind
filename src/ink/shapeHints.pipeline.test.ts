@@ -122,6 +122,22 @@ describe('geometry pipeline regressions', () => {
     expect(figureFromGeometry(fig, (g) => labels[g]).sequence).toEqual(['open', 'fetch', 'reply']);
     expect(figureFromGeometry(fig, () => undefined).sequence).toBeUndefined();
   });
+  it('carries message arrow ink and occurrence bindings into the geometry figure', () => {
+    const scene = buildScene('sequence-diagram', 201, 'neat');
+    const fig = figuresOf(buildStrokeGroups(scene.strokes))[0];
+    const out = figureFromGeometry(fig, () => 'ack');
+    expect(out.sequence).toEqual(fig.messageGroups!.map(() => 'ack'));
+    expect(out.sequenceEdges).toEqual(fig.relations.map((_, i) => i));
+    expect(out.edges.map((e) => e.strokeIds)).toEqual(fig.relations.map((r) => r.strokeIds));
+    const strokeIds = new Set(scene.strokes.map((s) => s.id));
+    for (const edge of out.edges) {
+      expect(edge.strokeIds!.length).toBeGreaterThan(0);
+      expect(edge.strokeIds!.every((id) => strokeIds.has(id))).toBe(true);
+    }
+    const single = figureFromGeometry({ ...fig, relations: fig.relations.slice(0, 1), messageGroups: fig.messageGroups!.slice(0, 1) }, () => 'ack');
+    expect(single.sequence).toEqual(['ack']);
+    expect(single.sequenceEdges).toEqual([0]);
+  });
 
   it('handles empty ink', () => {
     expect(buildStrokeGroups([])).toEqual([]);

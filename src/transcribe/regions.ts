@@ -4,7 +4,7 @@ import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
 import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
-import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, stringList } from './figure';
+import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, sequenceEdgeIndices, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
@@ -362,7 +362,11 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   const allLabels = dedupe([...labels.flatMap((s) => stringList(s).flatMap((word) => /^n\d+$/i.test(word) ? [resolve(word)] : [word, resolve(word)])), ...(prior?.cells?.flat().filter(Boolean) ?? []), ...(prior?.nodes?.map((n) => n.label) ?? []), ...nodes.filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label), ...edges.flatMap((e) => e.label ? [e.label] : [])]);
   const figure: FigureInfo = { kind, shapes: dedupe([...fig.shapes, ...(prior?.shapes ?? [])]), labels: allLabels, edges };
   if (nodes?.length) figure.nodes = nodes;
-  if (sequence) figure.sequence = sequence;
+  if (sequence) {
+    figure.sequence = sequence;
+    const sequenceEdges = sequence === geo.sequence ? geo.sequenceEdges : sequenceEdgeIndices(figure);
+    if (sequenceEdges?.some((index) => index !== null)) figure.sequenceEdges = sequenceEdges;
+  }
   if (cells) figure.cells = cells;
   return figure;
 }
@@ -464,12 +468,26 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     const node = nodeFor(newNodes, ref);
     return node ? matches.get(node.id)?.label ?? node.label : ref;
   };
-  const edges = fresh.edges.map((edge) => {
-    const match = edited.edges.find((old) => {
-      const from = newNodeForOld(old.from), to = newNodeForOld(old.to);
-      const a = nodeFor(newNodes, edge.from), b = nodeFor(newNodes, edge.to);
-      return from && to && a && b && ((from.id === a.id && to.id === b.id) || (from.id === b.id && to.id === a.id));
+  const edgeMatches = new Map<number, number>();
+  const usedEdges = new Set<number>();
+  const sameEndpoint = (oldRef: string, ref: string) => {
+    const old = nodeFor(oldNodes, oldRef), node = nodeFor(newNodes, ref);
+    return old && node ? matches.get(node.id) === old : !old && !node && sameText(oldRef, ref);
+  };
+  const edges = fresh.edges.map((edge, i) => {
+    const index = edited.edges.findIndex((old, j) => {
+      if (usedEdges.has(j)) return false;
+      const forward = sameEndpoint(old.from, edge.from) && sameEndpoint(old.to, edge.to);
+      if (old.strokeIds?.length || edge.strokeIds?.length) {
+        const a = new Set(old.strokeIds), b = new Set(edge.strokeIds);
+        return forward && a.size > 0 && a.size === b.size && [...a].every((id) => b.has(id));
+      }
+      return edited.kind === 'sequence'
+        ? forward && old.label !== undefined && edge.label !== undefined && sameText(old.label, edge.label)
+        : forward || (sameEndpoint(old.from, edge.to) && sameEndpoint(old.to, edge.from));
     });
+    const match = edited.edges[index];
+    if (match) { edgeMatches.set(i, index); usedEdges.add(index); }
     return { ...edge, from: renamed(edge.from), to: renamed(edge.to), ...(match?.label !== undefined ? { label: match.label } : {}) };
   });
   const sequenceWords = new Map<string, string>();
@@ -481,21 +499,62 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
   if (positionalSteps) oldNodes.forEach((node, i) => {
     if (!sequenceWords.has(node.id) && !nodeFor(oldNodes, edited.sequence![i])) sequenceWords.set(node.id, edited.sequence![i]);
   });
-  const oldWords = new Set([
-    ...edited.labels, ...(edited.sequence ?? []), ...oldNodes.flatMap((n) => [n.id, n.label]),
-    ...edited.edges.flatMap((e) => e.label ? [e.label] : []),
-  ].map((word) => word.trim().toLowerCase()));
-  const newMessages = edited.sequence ? (fresh.sequence ?? []).filter((word) => !nodeFor(newNodes, word) && !oldWords.has(word.trim().toLowerCase())) : [];
-  const sequence = edited.sequence ? [
-    ...edited.sequence.flatMap((word, i) => {
-      const old = nodeFor(oldNodes, word) ?? (positionalSteps ? oldNodes[i] : undefined);
-      return old ? newNodeForOld(old.id) ? [sequenceWords.get(old.id) ?? old.label] : [] : [word];
-    }),
-    ...(fresh.sequence ?? []).filter((word) => {
+  const oldStepEdges = sequenceEdgeIndices(edited), freshStepEdges = sequenceEdgeIndices(fresh);
+  const oldOccurrences = new Map<string, number>();
+  const wordKey = (word: string) => word.trim().toLowerCase();
+  const textSources = edited.sequenceBaseline
+    ? [edited.sequenceBaseline.filter((step) => step.edge === null || !edited.edges[step.edge]?.strokeIds?.length).map((step) => step.text)]
+    : [edited.labels, edited.sequence ?? [], edited.edges.flatMap((e) => e.label ? [e.label] : [])];
+  for (const source of textSources) {
+    const counts = new Map<string, number>();
+    for (const word of source) counts.set(wordKey(word), (counts.get(wordKey(word)) ?? 0) + 1);
+    for (const [word, count] of counts) oldOccurrences.set(word, Math.max(count, oldOccurrences.get(word) ?? 0));
+  }
+  const consume = (word: string) => {
+    const count = oldOccurrences.get(wordKey(word)) ?? 0;
+    if (count) oldOccurrences.set(wordKey(word), count - 1);
+    return count > 0;
+  };
+  const sequence: string[] | undefined = edited.sequence ? [] : fresh.sequence?.map(renamed);
+  const sequenceEdges: (number | null)[] = [];
+  const newMessages: string[] = [];
+  const unanchoredSlots = new Map<string, number[]>();
+  const append = (word: string, edge: number | null) => { sequence!.push(word); sequenceEdges.push(edge); };
+  const textStep = (word: string, edge: number | null) => {
+    if (consume(word)) {
+      const slot = unanchoredSlots.get(wordKey(word))?.shift();
+      if (slot !== undefined) sequenceEdges[slot] = edge;
+    } else { append(word, edge); newMessages.push(word); }
+  };
+  if (edited.sequence) {
+    if (!edited.sequenceBaseline) edited.edges.forEach((edge, i) => {
+      if (!edge.strokeIds?.length) return;
+      const words = [edge.label, ...edited.sequence!.filter((_, j) => oldStepEdges[j] === i)];
+      for (const key of new Set(words.filter((w): w is string => w !== undefined).map(wordKey))) consume(key);
+    });
+    edited.sequence.forEach((word, i) => {
+      const oldEdge = oldStepEdges[i];
+      const anchored = oldEdge !== null && edited.edges[oldEdge]?.strokeIds?.length;
+      const old = anchored ? undefined : nodeFor(oldNodes, word) ?? (positionalSteps ? oldNodes[i] : undefined);
+      const freshEdge = oldEdge === null ? undefined : [...edgeMatches].find(([, index]) => index === oldEdge)?.[0];
+      if (old) {
+        if (newNodeForOld(old.id)) append(sequenceWords.get(old.id) ?? old.label, freshEdge ?? null);
+      } else if (!anchored || freshEdge !== undefined) {
+        if (!anchored) unanchoredSlots.set(wordKey(word), [...(unanchoredSlots.get(wordKey(word)) ?? []), sequence!.length]);
+        append(word, freshEdge ?? null);
+      }
+    });
+    (fresh.sequence ?? []).forEach((word, i) => {
+      const edge = freshStepEdges[i];
       const node = nodeFor(newNodes, word);
-      return node ? !matches.has(node.id) : newMessages.includes(word);
-    }).map(renamed),
-  ] : fresh.sequence?.map(renamed);
+      if (edge !== null && fresh.edges[edge].strokeIds?.length) {
+        const oldEdge = edgeMatches.get(edge);
+        if (oldEdge === undefined) textStep(word, edge);
+      } else if (node) {
+        if (!matches.has(node.id)) append(renamed(word), edge);
+      } else textStep(word, edge);
+    });
+  }
   return {
     ...fresh, labels: [...edited.labels, ...dedupe(newMessages)], edges,
     ...(edited.cells ? { cells: fresh.cells ? preserveEditedCells(edited.cells, fresh.cells) : edited.cells.map((row) => [...row]) } : {}),
@@ -504,6 +563,9 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
       return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
     }) } : {}),
     ...(sequence ? { sequence } : {}),
+    ...(edited.sequence && (edited.sequenceBaseline || newMessages.length || edited.sequenceEdges || fresh.sequenceEdges) ? {
+      sequenceEdges, sequenceBaseline: (fresh.sequence ?? []).map((text, i) => ({ text, edge: freshStepEdges[i] })),
+    } : {}),
   };
 }
 

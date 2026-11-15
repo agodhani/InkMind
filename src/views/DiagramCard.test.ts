@@ -217,6 +217,22 @@ describe('DiagramCard', () => {
     act(() => { container.querySelector('form')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); });
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ text: 'New caption', figure: expect.objectContaining({ sequence: ['Two', 'One'], cells: [['New cell']], edges: [{ from: 'One', to: 'Two', label: 'ready' }] }) }));
   });
+  it('keeps occurrence anchors and the original multiset while correcting, reordering and removing messages', () => {
+    const save = vi.fn();
+    const b = block({ kind: 'sequence', labels: ['ack'], sequence: ['ack', 'ack', 'ack'], sequenceEdges: [0, 1, 2],
+      edges: ['one', 'two', 'three'].map(id => ({ from: 'server', to: 'client', label: 'ack', strokeIds: [id] })),
+    });
+    act(() => root.render(createElement(DiagramCard, { block: b, strokeById: new Map(), editing: true, onEditFigure: save })));
+    change(container.querySelector('.figure-edit-steps input')!, 'corrected ack');
+    expect([...container.querySelectorAll<HTMLInputElement>('.figure-edit-steps input')].map(e => e.value)).toEqual(['corrected ack', 'ack', 'ack']);
+    click(container.querySelector('[aria-label="Move step 1 down"]')!);
+    click(container.querySelector('[aria-label="Remove step 3"]')!);
+    click(container.querySelector('[type="submit"]')!);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ figure: expect.objectContaining({
+      sequence: ['ack', 'corrected ack'], sequenceEdges: [1, 0], sequenceBaseline: [0, 1, 2].map(edge => ({ text: 'ack', edge })),
+      edges: [expect.objectContaining({ label: 'corrected ack', strokeIds: ['one'] }), expect.objectContaining({ label: 'ack', strokeIds: ['two'] }), expect.objectContaining({ label: 'ack', strokeIds: ['three'] })],
+    }) }));
+  });
   it('cancels with Escape without saving and skips unchanged saves', () => {
     const save = vi.fn(), b = block({ sequence: ['One'] });
     act(() => root.render(createElement(DigitalView, { blocks: [b], strokes: [], selectedBlockId: 'demo', onSelectBlock: vi.fn(), onEditBlock: vi.fn(), onEditFigure: save })));

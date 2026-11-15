@@ -33,6 +33,8 @@ export type FigureEdgeKind = 'arrow' | 'line' | 'self-loop';
 export interface FigureEdge {
   from: string;
   to: string;
+  /** Ink belonging to this connector, independent of its label. */
+  strokeIds?: string[];
   label?: string;
   /** Arrow (directed, the default), plain connecting line, or an arrow that returns to its own node. */
   kind?: FigureEdgeKind;
@@ -63,6 +65,10 @@ export interface FigureInfo {
   edges: FigureEdge[];
   /** Steps / states in arrow or reading order (flowcharts, pipelines, timelines, state machines). */
   sequence?: string[];
+  /** Edge index for each message step; null for steps without a connector. */
+  sequenceEdges?: (number | null)[];
+  /** Last unedited step occurrences, for count-aware matching without geometry anchors. */
+  sequenceBaseline?: { text: string; edge: number | null }[];
   /** Labelled nodes with their shapes and nesting. */
   nodes?: FigureNode[];
   /** Table cells, row-major, header row first when there is one. */

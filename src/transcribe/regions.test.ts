@@ -346,6 +346,81 @@ describe('mergeBlocks', () => {
     existing.figure.sequence = [];
     expect(steps()).toEqual(['notify']);
   });
+  it('appends a second identical message when it belongs to a new geometry arrow', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'],
+      nodes: [{ id: 'a', label: 'Client' }, { id: 'b', label: 'Server' }],
+      edges: [{ from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-1'] }],
+      sequence: ['ack'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure,
+      edges: [...existing.figure.edges, { from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-2'] }],
+      sequence: ['ack', 'ack'], sequenceEdges: [0, 1],
+    };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['ack', 'ack']);
+  });
+  it('keeps a corrected non-node step without appending the original wording for the same arrow', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['corrected reply'],
+      nodes: [{ id: 'a', label: 'Client' }, { id: 'b', label: 'Server' }],
+      edges: [{ from: 'Server', to: 'Client', strokeIds: ['arrow-1'] }],
+      sequence: ['corrected reply'], sequenceEdges: [0],
+    };
+    incoming.figure = { ...existing.figure, labels: ['ack'], sequence: ['ack'],
+      edges: [{ from: 'Server', to: 'Client', label: 'ack', strokeIds: ['arrow-1'] }],
+    };
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual(['corrected reply']);
+    incoming.figure.edges = [];
+    incoming.figure.sequence = [];
+    incoming.figure.sequenceEdges = [];
+    expect(mergeBlocks([existing], ['edited'], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it('uses arrow anchors for repeated-message removals, edited order and renumbered actors', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'],
+      nodes: [{ id: 'a', label: 'Client', strokeIds: ['client'] }, { id: 'b', label: 'Server', strokeIds: ['server'] }],
+      edges: ['first', 'second', 'third'].map((id) => ({ from: 'Server', to: 'Client', label: 'ack', strokeIds: [id, `${id}-head`] })),
+      sequence: ['third corrected', 'second corrected'], sequenceEdges: [2, 1],
+    };
+    incoming.figure = { ...existing.figure,
+      nodes: [{ id: 'c', label: 'wrong client', strokeIds: ['client'] }, { id: 'd', label: 'wrong server', strokeIds: ['server'] }],
+      edges: ['first', 'second', 'third', 'fourth'].map((id) => ({ from: 'wrong server', to: 'wrong client', label: 'ack', strokeIds: [`${id}-head`, id] })),
+      sequence: ['ack', 'ack', 'ack', 'ack'], sequenceEdges: [0, 1, 2, 3],
+    };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['third corrected', 'second corrected', 'ack']);
+    expect(out.figure!.sequenceEdges).toEqual([2, 1, 3]);
+    out.figure!.sequence = [];
+    out.figure!.sequenceEdges = [];
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it('matches unanchored message occurrences as a multiset, retaining corrections and omissions', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: [], edges: [], sequence: ['corrected ack'], sequenceBaseline: [{ text: 'ack', edge: null }, { text: 'ack', edge: null }] };
+    incoming.figure = { ...existing.figure, sequence: ['ack', 'ack', 'ack'] };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['corrected ack', 'ack']);
+    out.figure!.sequence = [];
+    out.figure!.sequenceEdges = [];
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual([]);
+  });
+  it('uses count-aware fallback for legacy steps and binds them when arrow anchors become available', () => {
+    const existing = editedDiagram(), incoming = redrawnDiagram('model caption');
+    existing.figure = { kind: 'sequence', shapes: [], labels: ['ack'], edges: [], sequence: ['ack'] };
+    incoming.figure = { ...existing.figure,
+      edges: ['one', 'two'].map(id => ({ from: 'server', to: 'client', label: 'ack', strokeIds: [id] })),
+      sequence: ['ack', 'ack'], sequenceEdges: [0, 1],
+    };
+    const out = mergeBlocks([existing], ['edited'], [incoming])[0];
+    expect(out.figure!.sequence).toEqual(['ack', 'ack']);
+    expect(out.figure!.sequenceEdges).toEqual([0, 1]);
+    out.figure!.sequence = ['fixed'];
+    out.figure!.sequenceEdges = [0];
+    incoming.figure.edges.push({ from: 'server', to: 'client', label: 'ack', strokeIds: ['three'] });
+    incoming.figure.sequence!.push('ack');
+    incoming.figure.sequenceEdges!.push(2);
+    expect(mergeBlocks([out], [out.id], [incoming])[0].figure!.sequence).toEqual(['fixed', 'ack']);
+  });
   it.each([
     { labels: ['removed'], edges: [] },
     { labels: [], edges: [{ from: 'a', to: 'b', label: 'removed' }] },

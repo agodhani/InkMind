@@ -165,6 +165,7 @@ export interface FigureRelationHint {
   from: string;
   to: string;
   kind: 'arrow' | 'line' | 'self-loop';
+  strokeIds?: string[];
   /** Group of the text written beside the arrow. */
   labelGroup?: number;
   /** Points against the figure's main flow (a loop back to an earlier step). */
@@ -1402,6 +1403,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const key = `${rel.from}>${rel.to}>${rel.kind}>${rel.labelGroup ?? ''}${lifelines.length && a ? `>${a.strokeIds.join(',')}` : ''}`;
       if (seenRel.has(key)) return;
       seenRel.add(key);
+      if (a) rel.strokeIds = [...a.strokeIds];
       relations.push(rel);
       if (a) arrowRelations.push({ rel, a });
     };
@@ -1674,7 +1676,7 @@ export function nodeName(fig: FigureHint, node: FigureNodeHint, labelFor: (group
  * relations as edges, the step order and table cells, using `labelFor` to turn label groups
  * into the words the model read there.
  */
-export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'sequence' | 'cells'> {
+export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'sequence' | 'sequenceEdges' | 'cells'> {
   /** Node names that are shape placeholders ("rectangle 2") because no label text was read for them. */
   unnamed: string[];
 }
@@ -1702,6 +1704,7 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {
     const e: FigureEdge = { from: names.get(r.from)!, to: names.get(r.to)!, kind: r.kind };
+    if (fig.kind === 'sequence' && r.strokeIds?.length) e.strokeIds = [...r.strokeIds];
     const label = r.labelGroup !== undefined ? labelFor(r.labelGroup) : undefined;
     if (label) e.label = label;
     return e;
@@ -1709,7 +1712,10 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
   const out: GeometryFigure = { nodes, edges, unnamed };
   if (fig.messageGroups) {
     const labels = fig.messageGroups.map((g) => labelFor(g)?.replace(/^\s*\d+[.)]\s*/, ''));
-    if (labels.length >= 2 && labels.every((s) => !!s)) out.sequence = labels as string[];
+    if (labels.length >= 1 && labels.every((s) => !!s)) {
+      out.sequence = labels as string[];
+      out.sequenceEdges = labels.map((_, i) => i);
+    }
   } else if (fig.order.length >= 2) out.sequence = fig.order.map((id) => names.get(id)!).filter((s, i, arr) => arr.indexOf(s) === i);
   if (fig.cells) out.cells = fig.cells.map((row) => row.map((g) => (g >= 0 ? labelFor(g) ?? '' : '')));
   return out;
