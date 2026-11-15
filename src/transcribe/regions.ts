@@ -132,8 +132,14 @@ export function figuresOf(groups: StrokeGroupMeta[]): FigureHint[] {
  * figure's strokes. Text the geometry did not assign to the figure stays in its own text block.
  */
 export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGroupMeta[], strokes: InkStroke[]): DigitalBlock[] {
+  const drawingIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
+  if (incoming.some((b) => b.kind === 'diagram')) incoming = incoming.map((b) => b.kind === 'diagram' && b.strokeIds.length && b.strokeIds.every((id) => !drawingIds.has(id)) &&
+    b.figure?.labels.length && !b.figure.shapes.length && !b.figure.edges.length && !b.figure.cells?.length && !b.figure.sequence?.length && !b.figure.nodes?.some((n) => (n.shape && n.shape !== 'text') || n.parent || n.parents?.length)
+    ? { ...b, kind: 'paragraph', text: b.figure.labels.join('\n'), figure: undefined } : b);
   const figures = figuresOf(groups);
   if (figures.length === 0) return incoming;
+  if (figures.length === 1 && groups.every((g) => g.figure)) incoming = incoming.map((b) => b.kind !== 'diagram' && !b.strokeIds.length && b.text.trim()
+    ? { ...b, strokeIds: groups.flatMap((g) => g.strokeIds) } : b);
   const strokeById = new Map(strokes.map((s) => [s.id, s]));
   const boundsOf = (ids: string[], fallback: BoundingBox) => strokesBounds(ids.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s)) ?? fallback;
   // A diagram the model placed by bbox only (no groups) describes the figure it overlaps, else the nearest one.
@@ -181,11 +187,13 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       // One text block read over several label groups: give each group its own line when the counts match.
       const covered = figGroups.filter((g) => labelGroupIdx.has(g.index) && hit.strokeIds.some((id) => g.strokeIds.includes(id)));
       const lines = hit.text.split('\n').map(cleanLabel).filter(Boolean);
+      if (fig.nodes.filter((n) => (n.labelGroup ?? n.groupIndex) === groupIndex).length > 1) return undefined;
       if (covered.length > 1 && lines.length === covered.length) {
         const ordered = [...covered].sort((a, b) => (Math.abs(a.bbox.top - b.bbox.top) > 18 ? a.bbox.top - b.bbox.top : a.bbox.left - b.bbox.left));
         const i = ordered.findIndex((g) => g.index === groupIndex);
         if (i >= 0) return lines[i];
       }
+      if (covered.length > 1) return undefined;
       return cleanLabel(hit.text) || undefined;
     };
     // The model may have answered with several diagram blocks for one figure: fold them into one.
@@ -238,7 +246,10 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
   for (const n of b.nodes ?? []) {
     const same = nodes.find((x) => sameText(x.label, n.label));
     if (!same) nodes.push({ ...n });
-    else if (same.strokeIds || n.strokeIds) same.strokeIds = dedupe([...(same.strokeIds ?? []), ...(n.strokeIds ?? [])]);
+    else {
+      if (same.strokeIds || n.strokeIds) same.strokeIds = dedupe([...(same.strokeIds ?? []), ...(n.strokeIds ?? [])]);
+      if (same.parents || n.parents) same.parents = dedupe([...(same.parents ?? []), ...(n.parents ?? [])]);
+    }
   }
   if (nodes.length) out.nodes = nodes;
   const sequence = (a.sequence?.length ?? 0) >= (b.sequence?.length ?? 0) ? a.sequence : b.sequence;
@@ -312,7 +323,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   }
   for (const m of prior?.nodes ?? []) if (!matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
     const extra = { ...m };
-    if (geo.nodes?.some((n) => n.parent !== undefined)) delete extra.parent;
+    if (geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
     nodes.push(extra);
   }
   const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
@@ -322,15 +333,21 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
     const parent = m?.parent && knownNode(m.parent);
     if (!g.parent && parent && parent.id !== g.id) g.parent = parent.id;
+    const parents = m?.parents?.map(knownNode).filter((p): p is FigureNode => !!p && p.id !== g.id).map((p) => p.id);
+    if (!g.parents?.length && parents?.length) g.parents = dedupe(parents);
   }
   const modelEdges = (prior?.edges ?? []).map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) }));
-  const edges: FigureEdge[] = geo.edges.map((e) => {
+  const edges: FigureEdge[] = geo.edges.map((e, i) => {
     const match = modelEdges.find((m) => sameEdge(e, m) || (sameText(e.from, m.to) && sameText(e.to, m.from)));
-    return { ...e, ...(e.label || !match?.label ? {} : { label: match.label }), inferred: true };
+    const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
+    return { ...e, ...(label ? { label } : {}), inferred: true };
   });
-  if (geo.edges.length === 0 && fig.relations.length === 0) for (const e of modelEdges) {
+  if (modelEdges.length > geo.edges.length) for (const e of modelEdges) {
     const from = knownNode(e.from), to = knownNode(e.to);
-    if (from && to && from.id !== to.id) edges.push({ ...e, from: from.label, to: to.label });
+    if (!from || !to || from.id === to.id || !geo.nodes?.some((n) => n.id === from.id) || !geo.nodes?.some((n) => n.id === to.id)) continue;
+    const candidate = { ...e, from: from.label, to: to.label };
+    if (edges.some((g) => sameEdge(g, candidate) || (sameText(g.from, candidate.to) && sameText(g.to, candidate.from)))) continue;
+    edges.push({ ...candidate, inferred: false });
   }
   const sequence = (geo.sequence?.length ?? 0) >= 2 && !geo.sequence!.every((s) => geo.unnamed.includes(s))
     ? geo.sequence : prior?.sequence?.flatMap((s) => stringList(s).map(resolve));

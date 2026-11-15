@@ -49,6 +49,8 @@ export interface FigureNode {
   shape?: string;
   /** id of the enclosing node when this shape is drawn inside another one. */
   parent?: string;
+  /** All enclosing nodes for overlap membership; includes parent when present. */
+  parents?: string[];
   /** Stroke group holding this node's label (from the geometry hints); aligns model nodes with geometry nodes. */
   group?: number;
 }

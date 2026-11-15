@@ -38,6 +38,20 @@ For an offline detector-only pass over all 14 datasets (58 pages), run
 This provider returns no model blocks and reconciles geometry only, without calling a model.
 Unclaimed text is not appended to a diagram, so figure coverage/contamination reflects the detector.
 Use `--messiness normal` or `--messiness messy` to compare drawing quality levels.
+
+Replay saved model output without calling a model:
+
+```sh
+npm run eval:shapes -- --replay after-3b --run replay-after-3b
+npm run eval:shapes -- --replay after-7b --model qwen2.5vl:7b --dataset graphs --pages 3 --run replay-after-7b
+```
+
+Replay reads `results/<source>/page-N.raw.txt`, strips Ollama debug markers, repairs partial JSON,
+and uses the current model-output normalizer, geometry reconciliation and scorer. Input image
+sizes and prompt styles are recovered from saved markers where available. Use the original
+image/band settings (and model for runs without markers). Missing or mismatched saved requests
+are errors, never live-model fallbacks. The output run must differ from the source. Replay
+duration is post-processing time, not inference time; retain live runs for timing comparisons.
 Label-dependent relation scores will generally be zero: without recognised words, geometry nodes
 have shape placeholders rather than the reference labels. Inspect page JSON nodes, edges, parents
 and order alongside the figure coverage/count metrics when iterating on the detector.

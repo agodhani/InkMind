@@ -46,9 +46,10 @@ describe('geometry pipeline regressions', () => {
   it.each(['neat', 'messy'] as const)('recognises overshot and two-stroke Venn circles (%s)', (messiness) => {
     const scene = buildScene('venn', 201, messiness);
     const fig = figuresOf(buildStrokeGroups(scene.strokes))[0];
-    expect(fig.nodes).toHaveLength(scene.figures[0].nodes!.length);
-    expect(fig.nodes.every((n) => n.shape === 'circle' || n.shape === 'ellipse')).toBe(true);
-    expect(fig.nodes.every((n) => !n.parent)).toBe(true);
+    const circles = fig.nodes.filter((n) => n.shape === 'circle' || n.shape === 'ellipse');
+    expect(circles).toHaveLength(scene.figures[0].nodes!.length);
+    expect(circles.every((n) => !n.parent)).toBe(true);
+    expect(fig.nodes.some((n) => n.parents?.length === circles.length)).toBe(true);
   });
 
   it.each(['neat', 'messy'] as const)('sets parents for contained ellipses (%s)', (messiness) => {

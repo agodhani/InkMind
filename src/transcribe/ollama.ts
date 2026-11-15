@@ -1,5 +1,5 @@
 import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
-import { COMPACT_SYSTEM_PROMPT, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
+import { ModelOutputError, SYSTEM_PROMPT, buildCompactSystemPrompt, buildUserPrompt, extractJson } from './prompt';
 import { looksDegenerate, normaliseBlocks, pickSaner } from './openaiCompat';
 import { closeJsonPrefix, detectLoop } from './loopGuard';
 import { preserveCompactNameWords } from './figure';
@@ -40,6 +40,12 @@ function compactBlocks(json: unknown): TranscribeResult['blocks'] {
     if (!figure || typeof figure !== 'object' || Array.isArray(figure)) return block;
     return { ...block, kind: 'diagram', figure: { kind: 'table', ...figure } };
   }) });
+}
+
+export function parseOllamaOutput(raw: string, style: 'full' | 'compact'): TranscribeResult['blocks'] {
+  const parsed = closeJsonPrefix(raw);
+  const json = extractJson(style === 'compact' ? preserveCompactNameWords(parsed) : parsed);
+  return style === 'compact' ? compactBlocks(json) : normaliseBlocks(json);
 }
 
 /**
@@ -110,7 +116,7 @@ export class OllamaTranscriber implements Transcriber {
           format: 'json',
           options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: ollamaTokenBudget(req.groups.length) },
           messages: [
-            { role: 'system', content: this.promptStyle === 'compact' ? COMPACT_SYSTEM_PROMPT : SYSTEM_PROMPT },
+            { role: 'system', content: this.promptStyle === 'compact' ? buildCompactSystemPrompt(req) : SYSTEM_PROMPT },
             { role: 'user', content: exampleText + buildUserPrompt(req, this.promptStyle), images },
           ],
         }),
@@ -153,12 +159,10 @@ export class OllamaTranscriber implements Transcriber {
         }
       }
       signal?.throwIfAborted();
-      const parsed = closeJsonPrefix(raw);
       const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
       let blocks: TranscribeResult['blocks'];
       try {
-        const json = extractJson(this.promptStyle === 'compact' ? preserveCompactNameWords(parsed) : parsed);
-        blocks = this.promptStyle === 'compact' ? compactBlocks(json) : normaliseBlocks(json);
+        blocks = parseOllamaOutput(raw, this.promptStyle);
       } catch (e) {
         if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
         throw e;

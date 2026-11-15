@@ -103,6 +103,24 @@ export interface GroupLike {
   bbox: BoundingBox;
 }
 
+function textRegions(ink: StrokeShape[]): BoundingBox[] {
+  if (!ink.length) return [];
+  const heights = ink.map((s) => height(s.bbox)).sort((a, b) => a - b);
+  const h = Math.max(8, heights[Math.floor(heights.length * 0.8)]);
+  const regions: BoundingBox[] = [];
+  for (const s of ink) {
+    let box = s.bbox;
+    for (let i = regions.length - 1; i >= 0; i--) {
+      const r = regions[i];
+      if (Math.abs(center(r).y - center(box).y) <= h * 0.85 && Math.max(r.left - box.right, box.left - r.right) <= h * 1.3) {
+        box = unionBox(box, r); regions.splice(i, 1); i = regions.length;
+      }
+    }
+    regions.push(box);
+  }
+  return regions.sort((a, b) => Math.abs(center(a).y - center(b).y) > h ? a.top - b.top : a.left - b.left);
+}
+
 export interface GroupAnalysis {
   index: number;
   bbox: BoundingBox;
@@ -135,6 +153,8 @@ export interface FigureNodeHint {
   bbox: BoundingBox;
   /** Group whose text is this node's label (written inside the shape, or above a lifeline). */
   labelGroup?: number;
+  labelBounds?: BoundingBox;
+  parents?: string[];
   /** id of the node this one is drawn inside. */
   parent?: string;
   /** A diamond among arrows: a decision / branch point. */
@@ -1268,6 +1288,8 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     // ---- nodes
     const nodes: FigureNodeHint[] = [];
     const nodeOfShape = new Map<number, FigureNodeHint>();
+    const ink = gs.flatMap((g) => g.textStrokes);
+    const regions = textRegions(ink);
     const nodeOfText = new Map<number, FigureNodeHint>();
     const nodeOfLifeline = new Map<number, FigureNodeHint>();
     const rowTol = Math.max(18, 0.1 * height(figBox));
@@ -1279,7 +1301,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         const headLabel = head ? [...labelShape.entries()].find(([, ci]) => closed[ci] === head)?.[0] : undefined;
         const above = textGroups.find((t) => t.bbox.bottom <= l.top + 10 && t.bbox.bottom >= l.top - 90 && Math.abs(center(t.bbox).x - l.x) <= Math.max(30, 0.6 * width(t.bbox)));
         const labelGroup = headLabel ?? (head && labelInside[head.groupIndex] === head.groupIndex ? head.groupIndex : undefined) ?? above?.index ?? (own.textStrokes.length ? own.index : undefined);
-        const node: FigureNodeHint = { id: '', groupIndex: l.groupIndex, shape: 'lifeline', bbox: head ? unionBox(head.bbox, bboxOf([l.seg.a, l.seg.b])) : bboxOf([l.seg.a, l.seg.b]) };
+        const node: FigureNodeHint = { id: '', groupIndex: l.groupIndex, shape: 'lifeline', bbox: head ? unionBox(head.bbox, bboxOf([l.seg.a, l.seg.b])) : bboxOf([l.seg.a, l.seg.b]), ...(head ? { labelBounds: head.bbox } : {}) };
         if (labelGroup !== undefined) node.labelGroup = labelGroup;
         nodes.push(node);
         nodeOfLifeline.set(i, node);
@@ -1313,6 +1335,12 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       if (a.toLabel !== undefined && inFigure(a.toLabel)) textNode(a.toLabel);
     }
     for (const l of lineLinks) if (inFigure(l.groupIndex) && l.toLabel !== undefined) textNode(l.toLabel);
+    const radial = nodes.length === 1 && gs.flatMap((g) => g.looseSegments).filter((s) => Math.min(boxDistance(nodes[0].bbox, s.a), boxDistance(nodes[0].bbox, s.b)) < 25 && dist(s.a, s.b) > 45).length >= 2;
+    if (radial) for (const box of regions) {
+      if (nodes.some((n) => contains(n.bbox, center(box)))) continue;
+      const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
+      if (host) nodes.push({ id: '', shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box });
+    }
     // Nesting from bbox containment (innermost enclosing shape = parent); ids in reading order,
     // a container right before the nodes drawn inside it.
     const area = (b: BoundingBox) => Math.max(1, width(b) * height(b));
@@ -1337,6 +1365,26 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     }
     nodes.splice(0, nodes.length, ...numbered);
     for (const [n, p] of parentOf) n.parent = p.id;
+    const circles = nodes.filter((n) => n.shape === 'circle' || n.shape === 'ellipse');
+    const inEllipse = (n: FigureNodeHint, p: Offset) => ((p.x - center(n.bbox).x) / (width(n.bbox) / 2)) ** 2 + ((p.y - center(n.bbox).y) / (height(n.bbox) / 2)) ** 2 <= 1;
+    const venn = circles.length >= 2 && circles.some((a) => circles.some((b) => a !== b && Math.max(a.bbox.left, b.bbox.left) < Math.min(a.bbox.right, b.bbox.right) && Math.max(a.bbox.top, b.bbox.top) < Math.min(a.bbox.bottom, b.bbox.bottom) && !boxInside(a.bbox, b.bbox) && !boxInside(b.bbox, a.bbox)));
+    for (const n of nodes) {
+      const local = ink.filter((s) => contains(n.labelBounds ?? n.bbox, center(s.bbox)) && !nodes.some((child) => child !== n && child.parent === n.id && contains(child.bbox, center(s.bbox))));
+      const boxes = textRegions(local);
+      if (boxes.length) n.labelBounds = venn && circles.includes(n)
+        ? boxes.filter((b) => circles.filter((c) => inEllipse(c, center(b))).length === 1).sort((a, b) => dist(center(b), center(figBox)) - dist(center(a), center(figBox)))[0] ?? boxes[0]
+        : local.map((s) => s.bbox).reduce(unionBox);
+      if (n.labelBounds) {
+        const pad = Math.max(4, height(n.labelBounds) * 0.3);
+        n.labelBounds = { left: n.labelBounds.left - pad, top: n.labelBounds.top - pad, right: n.labelBounds.right + pad, bottom: n.labelBounds.bottom + pad };
+      }
+    }
+    if (venn) for (const box of regions) {
+      if (circles.some((n) => n.labelBounds && contains(n.labelBounds, center(box)))) continue;
+      const parents = circles.filter((n) => inEllipse(n, center(box))).map((n) => n.id);
+      const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
+      if (parents.length && host) nodes.push({ id: `n${nodes.length + 1}`, shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box, parent: parents[0], parents });
+    }
 
     // ---- relations
     const relations: FigureRelationHint[] = [];
@@ -1372,6 +1420,11 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const from = nodeOfShape.get(l.from);
       const to = l.toLabel !== undefined ? nodeOfText.get(l.toLabel) : nodeOfShape.get(l.to);
       if (from && to && from !== to) pushRel({ from: from.id, to: to.id, kind: 'line' });
+    }
+    if (radial) for (const segment of gs.flatMap((g) => g.looseSegments)) {
+      const closest = (p: Offset) => [...nodes].sort((a, b) => boxDistance(a.bbox, p) - boxDistance(b.bbox, p))[0];
+      const a = closest(segment.a), b = closest(segment.b);
+      if (a && b && a !== b && boxDistance(a.bbox, segment.a) < 45 && boxDistance(b.bbox, segment.b) < 45) pushRel({ from: a.id, to: b.id, kind: 'line' });
     }
     // Back-edges: arrows pointing against the main flow direction.
     const directed = arrowRelations.filter((r) => r.rel.kind === 'arrow');
@@ -1527,14 +1580,14 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       return `${r.from} → ${r.to}${label}${r.back ? ' (back-edge)' : ''}`;
     };
     const summaryParts: string[] = [];
+    if (axes && !cube) summaryParts.push('possible axes; read all visible writing without inferring plotted content');
     if (cube) summaryParts.push(`a cube / 3D box drawn with ${allSegments.length} edges`);
-    if (axes && !cube) summaryParts.push(`${axes.crossing ? 'crossing' : 'L-shaped'} x/y axes${curves.length ? ` with ${curves.length} curve${curves.length > 1 ? 's' : ''} plotted` : ''}`);
     if (grid && cells) {
       summaryParts.push(`table grid ${cells.length} rows × ${cells[0].length} columns`);
       summaryParts.push(`cells row by row: ${cells.map((row) => `[${row.map((c) => (c >= 0 ? `group ${c}` : '—')).join(', ')}]`).join(', ')}`);
     } else if (lifelines.length >= 2) {
       summaryParts.push(`lifelines (vertical lines) left→right: ${nodes.filter((n) => n.shape === 'lifeline').map(nameOf).join(', ')}`);
-      if (relations.length) summaryParts.push(`messages in time order (top→bottom): ${relations.map(relText).join(', ')}`);
+      summaryParts.push(`${relations.length} messages in time order (top→bottom): read their handwriting separately from participant names`);
     } else if (!cube && nodes.length) {
       summaryParts.push(`nodes: ${nodes.map(nameOf).join(', ')}`);
       if (hub) summaryParts.push(`hub ${hub.h.id} with ${hub.spokes.length} branches around it (mind map)`);
@@ -1565,7 +1618,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       relations,
       order,
       orderBasis,
-      summary: `${figureName(id)} (${kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
+      summary: `${figureName(id)} (${axes && !cube ? 'sketch' : kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
     };
     if (cells) fig.cells = cells;
     if (lifelines.length >= 2) fig.messageGroups = relations.map((r) => r.labelGroup ?? -1);
@@ -1576,6 +1629,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   for (const a of analyses) {
     const fig = figures.find((f) => f.groupIndices.includes(a.index));
     let hint = a.hint;
+    if (fig?.kind === 'plot') hint = 'drawing with writing; read every visible label';
     if (fig) {
       const node = fig.nodes.find((n) => n.labelGroup === a.index && n.groupIndex !== a.index);
       const edge = fig.relations.find((r) => r.labelGroup === a.index);
@@ -1641,6 +1695,7 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
   const nodes: FigureNode[] = fig.nodes.map((n) => {
     const node: FigureNode = { id: n.id, label: names.get(n.id)!, shape: n.decision ? 'decision diamond' : n.shape };
     if (n.parent !== undefined) node.parent = n.parent;
+    if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
     if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
     return node;

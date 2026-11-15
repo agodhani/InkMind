@@ -22,6 +22,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
   const boxedWords: FigureNode[] = [];
+  const messages: string[] = stringList(obj.messages);
   for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
     if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
     for (const [id, value] of Object.entries(box)) {
@@ -29,7 +30,8 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
       const label = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
-      if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
+      if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
+      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
     }
   }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
@@ -48,7 +50,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   labels.push(...cells.flat().filter((word) => word && !labels.includes(word)));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
-  if (sequence.length) fig.sequence = sequence;
+  if (sequence.length || messages.length) fig.sequence = sequence.length ? sequence : messages;
   if (nodes.length) fig.nodes = nodes;
   if (cells.length) fig.cells = cells;
   return fig;
@@ -103,6 +105,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     const n: FigureNode = { id, label };
     if (node.shape) n.shape = node.shape;
     if (node.parent) n.parent = node.parent;
+    if (node.parents?.length) n.parents = [...node.parents];
     if (node.group !== undefined) n.group = node.group;
     out.push(n);
     return n;
@@ -131,6 +134,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
           // "box 2" / "shape 1" are the prompt's placeholders, not a shape.
           shape: shapeText && !/^(box|shape|node)\s*\d+$/.test(shapeText) && !isGroupRef(shapeText) ? shapeText : undefined,
           parent: typeof own === 'string' ? cleanText(own) || undefined : parent,
+          parents: stringList(o.parents),
           ...(Number.isInteger(groupNum) && groupNum >= 0 ? { group: groupNum } : {}),
         });
         if (node && kids !== undefined) visit(kids, node.id);
@@ -167,6 +171,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
   }
   // A node can't contain itself through a cycle or reference a missing parent.
   for (const n of out) {
+    if (n.parents?.length) n.parents = [...new Set(n.parents.map(find).filter((p): p is FigureNode => !!p && p !== n).map((p) => p.id))];
     if (n.parent !== undefined) {
       const p = find(n.parent);
       if (!p || p === n) delete n.parent;
@@ -432,7 +437,7 @@ export function nodeTree(nodes: FigureNode[]): { node: FigureNode; depth: number
 }
 
 export function hasNesting(fig: FigureInfo): boolean {
-  return !!fig.nodes?.some((n) => n.parent !== undefined);
+  return !!fig.nodes?.some((n) => n.parent !== undefined || n.parents?.length);
 }
 
 /** "Shape: … Labels: … Steps: … Relations: a → b" caption for a figure with no usable model caption. */
@@ -444,7 +449,7 @@ export function figureCaption(fig: FigureInfo): string {
   if (fig.labels.length) parts.push(`Labels: ${fig.labels.join(', ')}.`);
   if (fig.sequence?.length) parts.push(`Steps: ${fig.sequence.join(' → ')}.`);
   if (hasNesting(fig)) {
-    const nested = nodeTree(fig.nodes!).filter((n) => n.depth > 0).map((n) => `${n.node.label} inside ${fig.nodes!.find((p) => p.id === n.node.parent)?.label ?? n.node.parent}`);
+    const nested = nodeTree(fig.nodes!).flatMap(({ node }) => [...new Set([...(node.parents ?? []), ...(node.parent ? [node.parent] : [])])].map((parent) => `${node.label} inside ${fig.nodes!.find((p) => p.id === parent)?.label ?? parent}`));
     parts.push(`Nested: ${nested.join(', ')}.`);
   }
   if (fig.edges.length) parts.push(`Relations: ${fig.edges.map(edgeText).join(', ')}.`);

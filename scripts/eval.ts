@@ -21,7 +21,8 @@ import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
 import { buildStrokeGroups, mergeBlocks, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
 import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
-import { OllamaTranscriber } from '../src/transcribe/ollama';
+import { OllamaTranscriber, ollamaPromptStyle } from '../src/transcribe/ollama';
+import { replayResponses } from '../src/transcribe/replay';
 import type { StrokeGroupMeta, TranscribeRequest, Transcriber } from '../src/transcribe/types';
 import { MODEL_RENDER, renderStrokesToPng, type CanvasFactory } from '../src/transcribe/render';
 import { unionBounds } from '../src/model/page';
@@ -54,6 +55,7 @@ export interface Args {
   /** Directory (under the dataset) holding page-N.png rasters; e.g. pages220 for a 220 dpi render. */
   raster: string;
   run?: string;
+  replay?: string;
   url: string;
   /** Only score pages generated at this messiness (`neat|normal|messy`; synthetic datasets record it in reference.md). */
   messiness?: string;
@@ -78,6 +80,7 @@ export function parseArgs(): Args {
     render: (a.render as Args['render']) ?? 'model',
     raster: a.raster ?? 'pages',
     run: a.run,
+    replay: a.replay,
     url: a.url ?? 'http://localhost:11434',
     messiness: a.messiness,
     reconcile: !(a.reconcile === '0' || a.reconcile === 'off' || a.reconcile === 'false'),
@@ -235,12 +238,15 @@ export function score(hyp: string, ref: string) {
 export async function runEval(args: Args): Promise<EvalResult> {
   const data = JSON.parse(readFileSync(join(args.dataset, 'strokes.json'), 'utf8')) as { source: string; pages: { index: number; width: number; height: number; strokes: InkStroke[] }[] };
   const refs = referencePages(readFileSync(join(args.dataset, 'reference.md'), 'utf8'));
-  const run = args.run ?? `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}${args.reconcile ? '' : '-raw'}${args.messiness ? `-${args.messiness}` : ''}`;
+  const run = args.run ?? (args.replay ? `replay-${args.replay}` : `${args.provider}-${args.model.replace(/[^a-z0-9.]+/gi, '_')}-${args.band ? `band${args.band}${args.context ? `ctx${args.context}` : ''}` : args.image}${args.band || args.image === 'strokes' ? `-${args.render}` : ''}${args.raster !== 'pages' ? `-${args.raster}` : ''}${args.reconcile ? '' : '-raw'}${args.messiness ? `-${args.messiness}` : ''}`);
+  if (args.replay === run) throw new Error('Replay output must not overwrite its source run');
   const outDir = join(args.dataset, 'results', run);
   mkdirSync(outDir, { recursive: true });
 
   const transcriber: Transcriber =
-    args.provider === 'geometry'
+    args.replay
+      ? { name: `replay:${args.replay}`, maxImageEdge: args.maxImageEdge ?? ((args.prompt ?? ollamaPromptStyle(args.model)) === 'compact' ? 1024 : undefined), transcribe: async () => { throw new Error('Replay must not call a model'); } }
+      : args.provider === 'geometry'
       ? { name: 'geometry', transcribe: async () => ({ blocks: [], model: 'geometry', durationMs: 0 }) }
       : args.provider === 'ollama'
       ? new OllamaTranscriber({ url: args.url, model: args.model, promptStyle: args.prompt, maxImageEdge: args.maxImageEdge })
@@ -271,6 +277,9 @@ export async function runEval(args: Args): Promise<EvalResult> {
         bands.push({ target: pageGroups.slice(i, i + args.band), all: pageGroups.slice(Math.max(0, i - args.context), i + args.band + args.context) });
       }
     } else bands.push({ target: pageGroups, all: pageGroups });
+
+    const saved = args.replay ? replayResponses(readFileSync(join(args.dataset, 'results', args.replay, `page-${page.index}.raw.txt`), 'utf8'), args.prompt ?? ollamaPromptStyle(args.model)) : [];
+    if (args.replay && saved.length !== bands.length) throw new Error('Replay request count differs; use the original band settings');
 
     process.stderr.write(`page ${page.index}: ${page.strokes.length} strokes, ${pageGroups.length} groups, ${bands.length} request(s) → ${transcriber.name} … `);
     const started = Date.now();
@@ -316,7 +325,9 @@ export async function runEval(args: Args): Promise<EvalResult> {
         };
       }
       try {
-        const r = await transcriber.transcribe(req);
+        const replay = saved.shift();
+        if (replay?.imageSize) req.imageSize = replay.imageSize;
+        const r = replay ?? await transcriber.transcribe(req);
         result.durationMs += r.durationMs;
         if (r.raw) {
           rawLog.set(page.index, (rawLog.get(page.index) ?? '') + r.raw + '\n---\n');
