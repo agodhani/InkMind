@@ -344,7 +344,9 @@ function isVenn(nodes: Pick<FigureNode, 'shape' | 'parents'>[]): boolean {
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
 function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[], hint?: FigureNodeHint): FigureNode | undefined {
-  if (isVenn(geoNodes)) modelNodes = modelNodes.filter(m => m.bbox || geoNodes.filter(n => n.strokeIds?.some(id => m.strokeIds?.includes(id))).length === 1);
+  if (isVenn(geoNodes)) modelNodes = modelNodes.filter(m =>
+    ((g.shape === 'circle' || g.shape === 'ellipse') && sameText(m.id, hint?.id ?? g.id)) ||
+    m.bbox || geoNodes.filter(n => n.strokeIds?.some(id => m.strokeIds?.includes(id))).length === 1);
   if (g.bbox) {
     const positioned = modelNodes.map((n) => {
       const overlap = n.strokeIds?.filter((id) => (hint?.strokeIds ?? g.strokeIds)?.includes(id)).length ?? 0;

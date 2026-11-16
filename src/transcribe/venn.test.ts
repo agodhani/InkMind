@@ -17,10 +17,36 @@ function fixture() {
 }
 
 describe('Venn geometry memberships', () => {
-  it.each(['labels', 'nodes', 'shared group', 'hint ids'])('does not guess membership from a full unpositioned word list (%s)', source => {
+  it.each([false, true])('names hint-id-matched model circles without duplicating sets or locating unanchored member words (explicit shapes: %s)', shapes => {
+    const { scene, groups, reconcile } = fixture();
+    const circles = groups.find(g => g.figure)!.figure!.nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse');
+    expect(circles).toHaveLength(2);
+    const figure = normaliseFigure({ nodes: [
+      { id: circles[0].id, label: 'cats', ...(shapes ? { shape: 'circle' } : {}) },
+      { id: circles[1].id, label: 'dogs', ...(shapes ? { shape: 'circle' } : {}) },
+      { id: 'unlocated-fur', label: 'fur', shape: 'text' },
+      { id: 'unlocated-pets', label: 'pets', shape: 'text' },
+      { id: 'unlocated-bark', label: 'bark', shape: 'text' },
+    ] })!;
+    const blocks = reconcile([{ kind: 'diagram', text: '', confidence: 0.9, bbox: scene.figures[0].bbox, groupIndices: groups.map(g => g.index), figure }]);
+    const nodes = blocks[0].figure!.nodes!;
+    const sets = nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse');
+    expect(sets).toHaveLength(2);
+    expect(sets.map(n => n.label)).toEqual(['cats', 'dogs']);
+    expect(sets.map(n => n.id)).toEqual(circles.map(n => n.id));
+    expect(sets.every(n => n.strokeIds!.length > 0)).toBe(true);
+    for (const word of ['fur', 'pets', 'bark']) {
+      const member = nodes.find(n => n.label === word)!;
+      expect(member.parent).toBeUndefined();
+      expect(member.parents ?? []).toEqual([]);
+      expect(member.strokeIds ?? []).toEqual([]);
+    }
+  });
+
+  it.each(['labels', 'nodes', 'shared group', 'unmatched hint ids'])('does not guess membership from a full unpositioned word list (%s)', source => {
     const { scene, groups, reconcile } = fixture();
     const labels = ['cats', 'fur', 'pets', 'bark', 'dogs'];
-    const figure = normaliseFigure({ kind: 'shape', labels, nodes: source !== 'labels' ? labels.map((label, i) => ({ id: source === 'hint ids' ? `n${i + 1}` : `word-${i}`, label, ...(source === 'shared group' ? { groupIndices: groups.map(g => g.index) } : {}) })) : undefined })!;
+    const figure = normaliseFigure({ kind: 'shape', labels, nodes: source !== 'labels' ? labels.map((label, i) => ({ id: source === 'unmatched hint ids' ? `unmatched-n${i + 1}` : `word-${i}`, label, ...(source === 'shared group' ? { groupIndices: groups.map(g => g.index) } : {}) })) : undefined })!;
     const blocks = reconcile([{ kind: 'diagram', text: 'Venn diagram', confidence: 0.9, bbox: scene.figures[0].bbox, groupIndices: groups.map(g => g.index), figure }]);
     const nodes = blocks[0].figure!.nodes!;
     expect(containmentFromNodes(nodes).some(pair => labels.includes(pair.outer) || labels.includes(pair.inner))).toBe(false);
