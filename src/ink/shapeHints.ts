@@ -1084,11 +1084,12 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   for (const inner of closed) {
     if (inner.kind !== 'circle' && inner.kind !== 'ellipse') continue;
     const outer = closed.filter((c) => c !== inner && (c.kind === 'circle' || c.kind === 'ellipse') &&
-      width(inner.bbox) / width(c.bbox) >= 0.55 && height(inner.bbox) / height(c.bbox) >= 0.55 &&
+      width(inner.bbox) / width(c.bbox) >= 0.75 && height(inner.bbox) / height(c.bbox) >= 0.75 &&
       width(inner.bbox) / width(c.bbox) < 0.95 && height(inner.bbox) / height(c.bbox) < 0.95 &&
       dist(center(inner.bbox), center(c.bbox)) <= 0.12 * Math.min(width(c.bbox), height(c.bbox)) && fullyContains({ ...c, shape: c.kind }, { ...inner, shape: inner.kind }))
       .sort((a, b) => width(a.bbox) * height(a.bbox) - width(b.bbox) * height(b.bbox))[0];
-    if (outer) rings.set(inner, outer);
+    const between = outer && analyses.flatMap((a) => a.textStrokes).some((s) => contains(outer.bbox, center(s.bbox)) && !contains(inner.bbox, center(s.bbox)));
+    if (outer && !between) rings.set(inner, outer);
   }
   const uf = new UnionFind();
   const edges: { from: number; to: number }[] = [];
@@ -1472,7 +1473,10 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         let host = outer;
         while (rings.has(host)) host = rings.get(host)!;
         const node = nodeOfShape.get(closed.indexOf(host));
-        if (node) nodeOfShape.set(closed.indexOf(inner), node);
+        if (node) {
+          nodeOfShape.set(closed.indexOf(inner), node);
+          node.labelGroup ??= [...labelShape.entries()].find(([, ci]) => closed[ci] === inner)?.[0];
+        }
       }
     }
     const textNode = (t: number): FigureNodeHint => {
