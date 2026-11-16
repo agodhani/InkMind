@@ -39,6 +39,24 @@ describe('unclaimed stroke fallback', () => {
 });
 
 describe('notes page segmentation', () => {
+  it.each([[65, 64, 21], [64, 21, 65], [21, 65, 64], [50, 50, 21]])('keeps shared model words on the largest figure for stroke counts %j', (...counts) => {
+    const strokes = counts.flatMap((count, i) => Array.from({ length: count }, () => line(i * 200 + 10, 10, i * 200 + 60, 60)));
+    let offset = 0;
+    const groups: StrokeGroupMeta[] = counts.map((count, i) => {
+      const strokeIds = strokes.slice(offset, offset + count).map((s) => s.id);
+      offset += count;
+      const figure: FigureHint = { id: i, groupIndices: [i], kind: 'sketch', shapes: ['rectangle'], labelGroups: [], labelInside: {}, labelHostGroups: [], nodes: [], relations: [], edges: [], order: [], orderBasis: '', summary: '' };
+      return { index: i, writtenOrder: i, strokeIds, bbox: { left: i * 200, top: 0, right: i * 200 + 80, bottom: 80 }, figure };
+    });
+    const model: DigitalBlock = { id: 'spanning', kind: 'diagram', text: 'model caption', bbox: { left: 0, top: 0, right: 480, bottom: 80 }, strokeIds: strokes.map((s) => s.id), confidence: 0.9, figure: { kind: 'sketch', shapes: [], labels: ['model words'], edges: [] } };
+    const out = reconcileFigureBlocks([model], groups, strokes);
+    const ownerIndex = counts.indexOf(Math.max(...counts));
+    const owner = out.find((b) => b.strokeIds.includes(groups[ownerIndex].strokeIds[0]))!;
+    expect(owner.text).toBe('model caption');
+    expect(owner.figure!.labels).toContain('model words');
+    expect(out.filter((b) => b.figure?.labels.includes('model words'))).toHaveLength(1);
+    expect(new Set(out.flatMap((b) => b.strokeIds))).toEqual(new Set(strokes.map((s) => s.id)));
+  });
   it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('keeps figures separate on $kind seed $seed', ({ kind, seed, messiness }) => {
     const scene = buildScene(kind, seed, messiness);
     const groups = buildStrokeGroups(scene.strokes);
@@ -72,7 +90,9 @@ describe('notes page segmentation', () => {
     expect(diagrams).toHaveLength(2);
     expect(new Set(result.flatMap((b) => b.strokeIds)).size).toBe(scene.strokes.length);
     for (const b of diagrams) expect(b.strokeIds.every((id) => groups.some((g) => g.figure && g.strokeIds.includes(id)))).toBe(true);
-    expect(result.some((b) => b.kind === 'paragraph' && b.text === 'model words')).toBe(true);
+    const largest = [...diagrams].sort((a, b) => b.strokeIds.length - a.strokeIds.length)[0];
+    expect(largest.text).toBe('model words');
+    expect(result.filter((b) => b.kind === 'paragraph').every((b) => !b.text)).toBe(true);
   });
 
   it('handles empty ink', () => {

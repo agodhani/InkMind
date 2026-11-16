@@ -169,6 +169,15 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       .sort((p, q) => Number(q.hit) - Number(p.hit) || p.d - q.d);
     if (ranked.length) orphanOwner.set(b, ranked[0].f.id);
   }
+  const metadataOwner = new Map<DigitalBlock, number>();
+  for (const b of incoming) {
+    const ids = new Set(b.strokeIds);
+    const ranked = figures.filter((f) => b.kind !== 'table' || f.kind === 'table').map((f) => ({
+      id: f.id,
+      count: groups.filter((g) => g.figure?.id === f.id).flatMap((g) => g.strokeIds).filter((id) => ids.has(id)).length,
+    })).sort((a, b) => b.count - a.count);
+    if (ranked[0]?.count) metadataOwner.set(b, ranked[0].id);
+  }
   let blocks = incoming;
   for (const fig of figures) {
     const figGroups = groups.filter((g) => g.figure?.id === fig.id);
@@ -186,10 +195,13 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         // stays a text block on the strokes outside the figure (the figure takes the rest).
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
         if (b.kind === 'diagram' || (b.kind === 'table' && fig.kind === 'table')) {
-          const insideMajority = inside.length >= outside.length;
+          const ownsMetadata = metadataOwner.get(b) === fig.id;
           const remainingDrawing = outside.some((id) => drawingIds.has(id));
-          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: insideMajority || !remainingDrawing ? b.figure : undefined, text: insideMajority ? b.text : '' });
-          rest.push({ ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: insideMajority || !remainingDrawing ? undefined : b.figure, text: insideMajority ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: ownsMetadata ? b.figure : undefined, text: ownsMetadata ? b.text : '' });
+          const remainder: DigitalBlock = { ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: ownsMetadata ? undefined : b.figure, text: ownsMetadata ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) };
+          rest.push(remainder);
+          const owner = metadataOwner.get(b);
+          if (owner !== undefined) metadataOwner.set(remainder, owner);
         } else rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
     }
