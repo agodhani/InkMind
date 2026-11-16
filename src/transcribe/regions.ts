@@ -632,6 +632,7 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
   const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
   const matches = new Map<string, FigureNode>();
   const used = new Set<FigureNode>();
+  const retainedNodes: FigureNode[] = [];
   const inkMatches = matchPairs(newNodes.map(node => oldNodes.map(old => {
     const shared = (node.strokeIds ?? []).filter(id => old.strokeIds?.includes(id)).length;
     if (!shared) return -1;
@@ -652,6 +653,7 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
     while (newNodes.some(node => node.id === id)) id += '-edited';
     const node = { ...old, id, strokeIds: old.strokeIds.filter(id => retainedIds.has(id)) };
     newNodes.push(node);
+    retainedNodes.push(node);
     matches.set(id, old);
     used.add(old);
   }
@@ -661,6 +663,10 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
     const old = nodeFor(oldNodes, ref);
     return old && newNodes.find((n) => matches.get(n.id) === old);
   };
+  for (const node of retainedNodes) {
+    if (node.parent) node.parent = newNodeForOld(node.parent)?.id;
+    if (node.parents) node.parents = dedupe(node.parents.flatMap(ref => newNodeForOld(ref)?.id ?? []));
+  }
   const renamed = (ref: string) => {
     const node = nodeFor(newNodes, ref);
     return node ? matches.get(node.id)?.label ?? node.label : ref;

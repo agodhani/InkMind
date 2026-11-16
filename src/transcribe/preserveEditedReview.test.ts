@@ -48,3 +48,61 @@ describe('edited arrow direction', () => {
     expect(result.edges).toHaveLength(1);
   });
 });
+
+describe('retained edited node parents', () => {
+  const figure = (nodes: FigureInfo['nodes']): FigureInfo => ({ kind: 'shape', shapes: [], labels: [], edges: [], nodes });
+
+  it('remaps every old parent when the reread renumbers sets and reuses an old id for an unrelated node', () => {
+    const edited = figure([
+      { id: 'a', label: 'Cats', strokeIds: ['cats'] }, { id: 'b', label: 'Dogs', strokeIds: ['dogs'] },
+      { id: 'member', label: 'Corrected member', strokeIds: ['member'], parent: 'a', parents: ['a', 'b'] },
+    ]);
+    const incoming = figure([
+      { id: 'new-a', label: '[unread a]', strokeIds: ['cats'] }, { id: 'new-b', label: '[unread b]', strokeIds: ['dogs'] },
+      { id: 'a', label: 'Unrelated', strokeIds: ['new ink'] },
+    ]);
+    const saved = structuredClone(edited), freshSaved = structuredClone(incoming);
+    const result = reread(edited, incoming);
+    expect(result.nodes!.find(node => node.label === 'Corrected member')).toMatchObject({ parent: 'new-a', parents: ['new-a', 'new-b'] });
+    expect(result.nodes!.find(node => node.id === 'a')!.label).toBe('Unrelated');
+    expect(edited).toEqual(saved);
+    expect(incoming).toEqual(freshSaved);
+  });
+
+  it('drops missing old parents rather than attaching to a new owner of the old id', () => {
+    const edited = figure([
+      { id: 'parent', label: 'Erased parent', strokeIds: ['erased'] },
+      { id: 'child', label: 'Saved child', strokeIds: ['child'], parent: 'parent', parents: ['parent', 'missing'] },
+    ]);
+    const result = reread(edited, figure([{ id: 'parent', label: 'New shape', strokeIds: ['new'] }]), ['child', 'new']);
+    const child = result.nodes!.find(node => node.label === 'Saved child')!;
+    expect(child.parent).toBeUndefined();
+    expect(child.parents ?? []).toEqual([]);
+    expect(result.nodes!.map(node => node.label)).not.toContain('Erased parent');
+  });
+
+  it('resolves references after all retained nodes receive collision-safe ids, regardless of node order', () => {
+    const edited = figure([
+      { id: 'child', label: 'Old child', strokeIds: ['old-child'], parent: 'parent', parents: ['parent'] },
+      { id: 'parent', label: 'Old parent', strokeIds: ['old-parent'] },
+    ]);
+    const incoming = figure([
+      { id: 'parent', label: 'New parent', strokeIds: ['new-parent'] },
+      { id: 'parent-edited', label: 'Another new shape', strokeIds: ['another'] },
+      { id: 'child', label: 'New child', strokeIds: ['new-child'], parent: 'parent', parents: ['parent'] },
+    ]);
+    const result = reread(edited, incoming);
+    expect(result.nodes!.find(node => node.label === 'Old parent')!.id).toBe('parent-edited-edited');
+    expect(result.nodes!.find(node => node.label === 'Old child')).toMatchObject({ id: 'child-edited', parent: 'parent-edited-edited', parents: ['parent-edited-edited'] });
+    expect(result.nodes!.find(node => node.label === 'New child')).toMatchObject({ id: 'child', parent: 'parent', parents: ['parent'] });
+  });
+
+  it('remaps legacy single-parent label references without requiring a parents array', () => {
+    const edited = figure([
+      { id: 'parent', label: 'Container', strokeIds: ['parent'] },
+      { id: 'child', label: 'Saved child', strokeIds: ['child'], parent: 'Container' },
+    ]);
+    const result = reread(edited, figure([{ id: 'renumbered', label: '[unread]', strokeIds: ['parent'] }]));
+    expect(result.nodes!.find(node => node.label === 'Saved child')).toMatchObject({ parent: 'renumbered' });
+  });
+});
