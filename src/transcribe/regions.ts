@@ -213,7 +213,12 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     // The model may have answered with several diagram blocks for one figure: fold them into one.
     const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
-    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups));
+    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, fig.kind === 'mindmap' ? (node) => {
+      const ids = new Set(node.strokeIds ?? []);
+      const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
+        .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
+      return hit ? cleanLabel(hit.text) : undefined;
+    } : undefined));
     // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
     if (figure.kind === 'table' && !prior?.cells?.length) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
@@ -278,6 +283,16 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
 function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[]): FigureNode | undefined {
+  if (g.bbox) {
+    const positioned = modelNodes.map((n) => {
+      const overlap = n.strokeIds?.filter((id) => g.strokeIds?.includes(id)).length ?? 0;
+      const c = n.bbox ? { x: (n.bbox.left + n.bbox.right) / 2, y: (n.bbox.top + n.bbox.bottom) / 2 } : undefined;
+      const box = expandBounds(g.bbox!, 12);
+      const inside = c && c.x >= box.left && c.x <= box.right && c.y >= box.top && c.y <= box.bottom;
+      return { n, overlap, inside, d: c ? Math.hypot(c.x - (g.bbox!.left + g.bbox!.right) / 2, c.y - (g.bbox!.top + g.bbox!.bottom) / 2) : Infinity };
+    }).filter((m) => m.overlap > 0 || m.inside).sort((a, b) => b.overlap - a.overlap || a.d - b.d);
+    if (positioned.length) return positioned[0].n;
+  }
   return (g.group !== undefined && geoNodes.filter((n) => n.group === g.group).length === 1 ? modelNodes.find((n) => n.group === g.group) : undefined) ??
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
@@ -307,6 +322,16 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
+  if (fig.kind === 'mindmap') {
+    const used = new Set<string>();
+    for (const n of geo.nodes ?? []) {
+      const base = rename.get(n.label) ?? n.label;
+      let name = base, suffix = 2;
+      while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
+      used.add(name.toLowerCase());
+      if (name !== n.label) rename.set(n.label, name);
+    }
+  }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
   return {
@@ -335,7 +360,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const m = modelNodeFor(g, nodes, prior?.nodes ?? []);
     if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (!matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
     const extra = { ...m };
     if (geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
     nodes.push(extra);
@@ -359,7 +384,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
     return { ...e, ...(label ? { label } : {}), inferred: true };
   });
-  if (modelEdges.length > geo.edges.length) for (const e of modelEdges) {
+  if (fig.kind !== 'mindmap' && modelEdges.length > geo.edges.length) for (const e of modelEdges) {
     const from = knownNode(e.from), to = knownNode(e.to);
     if (!from || !to || from.id === to.id || !geo.nodes?.some((n) => n.id === from.id) || !geo.nodes?.some((n) => n.id === to.id)) continue;
     const candidate = { ...e, from: from.label, to: to.label };
@@ -401,20 +426,20 @@ export function rawToDigitalBlock(
   imageSize: { width: number; height: number },
   regionStrokes: InkStroke[],
 ): DigitalBlock {
+  const sx = (imageBounds.right - imageBounds.left) / Math.max(1, imageSize.width);
+  const sy = (imageBounds.bottom - imageBounds.top) / Math.max(1, imageSize.height);
+  const pageBox = (b: BoundingBox): BoundingBox => ({ left: imageBounds.left + b.left * sx, top: imageBounds.top + b.top * sy, right: imageBounds.left + b.right * sx, bottom: imageBounds.top + b.bottom * sy });
+  const figure = raw.figure?.nodes ? { ...raw.figure, nodes: raw.figure.nodes.map((n) => {
+    const located = n.groupIndices?.flatMap((i) => groups[i]?.strokeIds ?? []) ?? [];
+    return { ...n, ...(n.bbox ? { bbox: pageBox(n.bbox) } : {}), ...(located.length ? { strokeIds: dedupe([...(n.strokeIds ?? []), ...located]) } : {}) };
+  }) } : raw.figure;
   const groupList = raw.groupIndices.map((i) => groups[i]).filter((g): g is StrokeGroupMeta => !!g);
   let strokeIds = groupList.flatMap((g) => g.strokeIds);
   let bbox: BoundingBox;
   if (groupList.length > 0) {
     bbox = groupList.map((g) => g.bbox).reduce(unionBounds);
   } else {
-    const sx = (imageBounds.right - imageBounds.left) / Math.max(1, imageSize.width);
-    const sy = (imageBounds.bottom - imageBounds.top) / Math.max(1, imageSize.height);
-    bbox = {
-      left: imageBounds.left + raw.bbox.left * sx,
-      top: imageBounds.top + raw.bbox.top * sy,
-      right: imageBounds.left + raw.bbox.right * sx,
-      bottom: imageBounds.top + raw.bbox.bottom * sy,
-    };
+    bbox = pageBox(raw.bbox);
     strokeIds = regionStrokes.filter((s) => boundsIntersect(bbox, strokeBounds(s), -2)).map((s) => s.id);
   }
   return {
@@ -426,7 +451,7 @@ export function rawToDigitalBlock(
     confidence: Math.max(0, Math.min(1, raw.confidence ?? 0.5)),
     marker: raw.marker,
     level: raw.level,
-    ...(raw.figure ? { figure: raw.figure } : {}),
+    ...(figure ? { figure } : {}),
   };
 }
 

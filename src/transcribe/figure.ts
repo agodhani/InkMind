@@ -21,6 +21,9 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  if (Array.isArray(obj.labels)) for (const [i, value] of obj.labels.entries()) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) nodes.push(...nodeList([{ id: `label${i + 1}`, ...value }]).filter((n) => n.bbox || n.groupIndices?.length || n.group !== undefined || n.strokeIds?.length));
+  }
   const boxedWords: FigureNode[] = [];
   const messages: string[] = stringList(obj.messages);
   for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
@@ -31,7 +34,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
       if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
-      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
+      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push(...nodeList([{ ...value, id, label }]));
     }
   }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
@@ -118,6 +121,9 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     if (node.parent) n.parent = node.parent;
     if (node.parents?.length) n.parents = [...node.parents];
     if (node.group !== undefined) n.group = node.group;
+    if (node.bbox) n.bbox = node.bbox;
+    if (node.groupIndices?.length) n.groupIndices = node.groupIndices;
+    if (node.strokeIds?.length) n.strokeIds = node.strokeIds;
     out.push(n);
     return n;
   };
@@ -134,19 +140,26 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
       const own = firstDefined(o, ['parent', 'inside', 'within', 'container']);
       const kids = firstDefined(o, ['children', 'contains', 'nested', 'inner']);
       const groupRaw = firstDefined(o, ['group', 'labelGroup', 'label_group', 'groupIndex', 'group_index']);
+      const groupIndices = Array.isArray(o.groupIndices) ? o.groupIndices.filter((n): n is number => Number.isInteger(n) && Number(n) >= 0) : [];
+      const box = Array.isArray(o.bbox) ? { left: o.bbox[0], top: o.bbox[1], right: o.bbox[2], bottom: o.bbox[3] } : o.bbox as Record<string, unknown> | undefined;
+      const bbox = box && (['left', 'top', 'right', 'bottom'] as const).every((k) => typeof box[k] === 'number' && Number.isFinite(box[k])) && Number(box.right) > Number(box.left) && Number(box.bottom) > Number(box.top)
+        ? { left: Number(box.left), top: Number(box.top), right: Number(box.right), bottom: Number(box.bottom) } : undefined;
       const groupNum = typeof groupRaw === 'number' ? groupRaw : typeof groupRaw === 'string' && /^\D*\d+\s*$/.test(groupRaw) ? Number(groupRaw.replace(/\D+/g, '')) : NaN;
       if (label !== undefined || id !== undefined) {
         const text = typeof label === 'string' || typeof label === 'number' ? String(label) : typeof id === 'string' || typeof id === 'number' ? String(id) : stringList(label)[0];
         if (!text) return;
         const shapeText = typeof shape === 'string' ? cleanText(shape).toLowerCase() : '';
         const node = add({
-          id: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined,
+          id: typeof id === 'string' || typeof id === 'number' ? String(id) : bbox || groupIndices.length || Array.isArray(o.strokeIds) ? `position${out.length + 1}` : undefined,
           label: text,
           // "box 2" / "shape 1" are the prompt's placeholders, not a shape.
           shape: shapeText && !/^(box|shape|node)\s*\d+$/.test(shapeText) && !isGroupRef(shapeText) ? shapeText : undefined,
           parent: typeof own === 'string' ? cleanText(own) || undefined : parent,
           parents: stringList(o.parents),
           ...(Number.isInteger(groupNum) && groupNum >= 0 ? { group: groupNum } : {}),
+          ...(bbox ? { bbox } : {}),
+          ...(groupIndices.length ? { groupIndices } : {}),
+          ...(Array.isArray(o.strokeIds) ? { strokeIds: o.strokeIds.filter((s): s is string => typeof s === 'string') } : {}),
         });
         if (node && kids !== undefined) visit(kids, node.id);
       } else {

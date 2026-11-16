@@ -9,9 +9,9 @@ describe('normaliseFigure', () => {
     expect(sequenceEdgeIndices({ ...figure, sequenceEdges: [1, 1, 99] })).toEqual([1, null, null]);
     expect(sequenceEdgeIndices({ ...figure, sequence: [] })).toEqual([]);
   });
-  it('uses model words keyed by hint ids without importing their predicted boxes', () => {
+  it('preserves model words and node boxes keyed by hint ids', () => {
     const figure = normaliseFigure({ names: { n1: '' }, 'node boxes': [{ n1: { bbox: [12, 20, 40, 60], labels: ['plan'] } }, { n2: { label: 'build' } }] })!;
-    expect(figure.nodes).toEqual([{ id: 'n1', label: 'plan' }, { id: 'n2', label: 'build' }]);
+    expect(figure.nodes).toEqual([{ id: 'n1', label: 'plan', bbox: { left: 12, top: 20, right: 40, bottom: 60 } }, { id: 'n2', label: 'build' }]);
     expect(figure.labels).toEqual(['plan', 'build']);
     expect(normaliseFigure({ 'node boxes': [{ n1: { bbox: [1, 2, 3, 4] }, nope: { label: 'ignored' } }, null] })).toBeUndefined();
     expect(normaliseFigure({ 'node boxes': null })).toBeUndefined();

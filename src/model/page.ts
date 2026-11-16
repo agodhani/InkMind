@@ -46,6 +46,10 @@ export interface FigureEdge {
 export interface FigureNode {
   id: string;
   label: string;
+  /** Per-node position, in page coordinates after raw block conversion. */
+  bbox?: BoundingBox;
+  /** Model group references, resolved to stroke anchors during raw block conversion. */
+  groupIndices?: number[];
   /** Ink belonging to the node's shape and label groups. */
   strokeIds?: string[];
   shape?: string;

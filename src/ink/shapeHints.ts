@@ -147,6 +147,7 @@ export type FigureNodeShape = ClosedShape['kind'] | 'text' | 'lifeline';
 export interface FigureNodeHint {
   /** Short id used in the hints and relations ("n1", "n2", …), numbered in reading order. */
   id: string;
+  strokeIds?: string[];
   /** Group holding the drawn shape (or the text itself for a text node). */
   groupIndex: number;
   shape: FigureNodeShape;
@@ -1346,8 +1347,29 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       if (a.toLabel !== undefined && inFigure(a.toLabel)) textNode(a.toLabel);
     }
     for (const l of lineLinks) if (inFigure(l.groupIndex) && l.toLabel !== undefined) textNode(l.toLabel);
-    const radial = nodes.length === 1 && gs.flatMap((g) => g.looseSegments).filter((s) => Math.min(boxDistance(nodes[0].bbox, s.a), boxDistance(nodes[0].bbox, s.b)) < 25 && dist(s.a, s.b) > 45).length >= 2;
-    if (radial) for (const box of regions) {
+    const radialHub = closedHere.length === 1 ? nodeOfShape.get(closed.indexOf(closedHere[0])) : undefined;
+    const radialConnectors = gs.flatMap((g) => g.shapes).filter((s) => !s.closed && s.diag > 60 && radialHub && Math.min(boxDistance(radialHub.bbox, s.start), boxDistance(radialHub.bbox, s.end)) < 25);
+    const radial = !!radialHub && radialConnectors.length >= 3 && !axes && !grid && lifelines.length === 0;
+    if (radial) {
+      nodes.splice(0, nodes.length, radialHub);
+      nodeOfText.clear();
+    }
+    const radialLines = gs.flatMap((g) => g.shapes).filter((s) => !s.closed && s.diag >= 28 && ['line', 'curve', 'polyline', 'arrow'].includes(s.kind));
+    const radialRegions: BoundingBox[] = [];
+    if (radial) {
+      const textIds = new Set(ink.map((s) => s.strokeId));
+      const separators = new Set(radialLines.map((s) => s.strokeId));
+      const shapeById = new Map(gs.flatMap((g) => g.shapes).map((s) => [s.strokeId, s]));
+      let run: StrokeShape[] = [];
+      for (const stroke of strokes) {
+        if (separators.has(stroke.id)) {
+          radialRegions.push(...textRegions(run));
+          run = [];
+        } else if (textIds.has(stroke.id)) run.push(shapeById.get(stroke.id)!);
+      }
+      radialRegions.push(...textRegions(run));
+    }
+    if (radial) for (const box of radialRegions) {
       if (nodes.some((n) => contains(n.bbox, center(box)))) continue;
       const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
       if (host) nodes.push({ id: '', shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box });
@@ -1433,10 +1455,17 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const to = l.toLabel !== undefined ? nodeOfText.get(l.toLabel) : nodeOfShape.get(l.to);
       if (from && to && from !== to) pushRel({ from: from.id, to: to.id, kind: 'line' });
     }
-    if (radial) for (const segment of gs.flatMap((g) => g.looseSegments)) {
+    if (radial) {
+      relations.splice(0);
+      seenRel.clear();
+      for (const n of nodes) n.strokeIds = gs.flatMap((g) => g.shapes).filter((s) => contains(n.bbox, center(s.bbox)) && !radialLines.includes(s)).map((s) => s.strokeId);
       const closest = (p: Offset) => [...nodes].sort((a, b) => boxDistance(a.bbox, p) - boxDistance(b.bbox, p))[0];
-      const a = closest(segment.a), b = closest(segment.b);
-      if (a && b && a !== b && boxDistance(a.bbox, segment.a) < 45 && boxDistance(b.bbox, segment.b) < 45) pushRel({ from: a.id, to: b.id, kind: 'line' });
+      for (const s of radialLines) {
+        let a = closest(s.start), b = closest(s.end);
+        if (!a || !b || a === b || boxDistance(a.bbox, s.start) >= 25 || boxDistance(b.bbox, s.end) >= 25) continue;
+        if (b === radialHub) [a, b] = [b, a];
+        pushRel({ from: a.id, to: b.id, kind: 'line', strokeIds: [s.strokeId] });
+      }
     }
     // Back-edges: arrows pointing against the main flow direction.
     const directed = arrowRelations.filter((r) => r.rel.kind === 'arrow');
@@ -1498,7 +1527,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     else if (axes) kind = 'plot';
     else if (grid) kind = 'table';
     else if (lifelines.length >= 2) kind = 'sequence';
-    else if (hub) kind = 'mindmap';
+    else if (hub || radial) kind = 'mindmap';
     else if (isTree) kind = 'tree';
     else if (arrowCount > 0 || figEdges.length > 0) kind = 'flowchart';
     else if (relations.length > 0 && nodes.length >= 2) kind = 'graph';
@@ -1691,13 +1720,14 @@ export interface GeometryFigure extends Pick<FigureInfo, 'nodes' | 'edges' | 'se
   unnamed: string[];
 }
 
-export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined, groups?: Pick<GroupLike, 'index' | 'strokeIds'>[]): GeometryFigure {
+export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: number) => string | undefined, groups?: Pick<GroupLike, 'index' | 'strokeIds'>[], labelForNode?: (node: FigureNodeHint) => string | undefined): GeometryFigure {
   const names = new Map<string, string>();
   const used = new Map<string, number>();
   const unnamed: string[] = [];
   for (const n of fig.nodes) {
-    let name = nodeName(fig, n, labelFor);
-    const placeholder = !(n.labelGroup !== undefined && labelFor(n.labelGroup)) && !labelFor(n.groupIndex);
+    const localLabel = labelForNode?.(n);
+    let name = localLabel || nodeName(fig, n, labelFor);
+    const placeholder = !localLabel && !(n.labelGroup !== undefined && labelFor(n.labelGroup)) && !labelFor(n.groupIndex);
     const count = used.get(name.toLowerCase()) ?? 0;
     used.set(name.toLowerCase(), count + 1);
     if (count > 0) name = `${name} (${count + 1})`;
@@ -1710,11 +1740,15 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
     if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
     if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
+    if (fig.kind === 'mindmap') {
+      node.bbox = n.labelBounds ?? n.bbox;
+      node.strokeIds = n.strokeIds ?? node.strokeIds;
+    }
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {
     const e: FigureEdge = { from: names.get(r.from)!, to: names.get(r.to)!, kind: r.kind };
-    if (fig.kind === 'sequence' && r.strokeIds?.length) e.strokeIds = [...r.strokeIds];
+    if ((fig.kind === 'sequence' || fig.kind === 'mindmap') && r.strokeIds?.length) e.strokeIds = [...r.strokeIds];
     const label = r.labelGroup !== undefined ? labelFor(r.labelGroup) : undefined;
     if (label) e.label = label;
     return e;
