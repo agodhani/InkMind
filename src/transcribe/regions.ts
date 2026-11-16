@@ -608,12 +608,20 @@ function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] 
   const keyColumn = columns.indexOf(0);
   const oldKeys = edited.slice(1).map((row) => row[0] ?? '');
   const newKeys = fresh.slice(1).map((row) => row[keyColumn] ?? '');
-  return fresh.map((row, r) => {
+  const rows = fresh.map((row, r) => {
     const key = row[keyColumn] ?? '';
     const match = keyColumn >= 0 && uniqueIndex(newKeys, key) !== undefined ? uniqueIndex(oldKeys, key) : undefined;
-    const oldRow = r === 0 ? 0 : match === undefined ? positional ? r : undefined : match + 1;
+    return r === 0 ? 0 : match === undefined ? undefined : match + 1;
+  });
+  const withUnclaimedPositions = (matches: (number | undefined)[]) => {
+    const claimed = new Set(matches);
+    return matches.map((match, i) => match ?? (positional && !claimed.has(i) ? i : undefined));
+  };
+  const oldRows = withUnclaimedPositions(rows), oldColumns = withUnclaimedPositions(columns);
+  return fresh.map((row, r) => {
+    const oldRow = oldRows[r];
     return row.map((cell, c) => {
-      const oldColumn = columns[c] ?? (positional ? c : undefined);
+      const oldColumn = oldColumns[c];
       return oldRow === undefined || oldColumn === undefined ? cell : edited[oldRow]?.[oldColumn] ?? cell;
     });
   });
