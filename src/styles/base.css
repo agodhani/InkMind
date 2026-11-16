@@ -69,6 +69,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 /* ---------- Tooltips (CSS-only; hover/focus-visible; off on touch) ---------- */
 [data-tip] { position: relative; }
 [data-tip]::after {
+  display: none;
   content: attr(data-tip);
   position: absolute; left: 50%; top: calc(100% + 8px); transform: translate(-50%, -4px);
   padding: 5px 8px; border-radius: var(--r-sm);
@@ -81,7 +82,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 [data-tip][data-tip-align='end']::after { left: auto; right: 0; transform: translate(0, -4px); }
 [data-tip][data-tip-align='start']::after { left: 0; transform: translate(0, -4px); }
 @media (hover: hover) and (pointer: fine) {
-  [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 350ms; }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after { display: block; opacity: 1; transform: translate(-50%, 0); transition-delay: 350ms; }
   [data-tip][data-tip-align='end']:hover::after, [data-tip][data-tip-align='end']:focus-visible::after, [data-tip][data-tip-align='start']:hover::after, [data-tip][data-tip-align='start']:focus-visible::after { transform: translate(0, 0); }
 }
 
