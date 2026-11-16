@@ -6,7 +6,7 @@ import { unionBounds, type InkStroke } from '../model/page';
 import { getStrokeBoundingBox } from '../types/brush';
 
 function analyse(parts: InkStroke[][]) {
-  return analyseInk(parts.flat(), parts.map((ss, index) => ({ index, strokeIds: ss.map((s) => s.id), bbox: ss.map(getStrokeBoundingBox).reduce(unionBounds) })));
+  return analyseInk(parts.flat(), parts.map((ss, index) => ({ index, strokeIds: ss.map((s) => s.id), bbox: ss.map((s) => getStrokeBoundingBox(s)!).reduce(unionBounds) })));
 }
 
 it('preserves dashed lifelines inside a sequence frame', () => {
