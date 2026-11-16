@@ -52,6 +52,21 @@ describe('edited expected table through Mock retranscription', () => {
     expect(result.figure!.cells).toEqual([['', 'train', 'val'], ['loss', '0.25', '0.31'], ['acc', '98', '91']]);
   });
 
+  it.each(['', '   ', '[Handwriting 9: 3 strokes]'])('keeps a saved unread-cell marker when that cell gains no real recognition: %j', cell => {
+    const scene = buildScene('table', 2, 'normal');
+    const edited = expectedBlocks(scene, new Map())[0];
+    edited.figure!.cells![1][1] = '0.25';
+    edited.figure!.cells![2][1] = '[Handwriting 1: 2 strokes]';
+    edited.figure!.cells![2][2] = '[Handwriting 2: 4 strokes]';
+    edited.userEdited = true;
+    const cells = [['', 'train', 'val'], ['loss', cell, '0.31'], ['acc', '98', cell]];
+    const fresh = { ...edited, figure: { ...edited.figure!, cells } };
+    const result = mergeBlocks([edited], [edited.id], [fresh])[0];
+    expect(result.figure!.cells).toEqual([
+      ['', 'train', 'val'], ['loss', '0.25', '0.31'], ['acc', '98', '[Handwriting 2: 4 strokes]'],
+    ]);
+  });
+
   it('keeps the saved cell and all previously read cells after new ink over row 2, column 2', async () => {
     const scene = buildScene('table', 2, 'normal');
     const initial = expectedBlocks(scene, new Map(scene.strokes.map(s => [s.id, s.id])))[0];

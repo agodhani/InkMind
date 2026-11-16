@@ -645,7 +645,7 @@ function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] 
     return row.map((cell, c) => {
       const oldColumn = oldColumns[c];
       const saved = oldRow === undefined || oldColumn === undefined ? undefined : edited[oldRow]?.[oldColumn];
-      return saved === undefined || placeholder(saved) ? cell : saved;
+      return saved === undefined || (placeholder(saved) && recognised(cell)) ? cell : saved;
     });
   });
 }
