@@ -236,7 +236,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
-    }));
+    }), strokes.map((s) => s.id));
     if (figure.kind === 'table' && fig.cellBounds) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
       const fallback = prior?.cells ?? (tableText ? cellGrid(tableText.text) : []);
@@ -357,7 +357,7 @@ function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureN
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
 
-function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): Map<string, string> {
+function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, strokeOrder: string[]): Map<string, string> {
   const geometry = geo.nodes ?? [], model = prior?.nodes ?? [];
   const empty = new Map<string, string>();
   if (!geometry.length || geometry.length > 12 || model.length !== geometry.length || !prior?.edges.length || geometry.some((n) => !geo.unnamed.includes(n.label))) return empty;
@@ -377,7 +377,8 @@ function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInf
     return [j];
   }));
   const order = geometry.map((_, i) => i).sort((a, b) => candidates[a].length - candidates[b].length || ga[b].size - ga[a].size);
-  const strokeRank = (n: FigureNode) => Math.min(...(n.strokeIds ?? []).map((id) => Number(id.replace(/^\D+/, ''))).filter(Number.isFinite));
+  const ranks = new Map(strokeOrder.map((id, i) => [id, i]));
+  const strokeRank = (n: FigureNode) => Math.min(...(n.strokeIds ?? []).map((id) => ranks.get(id) ?? Infinity));
   const written = geometry.map((_, i) => i).sort((a, b) => strokeRank(geometry[a]) - strokeRank(geometry[b]));
   const assignment = new Map<number, number>(), used = new Set<number>();
   let best: Map<number, number> | undefined, bestScore = -Infinity, visits = 0;
@@ -398,8 +399,8 @@ function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInf
   return best ? new Map([...best].map(([i, j]) => [geometry[i].label, model[j].label])) : empty;
 }
 
-function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[]): ReturnType<typeof figureFromGeometry> {
-  const rename = fig.kind === 'mindmap' ? graphNames(geo, prior) : new Map<string, string>();
+function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[], strokeOrder: string[]): ReturnType<typeof figureFromGeometry> {
+  const rename = fig.kind === 'mindmap' ? graphNames(geo, prior, strokeOrder) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
     if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
@@ -452,9 +453,9 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
 /**
  * Geometry owns structure; the model supplies words and only fills structural gaps.
  */
-export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
+export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>, strokeOrder: string[] = []): FigureInfo {
   const kind = fig.kind;
-  const geo = nameGeometryNodes(geoIn, prior, fig, labels);
+  const geo = nameGeometryNodes(geoIn, prior, fig, labels, strokeOrder);
   const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();

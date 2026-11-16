@@ -11,6 +11,20 @@ import { buildScene, DATASETS } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
 
 describe('graph-based word assignment', () => {
+  it('uses page stroke order rather than digits in random ids to break graph symmetries', () => {
+    const scene = buildScene('mind-map', 33, 'normal');
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const full = figureFromGeometry(hint, () => undefined, groups);
+    const nodes = full.nodes!.slice(0, 3);
+    const geo = { ...full, nodes, edges: [nodes[0], nodes[2]].map((n) => ({ from: nodes[1].label, to: n.label, kind: 'line' as const })) };
+    const ids = geo.nodes!.map((_, i) => `stroke_${98765432 - i * 173921}`);
+    const geometry = { ...geo, nodes: geo.nodes!.map((n, i) => ({ ...n, strokeIds: [ids[i]] })) };
+    const labels = geometry.nodes!.map((_, i) => `word ${i}`);
+    const rename = new Map(geometry.nodes!.map((n, i) => [n.label, labels[i]]));
+    const prior: FigureInfo = { kind: 'mindmap', shapes: [], labels, nodes: labels.map((label, i) => ({ id: `model-${i}`, label })), edges: geometry.edges.map((e) => ({ ...e, from: rename.get(e.from)!, to: rename.get(e.to)! })) };
+    expect(mergeWithGeometry(prior, hint, labels, geometry, ids).nodes!.map((n) => n.label)).toEqual(labels);
+  });
   it('allows repeated labels supported by distinct node ids', () => {
     const scene = buildScene('state-machine', 62, 'messy');
     const groups = buildStrokeGroups(scene.strokes);
