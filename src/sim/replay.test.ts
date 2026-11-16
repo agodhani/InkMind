@@ -46,7 +46,7 @@ describe('alignStrokes', () => {
   it('maps by order and skips strokes the canvas dropped', () => {
     const w = new InkWriter(new Rng(2), 'e');
     w.stroke([{ x: 0, y: 0 }, { x: 50, y: 0 }]);
-    w.stroke([{ x: 0, y: 40 }, { x: 2, y: 41 }]); // tiny "dot" the canvas will treat as a tap
+    w.stroke([{ x: 0, y: 40 }, { x: 2, y: 41 }]);
     w.stroke([{ x: 0, y: 80 }, { x: 50, y: 80 }]);
     const [a, dot, c] = w.strokes;
     const got = [{ ...a, id: 'stk-1' }, { ...c, id: 'stk-2' }];
