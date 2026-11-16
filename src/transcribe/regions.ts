@@ -268,6 +268,24 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   return sortBlocksForReading(blocks);
 }
 
+export function attachUnclaimedStrokes(incoming: DigitalBlock[], strokes: InkStroke[]): DigitalBlock[] {
+  if (!incoming.length) return incoming;
+  const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
+  const unclaimed = strokes.filter((s) => !claimed.has(s.id));
+  if (!unclaimed.length) return incoming;
+  const target = incoming.findLastIndex((b) => b.kind !== 'diagram');
+  const blocks = [...incoming];
+  if (target < 0) {
+    blocks.push({ id: newId('blk'), kind: 'paragraph', text: '', strokeIds: unclaimed.map((s) => s.id), bbox: strokesBounds(unclaimed)!, confidence: 0.4 });
+  } else {
+    const b = blocks[target];
+    const strokeIds = [...b.strokeIds, ...unclaimed.map((s) => s.id)];
+    const ids = new Set(strokeIds);
+    blocks[target] = { ...b, strokeIds, bbox: strokesBounds(strokes.filter((s) => ids.has(s.id))) ?? b.bbox };
+  }
+  return sortBlocksForReading(blocks);
+}
+
 const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Union of two model figures for the same drawing (labels, nodes, edges; the longer sequence; the first table). */

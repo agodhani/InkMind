@@ -3,12 +3,40 @@ import { stroke } from '../__tests__/helpers';
 import type { DigitalBlock, FigureInfo, InkStroke } from '../model/page';
 import { newId, unionBounds } from '../model/page';
 import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import { attachUnclaimedStrokes, buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 import { normaliseFigure } from './figure';
 import type { FigureHint } from '../ink/shapeHints';
 import { buildScene, DATASETS } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
+
+describe.each([false, true])('unclaimed prose with an unpositioned model paragraph: %s', (withParagraph) => {
+  it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('preserves geometry ownership on $kind seed $seed', ({ kind, seed, messiness }) => {
+    const scene = buildScene(kind, seed, messiness);
+    const groups = buildStrokeGroups(scene.strokes);
+    const prose: DigitalBlock = { id: 'prose', kind: 'paragraph', text: 'overview', bbox: { left: 0, top: 0, right: 0, bottom: 0 }, strokeIds: [], confidence: 0.5 };
+    const before = reconcileFigureBlocks(withParagraph ? [prose] : [], groups, scene.strokes);
+    const after = attachUnclaimedStrokes(before, scene.strokes);
+    for (const b of before.filter((b) => b.kind === 'diagram')) expect(after.find((a) => a.id === b.id)).toEqual(b);
+    expect(new Set(after.flatMap((b) => b.strokeIds))).toEqual(new Set(scene.strokes.map((s) => s.id)));
+    const text = after.find((b) => b.kind === 'paragraph')!;
+    expect(text.strokeIds.length).toBeGreaterThan(0);
+    expect(text.text).toBe(withParagraph ? 'overview' : '');
+    expect(text.bbox.bottom).toBeGreaterThan(text.bbox.top);
+    expect(before.find((b) => b.id === 'prose')?.strokeIds ?? []).toEqual([]);
+  });
+});
+
+describe('unclaimed stroke fallback', () => {
+  it('leaves empty and already covered requests unchanged', () => {
+    const ink = [line(10, 10, 20, 20)];
+    const empty: DigitalBlock[] = [];
+    expect(attachUnclaimedStrokes(empty, ink)).toBe(empty);
+    const covered: DigitalBlock[] = [{ id: 'covered', kind: 'paragraph', text: 'word', strokeIds: [ink[0].id], bbox: { left: 10, top: 10, right: 20, bottom: 20 }, confidence: 0.9 }];
+    expect(attachUnclaimedStrokes(covered, ink)).toBe(covered);
+    expect(attachUnclaimedStrokes(covered, [])).toBe(covered);
+  });
+});
 
 describe('notes page segmentation', () => {
   it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('keeps figures separate on $kind seed $seed', ({ kind, seed, messiness }) => {
