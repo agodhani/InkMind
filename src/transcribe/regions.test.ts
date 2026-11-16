@@ -31,7 +31,7 @@ describe('graph-based word assignment', () => {
     const hint = groups.find((g) => g.figure)!.figure!;
     const geo = figureFromGeometry(hint, () => undefined, groups);
     const prior: FigureInfo = { kind: 'flowchart', shapes: [], labels: ['work', 'done'], edges: [], nodes: geo.nodes!.map((n, i) => ({ id: n.id, label: i < 2 ? 'work' : 'done' })) };
-    expect(mergeWithGeometry(prior, hint, prior.labels, geo).nodes!.map((n) => n.label)).toEqual(['work', 'work', 'done']);
+    expect(mergeWithGeometry(prior, hint, prior.labels, geo).nodes!.map((n) => n.label)).toEqual(['work', 'work (2)', 'done']);
   });
   it('names distinct states once when the model duplicates an accepting-state node', () => {
     const scene = buildScene('state-machine', 62, 'messy');

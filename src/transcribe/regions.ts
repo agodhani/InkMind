@@ -425,15 +425,13 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
-  if (fig.kind === 'mindmap') {
-    const used = new Set<string>();
-    for (const n of geo.nodes ?? []) {
-      const base = rename.get(n.label) ?? n.label;
-      let name = base, suffix = 2;
-      while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
-      used.add(name.toLowerCase());
-      if (name !== n.label) rename.set(n.label, name);
-    }
+  const used = new Set<string>();
+  for (const n of geo.nodes ?? []) {
+    const base = rename.get(n.label) ?? n.label;
+    let name = base, suffix = 2;
+    while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
+    used.add(name.toLowerCase());
+    if (name !== n.label) rename.set(n.label, name);
   }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
