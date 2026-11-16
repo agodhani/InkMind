@@ -405,6 +405,20 @@ function ellipseFitError(points: Offset[], bbox: BoundingBox): number {
   return Math.sqrt(sum / Math.max(1, points.length));
 }
 
+function rotatedEllipseFitError(points: Offset[]): number {
+  if (!points.length) return Infinity;
+  const c = points.reduce((a, p) => ({ x: a.x + p.x / points.length, y: a.y + p.y / points.length }), { x: 0, y: 0 });
+  let xx = 0, xy = 0, yy = 0;
+  for (const p of points) {
+    xx += (p.x - c.x) ** 2;
+    xy += (p.x - c.x) * (p.y - c.y);
+    yy += (p.y - c.y) ** 2;
+  }
+  const angle = Math.atan2(2 * xy, xx - yy) / 2;
+  const rotated = points.map((p) => ({ x: (p.x - c.x) * Math.cos(angle) + (p.y - c.y) * Math.sin(angle), y: (p.y - c.y) * Math.cos(angle) - (p.x - c.x) * Math.sin(angle) }));
+  return ellipseFitError(rotated, bboxOf(rotated));
+}
+
 // ---------------------------------------------------------------- single strokes
 
 export function classifyStroke(stroke: InkStroke): StrokeShape {
@@ -451,7 +465,7 @@ function classifyClosed(base: Base, pts: Offset[], length: number): StrokeShape 
   const turns = corners.map((v, i) => turnAngle(corners[(i - 1 + n) % n], v, corners[(i + 1) % n]));
   const sharp = turns.filter((t) => t >= 55);
   const areaRatio = polygonArea(pts) / (w * h);
-  const fit = ellipseFitError(pts, bbox);
+  const fit = Math.min(ellipseFitError(pts, bbox), rotatedEllipseFitError(pts));
   const aspect = Math.max(w, h) / Math.min(w, h);
   const sharpCorners = corners.filter((_, i) => turns[i] >= 55);
   const polygon = (kind: StrokeShape['kind'], cs: Offset[]): StrokeShape => ({

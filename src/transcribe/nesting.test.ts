@@ -14,7 +14,7 @@ function wordsAt(fig: FigureHint, seed: number): Map<string, string> {
     const word = seed === 93 ? n.shape === 'text' ? 'A∩B' : b.left < 100 ? 'A' : 'B'
       : seed === 94 ? n.shape !== 'text' ? b.left < 100 ? 'cats' : 'dogs' : b.left < 250 ? 'fur' : b.left < 450 ? 'pets' : 'bark'
         : seed === 91 ? b.left < 100 ? 'outer' : b.left < 150 ? 'inner' : 'core'
-          : b.left < 100 ? 'system' : b.left < 150 ? 'frontend' : b.left < 200 ? 'ui' : b.left > 420 ? 'api' : 'backend';
+          : b.left < 100 ? 'system' : b.left < 150 ? 'frontend' : b.left < 200 ? 'ui' : n.shape === 'ellipse' ? 'db' : b.left > 420 ? 'api' : 'backend';
     return [n.id, word];
   }));
 }
@@ -24,7 +24,7 @@ describe.each([91, 92, 93, 94])('position-grounded nesting, seed %s', (seed) => 
   const groups = buildStrokeGroups(scene.strokes);
   const fig = figuresOf(groups)[0];
   const words = wordsAt(fig, seed);
-  const expected = scene.figures[0].contains!.filter((c) => c.inner !== 'db').map((c) => `${c.outer}>${c.inner}`).sort();
+  const expected = scene.figures[0].contains!.map((c) => `${c.outer}>${c.inner}`).sort();
   const model = (figure: FigureInfo): DigitalBlock => ({ id: 'model', kind: 'diagram', text: '', bbox: scene.figures[0].bbox, strokeIds: scene.strokes.map((s) => s.id), confidence: 0.9, figure });
   const prior = (shapeBoxes = false): FigureInfo => ({ kind: 'shape', shapes: [], labels: [], edges: [], nodes: fig.nodes.map((n, i) => ({ id: `wrong-${fig.nodes.length - i}`, label: words.get(n.id)!, bbox: shapeBoxes ? n.bbox : n.labelBounds ?? n.bbox, parent: `wrong-${(i + 1) % fig.nodes.length + 1}` })) });
   const reconcile = (blocks: DigitalBlock[]) => reconcileFigureBlocks(blocks, groups, scene.strokes).find((b) => b.kind === 'diagram')!;
@@ -53,9 +53,10 @@ describe.each([91, 92, 93, 94])('position-grounded nesting, seed %s', (seed) => 
     expect(pairs(out.figure!)).toEqual(expected);
   });
 
-  if (seed === 92) it('geometrically parents a positioned label even when its surrounding ellipse was not recognized', () => {
+  if (seed === 92) it('geometrically parents a separately positioned ellipse label despite a wrong model parent', () => {
     const db = scene.strokes.map((s) => getStrokeBoundingBox(s)!).filter((b) => b.left > 570 && b.top > 120 && b.bottom < 150 && b.right - b.left < 30);
     const p = prior();
+    p.nodes = p.nodes!.filter((n) => n.label !== 'db');
     p.nodes!.push({ id: 'n5', label: 'db', bbox: db.reduce(unionBounds), parent: 'wrong-parent' });
     const out = reconcile([model(p)]);
     expect(pairs(out.figure!)).toEqual(scene.figures[0].contains!.map((c) => `${c.outer}>${c.inner}`).sort());

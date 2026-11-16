@@ -7,6 +7,23 @@ import { buildScene } from '../sim/scenes';
 
 beforeEach(() => resetSynthetic());
 
+describe('nested ellipses', () => {
+  it.each([91, 92])('recovers the tilted two-stroke ellipse without treating its arcs as arrows: %s', (seed) => {
+    const scene = buildScene('nested-boxes', seed, seed === 92 ? 'messy' : 'normal');
+    const analysis = analyseInk(scene.strokes, buildStrokeGroups(scene.strokes));
+    const fig = analysis.figures[0];
+    expect(fig.nodes).toHaveLength(scene.figures[0].labels.length);
+    expect(fig.nodes.filter((n) => n.parent !== undefined)).toHaveLength(scene.figures[0].contains!.length);
+    expect(fig.relations).toEqual([]);
+    if (seed === 92) {
+      const ellipse = analysis.groups.flatMap((g) => g.closed).find((c) => c.strokeIds.includes('s59'))!;
+      expect(ellipse.kind).toBe('ellipse');
+      expect(ellipse.strokeIds).toEqual(['s59', 's60']);
+      expect(fig.nodes.find((n) => n.shape === 'ellipse')!.parent).toBe('n4');
+    }
+  });
+});
+
 describe('plain tree links', () => {
   it('does not turn aligned node-letter stems into a dashed connector', () => {
     const scene = buildScene('tree-deep', 81);
