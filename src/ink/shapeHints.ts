@@ -405,6 +405,20 @@ function ellipseFitError(points: Offset[], bbox: BoundingBox): number {
   return Math.sqrt(sum / Math.max(1, points.length));
 }
 
+function rotatedEllipseFitError(points: Offset[]): number {
+  if (!points.length) return Infinity;
+  const c = points.reduce((a, p) => ({ x: a.x + p.x / points.length, y: a.y + p.y / points.length }), { x: 0, y: 0 });
+  let xx = 0, xy = 0, yy = 0;
+  for (const p of points) {
+    xx += (p.x - c.x) ** 2;
+    xy += (p.x - c.x) * (p.y - c.y);
+    yy += (p.y - c.y) ** 2;
+  }
+  const angle = Math.atan2(2 * xy, xx - yy) / 2;
+  const rotated = points.map((p) => ({ x: (p.x - c.x) * Math.cos(angle) + (p.y - c.y) * Math.sin(angle), y: (p.y - c.y) * Math.cos(angle) - (p.x - c.x) * Math.sin(angle) }));
+  return ellipseFitError(rotated, bboxOf(rotated));
+}
+
 // ---------------------------------------------------------------- single strokes
 
 export function classifyStroke(stroke: InkStroke): StrokeShape {
@@ -451,7 +465,7 @@ function classifyClosed(base: Base, pts: Offset[], length: number): StrokeShape 
   const turns = corners.map((v, i) => turnAngle(corners[(i - 1 + n) % n], v, corners[(i + 1) % n]));
   const sharp = turns.filter((t) => t >= 55);
   const areaRatio = polygonArea(pts) / (w * h);
-  const fit = ellipseFitError(pts, bbox);
+  const fit = Math.min(ellipseFitError(pts, bbox), rotatedEllipseFitError(pts));
   const aspect = Math.max(w, h) / Math.min(w, h);
   const sharpCorners = corners.filter((_, i) => turns[i] >= 55);
   const polygon = (kind: StrokeShape['kind'], cs: Offset[]): StrokeShape => ({
@@ -648,13 +662,14 @@ export function chainSegments(pieces: { strokeId: string; segments: Segment[] }[
 /** Lines + small marks at one end → arrow. `shafts` are candidate shaft strokes, `marks` are candidate heads. */
 const HEAD_KINDS = new Set<StrokeShapeKind>(['vee', 'polyline', 'curve', 'triangle', 'arrow']);
 
-function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupIndex: number, minShaft = 25): { arrows: Arrow[]; used: Set<string> } {
+function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupIndex: number, minShaft: number, drawingOrder: StrokeShape[]): { arrows: Arrow[]; used: Set<string> } {
   const arrows: Arrow[] = [];
   const used = new Set<string>();
   for (const shaft of shafts) {
     if (shaft.length < minShaft || used.has(shaft.strokeId)) continue;
     if (shaft.kind === 'curve' && shaft.length < 2 * MIN_LINE_SIZE) continue;
     const ends: [Offset, Offset][] = [[shaft.start, shaft.end], [shaft.end, shaft.start]];
+    const proposals: { tip: Offset; tail: Offset; heads: StrokeShape[]; proximity: number }[] = [];
     for (const [tip, tail] of ends) {
       const axisTail = shaft.kind === 'curve' && shaft.vertices.length >= 2 ? (tip === shaft.end ? shaft.vertices[shaft.vertices.length - 2] : shaft.vertices[1]) : tail;
       const heads = marks.filter((m) => {
@@ -662,10 +677,12 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
         if (!HEAD_KINDS.has(m.kind) && m.kind !== 'line') return false;
         if (m.diag > Math.min(32, 0.55 * shaft.length) || m.diag < 3) return false;
         if (Math.min(...m.vertices.map((p) => dist(p, tip))) > Math.max(8, Math.min(16, 0.08 * shaft.length))) return false;
-        if (m.kind === 'line' && (angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) < 10 || angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) > 80)) return false;
+        if (m.kind === 'line' && ((shaft.kind !== 'curve' && angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) < 10) || angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) > 80)) return false;
         // The shaft tip touches the head, and the head sits on the shaft's axis (straight shafts).
         if (!contains(m.bbox, tip, Math.max(4, 0.05 * shaft.length))) return false;
         if (shaft.kind !== 'curve' && perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.5 * m.diag + 2) return false;
+        const back = { x: axisTail.x - tip.x, y: axisTail.y - tip.y };
+        if ((center(m.bbox).x - tip.x) * back.x + (center(m.bbox).y - tip.y) * back.y < 0) return false;
         return dist(center(m.bbox), tip) <= Math.max(14, 0.3 * shaft.length);
       });
       const wings = heads.filter((h) => h.kind === 'line');
@@ -677,14 +694,17 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
         if (joins[0].d > 6) return false;
         const join = mid(joins[0].a, joins[0].b);
         const side = (v: Offset) => (tip.x - axisTail.x) * (v.y - join.y) - (tip.y - axisTail.y) * (v.x - join.x);
-        return side(center(p.bbox)) * side(center(q.bbox)) < 0;
+        return side(center(p.bbox)) * side(center(q.bbox)) < 0 || (dist(join, tip) <= 6 && angleDiff(orientation({ a: p.start, b: p.end }), orientation({ a: q.start, b: q.end })) >= 25);
       }));
       if (heads.length >= 1 && heads.length <= 3 && (heads.some((h) => h.kind !== 'line') || splitHead)) {
-        arrows.push({ strokeIds: [shaft.strokeId, ...heads.map((h) => h.strokeId)], tail, head: tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
-        used.add(shaft.strokeId);
-        heads.forEach((h) => used.add(h.strokeId));
-        break;
+        proposals.push({ tip, tail, heads, proximity: Math.min(...heads.map((h) => Math.abs(drawingOrder.indexOf(h) - drawingOrder.indexOf(shaft)))) });
       }
+    }
+    const best = proposals.sort((a, b) => a.proximity - b.proximity)[0];
+    if (best) {
+      arrows.push({ strokeIds: [shaft.strokeId, ...best.heads.map((h) => h.strokeId)], tail: best.tail, head: best.tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
+      used.add(shaft.strokeId);
+      best.heads.forEach((h) => used.add(h.strokeId));
     }
   }
   return { arrows, used };
@@ -809,7 +829,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   arrows.forEach((a) => a.strokeIds.forEach((id) => usedIds.add(id)));
   const shaftCandidates = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline' || s.kind === 'curve'));
   const marks = shapes.filter((s) => !usedIds.has(s.strokeId) && (shapes.length <= 2 || s.diag <= Math.max(2.5 * medH, 0.35 * Math.max(gw, gh))));
-  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20);
+  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20, shapes);
   arrows.push(...composite.arrows);
   const baselineText = shapes.length >= 6 && gw > 2 * gh && gh <= 2.8 * medH;
   if (baselineText) {
@@ -841,7 +861,8 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   const looseMin = shapes.length <= 2 ? MIN_LINE_SIZE : Math.max(MIN_LINE_SIZE * 0.5, 2 * medH);
   const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= looseMin);
   const looseSegments = looseStrokes.flatMap((s) => s.segments);
-  const dashes = rest.filter((s) => s.length >= 6 && s.length <= 32 && height(s.bbox) > 1.5 * width(s.bbox));
+  const frames = new Set(closed.filter((c) => arrows.some((a) => dist(a.tail, a.head) >= 80 && contains(c.bbox, a.tail) && contains(c.bbox, a.head))));
+  const dashes = rest.filter((s) => s.length >= 6 && s.length <= 32 && height(s.bbox) > 1.5 * width(s.bbox) && !closed.some((c) => !frames.has(c) && contains(c.bbox, center(s.bbox))));
   const usedDashes = new Set<string>();
   const columnSize = (dash: StrokeShape) => dashes.filter((s) => Math.abs(center(s.bbox).x - center(dash.bbox).x) <= 10).length;
   for (const dash of [...dashes].sort((a, b) => columnSize(b) - columnSize(a))) {
@@ -1059,6 +1080,18 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   const analyses = groups.map((g) => analyseGroup(g, g.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => !!s)));
   const byIndex = new Map(analyses.map((a) => [a.index, a]));
   const closed = analyses.flatMap((a) => a.closed);
+  const rings = new Map<ClosedShape, ClosedShape>();
+  for (const inner of closed) {
+    if (inner.kind !== 'circle' && inner.kind !== 'ellipse') continue;
+    const outer = closed.filter((c) => c !== inner && (c.kind === 'circle' || c.kind === 'ellipse') &&
+      width(inner.bbox) / width(c.bbox) >= 0.55 && height(inner.bbox) / height(c.bbox) >= 0.55 &&
+      width(inner.bbox) * height(inner.bbox) / (width(c.bbox) * height(c.bbox)) >= 0.45 &&
+      width(inner.bbox) / width(c.bbox) < 0.95 && height(inner.bbox) / height(c.bbox) < 0.95 &&
+      dist(center(inner.bbox), center(c.bbox)) <= 0.12 * Math.min(width(c.bbox), height(c.bbox)) && fullyContains({ ...c, shape: c.kind }, { ...inner, shape: inner.kind }))
+      .sort((a, b) => width(a.bbox) * height(a.bbox) - width(b.bbox) * height(b.bbox))[0];
+    const between = outer && analyses.flatMap((a) => a.textStrokes).some((s) => contains(outer.bbox, center(s.bbox)) && !contains(inner.bbox, center(s.bbox)));
+    if (outer && !between) rings.set(inner, outer);
+  }
   const uf = new UnionFind();
   const edges: { from: number; to: number }[] = [];
   const labelInside: Record<number, number> = {};
@@ -1300,7 +1333,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       for (const t of textGroups) {
         if (attached.has(t.index) || width(t.bbox) > Math.max(1.6 * len, 80)) continue;
         if (!fitsPlot(plotBoundsFor(g.index), t.bbox)) continue;
-        if (g.closed.length >= 2 && t.bbox.top > Math.max(...g.closed.map((c) => c.bbox.bottom))) continue;
+        if (g.closed.length >= 2 && t.bbox.top > Math.max(...g.closed.map((c) => c.bbox.bottom)) && height(t.bbox) > 0.4 * median(g.closed.map((c) => height(c.bbox)))) continue;
         const d = boxDistance(t.bbox, m);
         if (d <= tol && !closed.some((c) => contains(c.bbox, center(t.bbox)))) labelCandidates.push({ g, a, t, score: d / tol });
       }
@@ -1398,7 +1431,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const arrows = gs.flatMap((g) => g.arrows);
     const curves = gs.flatMap((g) => g.curves);
     const lifelines = tall.map((l, i) => ({ l, i })).filter(({ l, i }) => usedLifelines.has(i) && inFigure(l.groupIndex)).sort((a, b) => a.l.x - b.l.x);
-    const nested = closedHere.some((c) => closedHere.some((outer) => c !== outer && shapeArea(outer) > shapeArea(c) && fullyContains({ ...outer, shape: outer.kind }, { ...c, shape: c.kind })));
+    const nested = closedHere.some((c) => !rings.has(c) && closedHere.some((outer) => !rings.has(outer) && c !== outer && shapeArea(outer) > shapeArea(c) && fullyContains({ ...outer, shape: outer.kind }, { ...c, shape: c.kind })));
     const grid = !nested && !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.shapes.filter((s) => s.kind === 'line').flatMap((s) => s.segments)), ...rectEdges]) : null;
     const figBox = gs.map((g) => g.bbox).reduce(unionBox);
 
@@ -1428,6 +1461,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     if (!cube && !grid) {
       for (const c of closedHere) {
         const ci = closed.indexOf(c);
+        if (rings.has(c)) continue;
         if (nodeOfShape.has(ci)) continue;
         const node: FigureNodeHint = { id: '', groupIndex: c.groupIndex, shape: c.kind, bbox: c.bbox };
         const inside = [...labelShape.entries()].find(([, idx2]) => idx2 === ci)?.[0];
@@ -1435,6 +1469,15 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         else if (labelInside[c.groupIndex] === c.groupIndex && byIndex.get(c.groupIndex)!.closed.length === 1) node.labelGroup = c.groupIndex;
         nodes.push(node);
         nodeOfShape.set(ci, node);
+      }
+      for (const [inner, outer] of rings) {
+        let host = outer;
+        while (rings.has(host)) host = rings.get(host)!;
+        const node = nodeOfShape.get(closed.indexOf(host));
+        if (node) {
+          nodeOfShape.set(closed.indexOf(inner), node);
+          node.labelGroup ??= [...labelShape.entries()].find(([, ci]) => closed[ci] === inner)?.[0];
+        }
       }
     }
     const textNode = (t: number): FigureNodeHint => {
@@ -1673,7 +1716,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const stepNodes = nodes.filter((n) => linked(n) || (n.parent === undefined && !container(n)));
       order = topologicalOrder(stepNodes.map((n) => n.id), forward, rank);
       orderBasis = 'arrow order';
-    } else if (nodes.length >= 2 && !grid) {
+    } else if (nodes.length >= 2 && !grid && !nodes.some((n) => n.parent !== undefined)) {
       order = [...nodes].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!).map((n) => n.id);
       orderBasis = horizontalLayout ? 'left→right' : 'top→bottom';
     }
@@ -1713,6 +1756,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
 
     const labelGroups = groupIndices.filter((i) => !byIndex.get(i)!.graphic && byIndex.get(i)!.textStrokes.length > 0 && !lifelineGroups.has(i));
     const shapes: string[] = [];
+    if (closedHere.some((c) => rings.has(c))) shapes.push('double circle');
     if (cube) shapes.push('cube / 3D box');
     else closedHere.forEach((c) => shapes.push(describeShape(c)));
     if (axes && !cube) shapes.push(axes.crossing ? 'crossing axes' : 'x/y axes');

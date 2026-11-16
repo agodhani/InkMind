@@ -33,6 +33,13 @@ repeated requests should not be treated as cold performance.
 
 ## Synthetic shape / diagram datasets
 
+Nesting records direct container/member relationships. For Venn diagrams, each set is a circle
+node and each member is a text node contained by its set. An overlap member lists every set it
+lies in through `parents` (with one also in `parent`); overlapping circles never contain one
+another. Set-name recovery requires per-word spatial anchors from the model (word positions or
+word-specific stroke groups). A shared diagram-wide group or an unpositioned label list does not
+identify which word names a set, so reconciliation must not invent that assignment from captions.
+
 For an offline detector-only pass over all 14 datasets (58 pages), run
 `npm run eval:shapes -- --provider geometry --run geometry-baseline`.
 This provider returns no model blocks and reconciles geometry only, without calling a model.

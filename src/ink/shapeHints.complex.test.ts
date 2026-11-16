@@ -3,8 +3,73 @@ import { analyseInk, classifyStroke, figureFromGeometry, type FigureHint } from 
 import { buildStrokeGroups } from '../transcribe/regions';
 import { resetSynthetic } from '../__tests__/shapes';
 import { arcPath, arrowsBetweenWords, curvedArrow, flowchartWithLoop, mindMap, nestedBoxes, sequenceDiagram, stateMachine, tableGrid, twoFiguresWithNotes, type Scene } from '../__tests__/complexScenes';
+import { buildScene } from '../sim/scenes';
 
 beforeEach(() => resetSynthetic());
+
+describe('nested ellipses', () => {
+  it.each([91, 92])('recovers the tilted two-stroke ellipse without treating its arcs as arrows: %s', (seed) => {
+    const scene = buildScene('nested-boxes', seed, seed === 92 ? 'messy' : 'normal');
+    const analysis = analyseInk(scene.strokes, buildStrokeGroups(scene.strokes));
+    const fig = analysis.figures[0];
+    expect(fig.nodes).toHaveLength(scene.figures[0].labels.length);
+    expect(fig.nodes.filter((n) => n.parent !== undefined)).toHaveLength(scene.figures[0].contains!.length);
+    expect(fig.relations).toEqual([]);
+    expect(fig.order).toEqual([]);
+    expect(figureFromGeometry(fig, () => undefined).sequence).toBeUndefined();
+    if (seed === 92) {
+      const ellipse = analysis.groups.flatMap((g) => g.closed).find((c) => c.strokeIds.includes('s59'))!;
+      expect(ellipse.kind).toBe('ellipse');
+      expect(ellipse.strokeIds).toEqual(['s59', 's60']);
+      expect(fig.nodes.find((n) => n.shape === 'ellipse')!.parent).toBe('n4');
+    }
+  });
+});
+
+describe('plain tree links', () => {
+  it('does not turn aligned node-letter stems into a dashed connector', () => {
+    const scene = buildScene('tree-deep', 81);
+    const groups = buildStrokeGroups(scene.strokes);
+    const analysis = analyseInk(scene.strokes, groups);
+    const fig = analysis.figures[0];
+    expect(fig.relations).toHaveLength(scene.figures[0].edges!.length);
+    expect(fig.relations).not.toContainEqual(expect.objectContaining({ from: 'n2', to: 'n9' }));
+    expect(analysis.groups.flatMap((g) => g.looseSegments)).not.toContainEqual({ a: { x: 293.4, y: 229.8 }, b: { x: 289.2, y: 552.5 } });
+  });
+});
+
+describe('accepting states and transition ownership', () => {
+  it('does not claim a notes line below the graph as a transition label', () => {
+    const scene = buildScene('notes-complex', 132, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const analysis = analyseInk(scene.strokes, groups);
+    const notes = groups.find((g) => g.strokeIds.includes('s88'))!;
+    expect(analysis.groups.flatMap((g) => g.arrows).some((a) => a.labelGroup === notes.index)).toBe(false);
+  });
+  it('collapses concentric rings, keeps distinct states, and owns labels below connectors', () => {
+    const scene = buildScene('state-machine', 62, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const fig = groups.find((g) => g.figure)!.figure!;
+    expect(fig.nodes).toHaveLength(3);
+    expect(fig.nodes.every((n) => n.parent === undefined)).toBe(true);
+    expect(fig.relations.map((r) => `${r.from}|${r.to}`).sort()).toEqual(['n1|n2', 'n2|n2', 'n2|n3', 'n3|n1']);
+    const owned = groups.filter((g) => fig.groupIndices.includes(g.index)).flatMap((g) => g.strokeIds);
+    expect(new Set(owned)).toEqual(new Set(scene.strokes.map((s) => s.id)));
+    expect(fig.relations.find((r) => r.from === 'n1' && r.to === 'n2')!.labelGroup).toBe(groups.find((g) => g.strokeIds.includes('s20'))!.index);
+    expect(fig.relations.find((r) => r.from === 'n2' && r.to === 'n3')!.labelGroup).toBe(groups.find((g) => g.strokeIds.includes('s25'))!.index);
+  });
+});
+
+describe('composite arrow direction', () => {
+  it.each([['sequence-diagram', 72, 'messy', 's68'], ['state-machine', 63, 'normal', 's23']] as const)('uses the actual head rather than a nearby glyph or another connector: %s', (kind, seed, messiness, shaft) => {
+    const scene = buildScene(kind, seed, messiness);
+    const analysis = analyseInk(scene.strokes, buildStrokeGroups(scene.strokes));
+    const arrow = analysis.groups.flatMap((g) => g.arrows).find((a) => a.strokeIds.includes(shaft))!;
+    expect(arrow).toBeDefined();
+    expect(arrow.head.x > arrow.tail.x).toBe(kind === 'state-machine');
+    expect(arrow.strokeIds).toContain(kind === 'state-machine' ? 's24' : 's69');
+  });
+});
 
 /** Analyse a scene; `labelFor` names a group after the scene label whose strokes it holds. */
 function run(scene: Scene) {

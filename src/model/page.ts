@@ -61,7 +61,10 @@ export interface FigureNode {
   group?: number;
 }
 
-/** Structured description of a diagram block: what was drawn, the labels in it, and what connects to what. */
+/** Structured description of a diagram block: what was drawn, the labels in it, and what connects to what.
+ * Venn sets contain member nodes; overlap members have every containing set in `parents`.
+ * Overlapping set circles never contain one another.
+ */
 export interface FigureInfo {
   kind: FigureKind;
   shapes: string[];

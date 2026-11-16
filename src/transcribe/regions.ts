@@ -6,6 +6,7 @@ import { clusterStrokes } from '../ink/StrokeClustering';
 import { analyseGroup, analyseInk, figureFromGeometry, fullyContains, type FigureHint, type FigureNodeHint } from '../ink/shapeHints';
 import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, sequenceEdgeIndices, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
+import { matchPairs } from '../model/matching';
 
 export const REGION_PAD = 40;
 
@@ -235,7 +236,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
-    }));
+    }), strokes.map((s) => s.id));
     if (figure.kind === 'table' && fig.cellBounds) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
       const fallback = prior?.cells ?? (tableText ? cellGrid(tableText.text) : []);
@@ -356,9 +357,52 @@ function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureN
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
 
-function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[]): ReturnType<typeof figureFromGeometry> {
-  const rename = new Map<string, string>();
+function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, strokeOrder: string[]): Map<string, string> {
+  const geometry = geo.nodes ?? [], model = prior?.nodes ?? [];
+  const empty = new Map<string, string>();
+  if (!geometry.length || geometry.length > 12 || model.length !== geometry.length || !prior?.edges.length || geometry.some((n) => !geo.unnamed.includes(n.label))) return empty;
+  if (new Set(model.map((n) => n.label.toLowerCase())).size !== model.length) return empty;
+  const adjacency = (nodes: FigureNode[], edges: FigureEdge[]) => nodes.map((n) => new Set(edges.flatMap((e) => {
+    const from = nodes.findIndex((v) => sameText(v.label, e.from) || sameText(v.id, e.from));
+    const to = nodes.findIndex((v) => sameText(v.label, e.to) || sameText(v.id, e.to));
+    const i = nodes.indexOf(n);
+    return from < 0 || to < 0 || from === to ? [] : from === i ? [to] : to === i ? [from] : [];
+  })));
+  const ga = adjacency(geometry, geo.edges), ma = adjacency(model, prior.edges);
+  const candidates = geometry.map((g, i) => model.flatMap((m, j) => {
+    if (ga[i].size !== ma[j].size) return [];
+    if (!geo.unnamed.includes(g.label) && !sameText(g.label, m.label)) return [];
+    if (m.bbox && g.bbox && !boundsIntersect(expandBounds(g.bbox, 12), m.bbox)) return [];
+    if (m.strokeIds?.length && !m.strokeIds.some((id) => g.strokeIds?.includes(id))) return [];
+    return [j];
+  }));
+  const order = geometry.map((_, i) => i).sort((a, b) => candidates[a].length - candidates[b].length || ga[b].size - ga[a].size);
+  const ranks = new Map(strokeOrder.map((id, i) => [id, i]));
+  const strokeRank = (n: FigureNode) => Math.min(...(n.strokeIds ?? []).map((id) => ranks.get(id) ?? Infinity));
+  const written = geometry.map((_, i) => i).sort((a, b) => strokeRank(geometry[a]) - strokeRank(geometry[b]));
+  const assignment = new Map<number, number>(), used = new Set<number>();
+  let best: Map<number, number> | undefined, bestScore = -Infinity, visits = 0;
+  const search = (depth: number) => {
+    if (++visits > 50000) return;
+    if (depth === order.length) {
+      const score = [...assignment].reduce((sum, [i, j]) => sum - Math.abs(written.indexOf(i) - j), 0);
+      if (score > bestScore) { bestScore = score; best = new Map(assignment); }
+      return;
+    }
+    const i = order[depth];
+    for (const j of candidates[i]) {
+      if (used.has(j) || [...assignment].some(([a, b]) => ga[i].has(a) !== ma[j].has(b))) continue;
+      assignment.set(i, j); used.add(j); search(depth + 1); used.delete(j); assignment.delete(i);
+    }
+  };
+  search(0);
+  return best ? new Map([...best].map(([i, j]) => [geometry[i].label, model[j].label])) : empty;
+}
+
+function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[], strokeOrder: string[]): ReturnType<typeof figureFromGeometry> {
+  const rename = fig.kind === 'mindmap' ? graphNames(geo, prior, strokeOrder) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
+    if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
     const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
@@ -381,15 +425,13 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
-  if (fig.kind === 'mindmap') {
-    const used = new Set<string>();
-    for (const n of geo.nodes ?? []) {
-      const base = rename.get(n.label) ?? n.label;
-      let name = base, suffix = 2;
-      while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
-      used.add(name.toLowerCase());
-      if (name !== n.label) rename.set(n.label, name);
-    }
+  const used = new Set<string>();
+  for (const n of geo.nodes ?? []) {
+    const base = rename.get(n.label) ?? n.label;
+    let name = base, suffix = 2;
+    while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
+    used.add(name.toLowerCase());
+    if (name !== n.label) rename.set(n.label, name);
   }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
@@ -409,9 +451,9 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
 /**
  * Geometry owns structure; the model supplies words and only fills structural gaps.
  */
-export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
+export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>, strokeOrder: string[] = []): FigureInfo {
   const kind = fig.kind;
-  const geo = nameGeometryNodes(geoIn, prior, fig, labels);
+  const geo = nameGeometryNodes(geoIn, prior, fig, labels, strokeOrder);
   const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
@@ -420,7 +462,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
     const extra = { ...m };
     while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
     if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
@@ -445,19 +487,31 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     if (!g.parents?.length && parents?.length) g.parents = dedupe(parents);
   }
   const modelEdges = (prior?.edges ?? []).map((e) => ({ ...e, from: resolve(e.from), to: resolve(e.to) }));
+  const weight = Math.max(geo.edges.length, modelEdges.length) + 1;
+  const pairs = matchPairs(geo.edges.map((e, i) => modelEdges.map((m, j) => {
+    const exact = sameEdge(e, m);
+    const reverse = sameEdge({ from: e.to, to: e.from }, m);
+    if (!exact && (!reverse || geo.edges.some((g) => sameEdge(g, m)))) return -1;
+    const label = e.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
+    const consistent = label && m.label && cleanLabel(label).toLowerCase() === cleanLabel(m.label).toLowerCase();
+    return (exact ? weight ** 3 : 0) + (consistent ? weight ** 2 : 0) + weight - (i - j) ** 2 / weight ** 2;
+  })));
+  const consumed = new Set(pairs.values());
   const edges: FigureEdge[] = geo.edges.map((e, i) => {
-    const reverse = { from: e.to, to: e.from };
-    const single = geo.edges.filter((g) => sameEdge(g, e) || sameEdge(g, reverse)).length === 1;
-    const match = modelEdges.find((m) => sameEdge(e, m)) ?? (single && !geo.edges.some((g) => sameEdge(g, reverse))
-      ? modelEdges.find((m) => sameEdge(reverse, m)) : undefined);
+    const index = pairs.get(i);
+    const match = index === undefined ? undefined : modelEdges[index];
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
-    return { ...e, ...(label ? { label } : {}), inferred: true };
+    return { ...e, ...(match && !sameEdge(e, match) ? { from: e.to, to: e.from } : {}), ...(label ? { label } : {}), inferred: true };
   });
-  if (fig.kind !== 'mindmap' && modelEdges.length > geo.edges.length) for (const e of modelEdges) {
+  if (fig.kind !== 'mindmap') for (const [i, e] of modelEdges.entries()) {
+    if (consumed.has(i)) continue;
     const from = knownNode(e.from), to = knownNode(e.to);
     if (!from || !to || from.id === to.id || !geo.nodes?.some((n) => n.id === from.id) || !geo.nodes?.some((n) => n.id === to.id)) continue;
     const candidate = { ...e, from: from.label, to: to.label };
     if (edges.some((g) => sameEdge(g, candidate) || (sameText(g.from, candidate.to) && sameText(g.to, candidate.from)))) continue;
+    const missingExit = !geo.edges.some((g) => sameText(g.from, candidate.from)) && modelEdges.filter((g) => sameText(g.from, candidate.from)).length === 1;
+    const missingEntry = !geo.edges.some((g) => sameText(g.to, candidate.to)) && modelEdges.filter((g) => sameText(g.to, candidate.to)).length === 1;
+    if (geo.edges.length && !missingExit && !missingEntry) continue;
     edges.push({ ...candidate, inferred: false });
   }
   const sequence = (geo.sequence?.length ?? 0) >= 2 && !geo.sequence!.every((s) => geo.unnamed.includes(s))

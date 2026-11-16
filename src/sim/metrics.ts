@@ -1,5 +1,6 @@
 import type { BoundingBox } from '../types';
 import type { DigitalBlock, FigureEdge, FigureNode } from '../model/page';
+import { matchPairs } from '../model/matching';
 
 export interface ContainmentExpectation {
   outer: string;
@@ -427,21 +428,10 @@ export function relationMetrics(figures: FigureExpectation[], blocks: RelBlockLi
     return best && bestN >= f.strokeIds.length * 0.5 ? best : pooled;
   };
 
-  let edges = 0, edgesFound = 0;
-  const matchedPredicted = new Set<number>();
-  for (const f of figures) {
-    for (const e of f.edges ?? []) {
-      edges++;
-      let hit = false;
-      got.forEach((g, i) => {
-        if (edgeMatches(e, g, f.directed !== false)) {
-          hit = true;
-          matchedPredicted.add(i);
-        }
-      });
-      if (hit) edgesFound++;
-    }
-  }
+  const expected = figures.flatMap((f) => (f.edges ?? []).map((e) => ({ e, directed: f.directed !== false })));
+  const matches = matchPairs(expected.map(({ e, directed }) => got.map((g) => edgeMatches(e, g, directed) ? expected.length + 1 + (e.label && g.label ? 1 : 0) : -1)));
+  const edges = expected.length, edgesFound = matches.size;
+  const matchedPredicted = new Set(matches.values());
 
   let sequences = 0, sequencesExact = 0, steps = 0, stepsFound = 0, sequencesStructured = 0;
   const taus: number[] = [];

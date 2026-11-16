@@ -6,9 +6,62 @@ import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from
 import { attachUnclaimedStrokes, buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 import { normaliseFigure } from './figure';
-import type { FigureHint } from '../ink/shapeHints';
+import { figureFromGeometry, type FigureHint } from '../ink/shapeHints';
 import { buildScene, DATASETS } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
+
+describe('graph-based word assignment', () => {
+  it('uses page stroke order rather than digits in random ids to break graph symmetries', () => {
+    const scene = buildScene('mind-map', 33, 'normal');
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const full = figureFromGeometry(hint, () => undefined, groups);
+    const nodes = full.nodes!.slice(0, 3);
+    const geo = { ...full, nodes, edges: [nodes[0], nodes[2]].map((n) => ({ from: nodes[1].label, to: n.label, kind: 'line' as const })) };
+    const ids = geo.nodes!.map((_, i) => `stroke_${98765432 - i * 173921}`);
+    const geometry = { ...geo, nodes: geo.nodes!.map((n, i) => ({ ...n, strokeIds: [ids[i]] })) };
+    const labels = geometry.nodes!.map((_, i) => `word ${i}`);
+    const rename = new Map(geometry.nodes!.map((n, i) => [n.label, labels[i]]));
+    const prior: FigureInfo = { kind: 'mindmap', shapes: [], labels, nodes: labels.map((label, i) => ({ id: `model-${i}`, label })), edges: geometry.edges.map((e) => ({ ...e, from: rename.get(e.from)!, to: rename.get(e.to)! })) };
+    expect(mergeWithGeometry(prior, hint, labels, geometry, ids).nodes!.map((n) => n.label)).toEqual(labels);
+  });
+  it('allows repeated labels supported by distinct node ids', () => {
+    const scene = buildScene('state-machine', 62, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const geo = figureFromGeometry(hint, () => undefined, groups);
+    const prior: FigureInfo = { kind: 'flowchart', shapes: [], labels: ['work', 'done'], edges: [], nodes: geo.nodes!.map((n, i) => ({ id: n.id, label: i < 2 ? 'work' : 'done' })) };
+    expect(mergeWithGeometry(prior, hint, prior.labels, geo).nodes!.map((n) => n.label)).toEqual(['work', 'work (2)', 'done']);
+  });
+  it('names distinct states once when the model duplicates an accepting-state node', () => {
+    const scene = buildScene('state-machine', 62, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const prior: FigureInfo = { kind: 'flowchart', shapes: [], labels: ['q0', 'q1', 'q2'], nodes: ['q0', 'q1', 'q2', 'q1'].map((label, i) => ({ id: `n${i + 1}`, label })), edges: scene.figures[0].edges! };
+    const geo = figureFromGeometry(hint, () => undefined, groups);
+    const out = mergeWithGeometry(prior, hint, prior.labels, geo);
+    expect(out.nodes!.map((n) => n.label)).toEqual(['q0', 'q1', 'q2']);
+    expect(out.edges.map((e) => `${e.from}|${e.to}`).sort()).toEqual(['q0|q1', 'q1|q1', 'q1|q2', 'q2|q0']);
+    const duplicate = { ...prior, nodes: [{ id: 'n1', label: 'q0' }, { id: 'n2', label: 'q0' }, { id: 'unused', label: 'q1', bbox: hint.nodes[1].bbox }, { id: 'n3', label: 'q2' }] };
+    expect(mergeWithGeometry(duplicate, hint, prior.labels, geo).nodes!.map((n) => n.label)).toEqual(['q0', 'q1', 'q2']);
+  });
+  it.each(DATASETS['tables-mindmaps'].filter((s) => s.kind === 'mind-map'))('names the radial graph despite conflicting model groups: $seed', ({ kind, seed, messiness }) => {
+    const scene = buildScene(kind, seed, messiness);
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const expected = scene.figures[0];
+    const prior: FigureInfo = { kind: 'mindmap', shapes: [], labels: expected.labels, edges: expected.edges!, nodes: expected.labels.map((label, i) => ({ id: `wrong-${i}`, label, group: 999 })) };
+    const geometry = figureFromGeometry(hint, () => undefined, groups);
+    const out = mergeWithGeometry(prior, hint, prior.labels, geometry);
+    expect(new Set(out.nodes!.map((n) => n.label))).toEqual(new Set(expected.labels));
+    expect(out.edges.map((e) => [e.from, e.to].sort().join('|')).sort()).toEqual(expected.edges!.map((e) => [e.from, e.to].sort().join('|')).sort());
+    const positioned = { ...prior, nodes: out.nodes!.map((n) => ({ ...n, group: 999 })) };
+    expect(mergeWithGeometry(positioned, hint, prior.labels, geometry).edges).toEqual(out.edges);
+    expect(mergeWithGeometry(undefined, hint, [], geometry).nodes!.map((n) => n.label)).toEqual(geometry.nodes!.map((n) => n.label));
+    const invalid = { ...prior, nodes: prior.nodes!.map((n) => ({ ...n, bbox: { left: 10000, right: 10010, top: 10000, bottom: 10010 } })) };
+    expect(mergeWithGeometry(invalid, hint, prior.labels, geometry).nodes!.map((n) => n.label)).toEqual(geometry.nodes!.map((n) => n.label));
+  });
+});
 
 describe.each([false, true])('unclaimed prose with an unpositioned model paragraph: %s', (withParagraph) => {
   it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('preserves geometry ownership on $kind seed $seed', ({ kind, seed, messiness }) => {
@@ -174,11 +227,11 @@ describe('geometry-first structure', () => {
     expect(out.cells).toEqual([['header']]);
     expect(out.labels).toEqual(expect.arrayContaining(['model word', 'group word', 'header', 'extra column', 'last row']));
   });
-  it('keeps geometry nodes, directions, kinds, missing edges, order and nesting', () => {
+  it('keeps geometry structure but takes an unopposed model direction', () => {
     const prior = normaliseFigure({ kind: 'flowchart', names: { n1: 'start', n2: 'work', n3: 'end', n9: 'extra' }, edges: [{ from: 'n2', to: 'n1', label: 'yes', kind: 'line' }, { from: 'n1', to: 'n3' }], sequence: ['n3', 'n1', 'n2'] })!;
     const out = mergeWithGeometry(prior, hint, prior.labels, geo);
     expect(out.nodes).toEqual([{ id: 'n1', label: 'start', shape: 'rectangle', group: 1 }, { id: 'n2', label: 'work', shape: 'rectangle', group: 2, parent: 'n1' }, { id: 'n3', label: 'end', shape: 'rectangle', group: 3 }, { id: 'n9', label: 'extra' }]);
-    expect(out.edges).toEqual([{ from: 'start', to: 'work', kind: 'arrow', label: 'yes', inferred: true }, { from: 'work', to: 'end', kind: 'line', inferred: true }]);
+    expect(out.edges).toEqual([{ from: 'work', to: 'start', kind: 'arrow', label: 'yes', inferred: true }, { from: 'work', to: 'end', kind: 'line', inferred: true }]);
     expect(out.sequence).toEqual(['start', 'work', 'end']);
   });
   it('uses text-group names before model node names and ignores model nesting when geometry has nesting', () => {
@@ -202,6 +255,22 @@ describe('geometry-first structure', () => {
     expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['send', 'return']);
     prior.edges.pop();
     expect(mergeWithGeometry(prior, hint, [], { ...geometry, edges: geometry.edges.slice(0, 1) }).edges[0].label).toBe('return');
+  });
+  it('assigns repeated messages once, preferring consistent labels over array order', () => {
+    const geometry = { nodes: [{ id: 'a', label: 'agent' }, { id: 'b', label: 'env' }], edges: [{ from: 'agent', to: 'env', label: 'reset' }, { from: 'agent', to: 'env', label: 'action' }, { from: 'env', to: 'agent' }, { from: 'env', to: 'agent' }], unnamed: [] };
+    const scene = buildScene('sequence-diagram', 72, 'messy');
+    const prior: FigureInfo = { kind: 'sequence', shapes: [], labels: [], edges: scene.figures[0].edges! };
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['reset', 'action', 'state', 'reward']);
+    expect(mergeWithGeometry({ ...prior, edges: prior.edges.slice(0, 1) }, hint, [], geometry).edges.filter((e) => e.label === 'action')).toHaveLength(1);
+  });
+  it('fills a sole missing exit even with equal counts, but rejects extra connected transitions', () => {
+    const geometry = { nodes: ['idle', 'run', 'wait', 'done'].map((label, i) => ({ id: `n${i}`, label })), edges: [{ from: 'idle', to: 'run' }, { from: 'run', to: 'wait' }, { from: 'wait', to: 'run' }, { from: 'run', to: 'done' }], unnamed: [] };
+    const scene = buildScene('state-machine', 64, 'messy');
+    const prior: FigureInfo = { kind: 'graph', shapes: [], labels: [], edges: [...scene.figures[0].edges!, { from: 'wait', to: 'done', label: 'exit' }] };
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges).toHaveLength(4);
+    const gap = { ...geometry, edges: [{ from: 'idle', to: 'run' }, { from: 'run', to: 'wait' }] };
+    const model = { ...prior, edges: [{ from: 'idle', to: 'run' }, { from: 'wait', to: 'done' }] };
+    expect(mergeWithGeometry(model, hint, [], gap).edges).toContainEqual({ from: 'wait', to: 'done', inferred: false });
   });
   it('resolves fallback sequence ids and preserves the drawn table dimensions', () => {
     const prior = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], cells: [['a', 'b', 'extra'], ['c'], ['extra']] })!;
@@ -825,7 +894,7 @@ describe('reconcileFigureBlocks', () => {
     expect(figure.labels).toContain('go');
     expect(figure.labels).not.toContain('N1');
     expect(figure.sequence).toEqual(['go', 'rectangle 2']);
-    expect(figure.edges).toEqual([{ from: 'go', to: 'rectangle 2', label: 'back', kind: 'arrow', inferred: true }]);
+    expect(figure.edges).toEqual([{ from: 'rectangle 2', to: 'go', label: 'back', kind: 'arrow', inferred: true }]);
   });
 
   it('turns a model "table" text block on a drawn grid into the figure cells', () => {
