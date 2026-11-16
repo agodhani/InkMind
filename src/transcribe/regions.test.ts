@@ -11,6 +11,18 @@ import { buildScene, DATASETS } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
 
 describe('graph-based word assignment', () => {
+  it('names distinct states once when the model duplicates an accepting-state node', () => {
+    const scene = buildScene('state-machine', 62, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const prior: FigureInfo = { kind: 'flowchart', shapes: [], labels: ['q0', 'q1', 'q2'], nodes: ['q0', 'q1', 'q2', 'q1'].map((label, i) => ({ id: `n${i + 1}`, label })), edges: scene.figures[0].edges! };
+    const geo = figureFromGeometry(hint, () => undefined, groups);
+    const out = mergeWithGeometry(prior, hint, prior.labels, geo);
+    expect(out.nodes!.map((n) => n.label)).toEqual(['q0', 'q1', 'q2']);
+    expect(out.edges.map((e) => `${e.from}|${e.to}`).sort()).toEqual(['q0|q1', 'q1|q1', 'q1|q2', 'q2|q0']);
+    const duplicate = { ...prior, nodes: [{ id: 'n1', label: 'q0' }, { id: 'n2', label: 'q0' }, { id: 'unused', label: 'q1', bbox: hint.nodes[1].bbox }, { id: 'n3', label: 'q2' }] };
+    expect(mergeWithGeometry(duplicate, hint, prior.labels, geo).nodes!.map((n) => n.label)).toEqual(['q0', 'q1', 'q2']);
+  });
   it.each(DATASETS['tables-mindmaps'].filter((s) => s.kind === 'mind-map'))('names the radial graph despite conflicting model groups: $seed', ({ kind, seed, messiness }) => {
     const scene = buildScene(kind, seed, messiness);
     const groups = buildStrokeGroups(scene.strokes);

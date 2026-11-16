@@ -7,6 +7,28 @@ import { buildScene } from '../sim/scenes';
 
 beforeEach(() => resetSynthetic());
 
+describe('accepting states and transition ownership', () => {
+  it('does not claim a notes line below the graph as a transition label', () => {
+    const scene = buildScene('notes-complex', 132, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const analysis = analyseInk(scene.strokes, groups);
+    const notes = groups.find((g) => g.strokeIds.includes('s88'))!;
+    expect(analysis.groups.flatMap((g) => g.arrows).some((a) => a.labelGroup === notes.index)).toBe(false);
+  });
+  it('collapses concentric rings, keeps distinct states, and owns labels below connectors', () => {
+    const scene = buildScene('state-machine', 62, 'messy');
+    const groups = buildStrokeGroups(scene.strokes);
+    const fig = groups.find((g) => g.figure)!.figure!;
+    expect(fig.nodes).toHaveLength(3);
+    expect(fig.nodes.every((n) => n.parent === undefined)).toBe(true);
+    expect(fig.relations.map((r) => `${r.from}|${r.to}`).sort()).toEqual(['n1|n2', 'n2|n2', 'n2|n3', 'n3|n1']);
+    const owned = groups.filter((g) => fig.groupIndices.includes(g.index)).flatMap((g) => g.strokeIds);
+    expect(new Set(owned)).toEqual(new Set(scene.strokes.map((s) => s.id)));
+    expect(fig.relations.find((r) => r.from === 'n1' && r.to === 'n2')!.labelGroup).toBe(groups.find((g) => g.strokeIds.includes('s20'))!.index);
+    expect(fig.relations.find((r) => r.from === 'n2' && r.to === 'n3')!.labelGroup).toBe(groups.find((g) => g.strokeIds.includes('s25'))!.index);
+  });
+});
+
 describe('composite arrow direction', () => {
   it.each([['sequence-diagram', 72, 'messy', 's68'], ['state-machine', 63, 'normal', 's23']] as const)('uses the actual head rather than a nearby glyph or another connector: %s', (kind, seed, messiness, shaft) => {
     const scene = buildScene(kind, seed, messiness);

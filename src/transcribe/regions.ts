@@ -404,7 +404,9 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
+    const used = new Set([...(geo.nodes ?? []).filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label.toLowerCase()), ...[...rename.values()].map((s) => s.toLowerCase())]);
+    const available = (prior?.nodes ?? []).filter((n) => !used.has(n.label.toLowerCase()));
+    const m = modelNodeFor(g, geo.nodes ?? [], available.length ? available : prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
@@ -463,7 +465,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
     const extra = { ...m };
     while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
     if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
