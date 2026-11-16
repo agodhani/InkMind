@@ -79,9 +79,9 @@ describe.each([111, 112])('table scene %s', (seed) => {
     expect(new Set(result[0].strokeIds)).toEqual(new Set(scene.strokes.map((s) => s.id)));
   });
 
-  it('uses positioned model words to correct a supplied cell grid in the wrong order', () => {
+  it('corrects positioned cells in an unordered grid and preserves unpositioned fallback cells', () => {
     const prior: FigureInfo = { kind: 'table', shapes: [], labels: [], edges: [], cells: expected.map((row) => [...row].reverse()).reverse(), nodes: positions.map((p, i) => ({ id: `cell-${i}`, label: p.text, bbox: p.bbox })).reverse() };
-    expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(expected);
+    expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(expected.map((row, r) => row.map((word, c) => word || prior.cells![r][c])));
   });
 
   it('uses per-node stroke anchors when model cell boxes are absent', () => {
@@ -113,6 +113,16 @@ describe.each([111, 112])('table scene %s', (seed) => {
     expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(cells);
   });
 
+  it('does not consume another cell fallback when a positioned correction repeats its value', () => {
+    const cells = expected.map((row) => [...row]);
+    cells[0][0] = 'previous';
+    cells[cells.length - 1][cells[0].length - 1] = '90';
+    const prior: FigureInfo = { kind: 'table', shapes: [], labels: [], edges: [], cells, nodes: [{ id: 'positioned', label: '90', bbox: fig.cellBounds![0][0] }] };
+    const corrected = cells.map((row) => [...row]);
+    corrected[0][0] = '90';
+    expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(corrected);
+  });
+
   it.each([false, true])('merges a model table block into the geometry table, bbox-only: %s', (bboxOnly) => {
     const [raw] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: expected, groupIndices: bboxOnly ? [] : groups.map((g) => g.index), bbox: scene.figures[0].bbox }] });
     const block = rawToDigitalBlock(raw, groups, { left: 0, top: 0, right: scene.width, bottom: scene.height }, { width: scene.width, height: scene.height }, scene.strokes);
@@ -126,7 +136,7 @@ describe.each([111, 112])('table scene %s', (seed) => {
   it('prefers positioned cell text over an unordered table block grid', () => {
     const [raw] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: [...expected].reverse(), groupIndices: groups.map((g) => g.index) }] });
     const block = rawToDigitalBlock(raw, groups, { left: 0, top: 0, right: scene.width, bottom: scene.height }, { width: scene.width, height: scene.height }, scene.strokes);
-    expect(reconcile([block, ...textBlocks()])[0].figure!.cells).toEqual(expected);
+    expect(reconcile([block, ...textBlocks()])[0].figure!.cells).toEqual(expected.map((row, r) => row.map((word, c) => word || expected[expected.length - 1 - r][c])));
   });
 
   it('does not spill a malformed or oversized model grid beyond geometry cells', () => {

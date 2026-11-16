@@ -255,17 +255,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         return unique.map((b) => cleanLabel(b.text)).join(' ');
       }));
       if (fits) {
-        const remaining = new Map<string, number>();
-        fallback.flat().filter(Boolean).forEach((word) => remaining.set(word, (remaining.get(word) ?? 0) + 1));
-        figure.cells.flat().filter(Boolean).forEach((word) => remaining.set(word, Math.max(0, (remaining.get(word) ?? 0) - 1)));
-        figure.cells = figure.cells.map((row, r) => row.map((word, c) => {
-          if (word) return word;
-          const candidate = fallback[r]?.[c] ?? '';
-          const count = remaining.get(candidate) ?? 0;
-          if (!count) return '';
-          remaining.set(candidate, count - 1);
-          return candidate;
-        }));
+        figure.cells = figure.cells.map((row, r) => row.map((word, c) => word || fallback[r]?.[c] || ''));
       }
       figure.labels = dedupe([...figure.labels, ...figure.cells.flat().filter(Boolean)]);
     } else if (figure.kind === 'table' && !prior?.cells?.length) {
