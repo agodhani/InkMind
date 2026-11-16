@@ -607,16 +607,22 @@ export function rawToDigitalBlock(
 }
 
 function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] {
-  if (!fresh.length) return edited.map(row => [...row]);
+  const placeholder = (value: string) => /^\[Handwriting\b[^\]]*\]$/i.test(value.trim());
+  const recognised = (value: string) => !!value.trim() && !placeholder(value);
+  if (!fresh.some(row => row.some(recognised))) return edited.map(row => [...row]);
   const sameGrid = edited.length === fresh.length && edited.every((row, r) => row.length === fresh[r].length);
   const uniqueIndex = (values: string[], value: string) => {
-    if (!value.trim()) return undefined;
+    if (!recognised(value)) return undefined;
     const indices = values.flatMap((word, i) => sameText(word, value) ? [i] : []);
     return indices.length === 1 ? indices[0] : undefined;
   };
   const headers = fresh[0] ?? [];
   const columns = headers.map((word) => uniqueIndex(headers, word) === undefined ? undefined : uniqueIndex(edited[0] ?? [], word));
-  const positional = sameGrid && new Set(headers).size === headers.length && new Set(edited[0]).size === edited[0].length;
+  const uniqueHeaders = (values: string[]) => {
+    const words = values.filter(recognised).map(value => value.trim().toLowerCase());
+    return new Set(words).size === words.length;
+  };
+  const positional = sameGrid && uniqueHeaders(headers) && uniqueHeaders(edited[0] ?? []);
   const keyColumn = columns.indexOf(0);
   const oldKeys = edited.slice(1).map((row) => row[0] ?? '');
   const newKeys = fresh.slice(1).map((row) => row[keyColumn] ?? '');
@@ -630,11 +636,16 @@ function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] 
     return matches.map((match, i) => match ?? (positional && !claimed.has(i) ? i : undefined));
   };
   const oldRows = withUnclaimedPositions(rows), oldColumns = withUnclaimedPositions(columns);
+  const uncertainResize = !sameGrid && fresh.some(row => row.some(cell => !recognised(cell)));
+  if (uncertainResize && !edited.every((row, r) => oldRows.includes(r) && row.every((_, c) => oldColumns.includes(c)))) {
+    return edited.map(row => [...row]);
+  }
   return fresh.map((row, r) => {
     const oldRow = oldRows[r];
     return row.map((cell, c) => {
       const oldColumn = oldColumns[c];
-      return oldRow === undefined || oldColumn === undefined ? cell : edited[oldRow]?.[oldColumn] ?? cell;
+      const saved = oldRow === undefined || oldColumn === undefined ? undefined : edited[oldRow]?.[oldColumn];
+      return saved === undefined || (placeholder(saved) && recognised(cell)) ? cell : saved;
     });
   });
 }
