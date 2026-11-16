@@ -335,11 +335,16 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
   return out;
 }
 
+function isVenn(nodes: Pick<FigureNode, 'shape' | 'parents'>[]): boolean {
+  return nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse').length >= 2 && nodes.some(n => (n.parents?.length ?? 0) > 1);
+}
+
 /**
  * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
 function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[], hint?: FigureNodeHint): FigureNode | undefined {
+  if (isVenn(geoNodes)) modelNodes = modelNodes.filter(m => m.bbox || geoNodes.filter(n => n.strokeIds?.some(id => m.strokeIds?.includes(id))).length === 1);
   if (g.bbox) {
     const positioned = modelNodes.map((n) => {
       const overlap = n.strokeIds?.filter((id) => (hint?.strokeIds ?? g.strokeIds)?.includes(id)).length ?? 0;
@@ -400,14 +405,13 @@ function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInf
 }
 
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[], strokeOrder: string[]): ReturnType<typeof figureFromGeometry> {
-  const venn = fig.nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse').length >= 2 && fig.nodes.some(n => (n.parents?.length ?? 0) > 1);
+  const venn = isVenn(fig.nodes);
   const rename = fig.kind === 'mindmap' ? graphNames(geo, prior, strokeOrder) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
     if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    let m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
-    if (venn && m && !m.bbox && !sameText(m.id, g.id) && (geo.nodes ?? []).filter(n => n.strokeIds?.some(id => m!.strokeIds?.includes(id))).length > 1) m = undefined;
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
@@ -421,15 +425,10 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     ...(geo.sequence ?? []), ...(prior?.sequence ?? []),
   ].map((s) => s.trim().toLowerCase()));
   const unused = [...new Map(labels.flatMap(stringList).filter((s) => s.trim() && !attached.has(s.toLowerCase()) && !geo.unnamed.includes(s) && !isGroupRef(s)).map((s) => [s.toLowerCase(), s])).values()];
-  if (pending.length && unused.length === pending.length) {
+  if (!venn && pending.length && unused.length === pending.length) {
     const spatialOrder = ['left→right', 'top→bottom'].includes(fig.orderBasis) ? fig.order : [];
     const order = dedupe([...spatialOrder, ...fig.nodes.map((n) => n.id), ...pending.map((n) => n.id)]);
-    const rowTol = Math.max(12, ...pending.map(n => n.bbox ? (n.bbox.bottom - n.bbox.top) * 1.5 : 0));
-    pending.sort((a, b) => {
-      if (!venn || !a.bbox || !b.bbox) return order.indexOf(a.id) - order.indexOf(b.id);
-      const ay = (a.bbox.top + a.bbox.bottom) / 2, by = (b.bbox.top + b.bbox.bottom) / 2;
-      return Math.abs(ay - by) > rowTol ? ay - by : a.bbox.left - b.bbox.left;
-    });
+    pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
   const used = new Set<string>();
@@ -462,17 +461,21 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   const kind = fig.kind;
   const geo = nameGeometryNodes(geoIn, prior, fig, labels, strokeOrder);
   const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
+  const venn = isVenn(fig.nodes);
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
   const aliases = new Map<string, string>();
+  const modelIds = new Map<string, string>();
+  const modelMemberships: FigureNode[] = [];
   for (const g of nodes) {
     const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
-    if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
+    if (m) { matched.add(m); modelIds.set(m.id, g.id); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox) || venn)) {
     const extra = { ...m };
     while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
-    if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    if (venn && !m.bbox) modelMemberships.push(extra);
+    else if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
     if (geometryNesting && extra.bbox) {
       const enclosing = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline' && fullyContains(n, { bbox: extra.bbox!, shape: extra.shape ?? 'text' }));
       const nearest = enclosing.filter((n) => !enclosing.some((other) => other !== n && fullyContains(n, other)));
@@ -482,6 +485,11 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
       }
     }
     nodes.push(extra);
+    modelIds.set(m.id, extra.id);
+  }
+  for (const node of modelMemberships) {
+    if (node.parent) node.parent = modelIds.get(node.parent);
+    if (node.parents) node.parents = dedupe(node.parents.flatMap(ref => modelIds.get(ref) ?? []));
   }
   const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
   const knownNode = (s: string) => nodes.find((n) => sameText(n.label, resolve(s)) || sameText(n.id, s));

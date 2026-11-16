@@ -17,19 +17,30 @@ function fixture() {
 }
 
 describe('Venn geometry memberships', () => {
-  it.each(['labels', 'nodes', 'shared group'])('grounds a full model word list with no word positions (%s) in text-cluster reading order', source => {
+  it.each(['labels', 'nodes', 'shared group', 'hint ids'])('does not guess membership from a full unpositioned word list (%s)', source => {
     const { scene, groups, reconcile } = fixture();
     const labels = ['cats', 'fur', 'pets', 'bark', 'dogs'];
-    const figure = normaliseFigure({ kind: 'shape', labels, nodes: source !== 'labels' ? labels.map((label, i) => ({ id: `word-${i}`, label, ...(source === 'shared group' ? { groupIndices: groups.map(g => g.index) } : {}) })) : undefined })!;
+    const figure = normaliseFigure({ kind: 'shape', labels, nodes: source !== 'labels' ? labels.map((label, i) => ({ id: source === 'hint ids' ? `n${i + 1}` : `word-${i}`, label, ...(source === 'shared group' ? { groupIndices: groups.map(g => g.index) } : {}) })) : undefined })!;
     const blocks = reconcile([{ kind: 'diagram', text: 'Venn diagram', confidence: 0.9, bbox: scene.figures[0].bbox, groupIndices: groups.map(g => g.index), figure }]);
     const nodes = blocks[0].figure!.nodes!;
-    expect(nodes).toHaveLength(5);
-    expect(containmentFromNodes(nodes)).toEqual(expect.arrayContaining([
-      { outer: 'cats', inner: 'fur' }, { outer: 'dogs', inner: 'bark' }, { outer: 'cats', inner: 'pets' }, { outer: 'dogs', inner: 'pets' },
-    ]));
+    expect(containmentFromNodes(nodes).some(pair => labels.includes(pair.outer) || labels.includes(pair.inner))).toBe(false);
+    expect(relationMetrics(scene.figures, blocks)).toMatchObject({ contains: 4, containsFound: 0 });
+    expect(nodes.filter(n => n.shape === 'circle').every(n => !labels.includes(n.label))).toBe(true);
+  });
+
+  it.each([false, true])('uses explicit model parents without assigning unpositioned words to geometry clusters (colliding ids: %s)', colliding => {
+    const { scene, groups, reconcile } = fixture();
+    const cats = colliding ? 'n1' : 'cats', dogs = colliding ? 'n2' : 'dogs';
+    const figure = normaliseFigure({ nodes: [
+      { id: cats, label: 'cats', shape: 'circle' }, { id: dogs, label: 'dogs', shape: 'circle' },
+      { id: 'pets', label: 'pets', parents: [cats, dogs] },
+      { id: 'bark', label: 'bark', parent: dogs }, { id: 'fur', label: 'fur', parent: cats },
+    ] })!;
+    const blocks = reconcile([{ kind: 'diagram', text: '', confidence: 0.9, bbox: scene.figures[0].bbox, groupIndices: groups.map(g => g.index), figure }]);
     expect(relationMetrics(scene.figures, blocks)).toMatchObject({ contains: 4, containsFound: 4 });
-    for (const node of nodes) expect(node.strokeIds!.length).toBeGreaterThan(0);
-    expect(nodes.filter(n => n.shape === 'circle').map(n => n.label)).toEqual(['cats', 'dogs']);
+    const members = blocks[0].figure!.nodes!.filter(n => ['pets', 'bark', 'fur'].includes(n.label));
+    expect(members).toHaveLength(3);
+    expect(members.every(n => !n.strokeIds?.length && !n.bbox)).toBe(true);
   });
 
   it('prefers positioned word anchors over a differently ordered model label list', () => {
@@ -59,7 +70,7 @@ describe('Venn geometry memberships', () => {
   });
 
   it('keeps geometric multi-membership on the Mock and geometry-only paths without nesting circles', async () => {
-    const { request, reconcile } = fixture();
+    const { scene, request, reconcile } = fixture();
     const response = await new MockTranscriber().transcribe(request);
     for (const blocks of [reconcile([]), reconcile(response.blocks)]) {
       const nodes = blocks[0].figure!.nodes!;
@@ -67,7 +78,16 @@ describe('Venn geometry memberships', () => {
       expect(nodes.filter(n => n.shape === 'circle').every(n => !n.parent && !n.parents?.length)).toBe(true);
       expect(nodes.find(n => n.shape === 'text' && n.parents?.length === 2)).toBeDefined();
       expect(containmentFromNodes(nodes)).toHaveLength(4);
+      const locatedLabel = (word: string) => {
+        const ids = scene.figures[0].labelStrokeIds![word];
+        const node = nodes.find(n => n.strokeIds?.some(id => ids.includes(id)));
+        expect(node).toBeDefined();
+        return node!.label;
+      };
+      const reference = scene.figures.map(f => ({ ...f, contains: f.contains!.map(pair => ({ outer: locatedLabel(pair.outer), inner: locatedLabel(pair.inner) })) }));
+      expect(relationMetrics(reference, blocks)).toMatchObject({ contains: 4, containsFound: 4 });
     }
+    expect(relationMetrics(scene.figures, expectedBlocks(scene, new Map()))).toMatchObject({ contains: 4, containsFound: 4 });
   });
 
   it('loads legacy single-parent figures and resolves label-based multi-parent references', () => {
