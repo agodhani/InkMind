@@ -22,15 +22,13 @@ describe('text and relation recovery', () => {
     expect(reconcileFigureBlocks([{ ...blocks[0], figure: { ...blocks[0].figure!, sequence: ['first', 'last'] } }], groups, [])[0].kind).toBe('diagram');
     expect(reconcileFigureBlocks([{ ...blocks[0], figure: { ...blocks[0].figure!, nodes: [{ id: 'a', label: 'outer' }, { id: 'b', label: 'inner', parents: ['a'] }] } }], groups, [])[0].kind).toBe('diagram');
   });
-  it('keeps compatible extra model edges between distinct geometry nodes but not reversed, self or dangling ones', () => {
+  it('reverses an unopposed connector without inserting ambiguous model gaps', () => {
     const prior = normaliseFigure({ names: { n1: 'start', n2: 'work', n3: 'end', n4: 'unsupported' }, edges: [
       { from: 'n2', to: 'n1' }, { from: 'n2', to: 'n3', label: 'next' }, { from: 'n1', to: 'n3' }, { from: 'n1', to: 'n1' }, { from: 'n1', to: 'n4' },
     ] })!;
     const geo = { nodes: ['n1', 'n2', 'n3'].map((id, i) => ({ id, label: `rectangle ${i + 1}` })), edges: [{ from: 'rectangle 1', to: 'rectangle 2', kind: 'arrow' as const }], unnamed: ['rectangle 1', 'rectangle 2', 'rectangle 3'] };
     expect(mergeWithGeometry(prior, hint, prior.labels, geo).edges).toEqual([
-      { from: 'start', to: 'work', kind: 'arrow', inferred: true },
-      { from: 'work', to: 'end', label: 'next', inferred: false },
-      { from: 'start', to: 'end', inferred: false },
+      { from: 'work', to: 'start', kind: 'arrow', inferred: true },
     ]);
     expect(mergeWithGeometry(undefined, hint, [], { nodes: [], edges: [], unnamed: [] }).edges).toEqual([]);
   });

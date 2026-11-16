@@ -3,8 +3,20 @@ import { analyseInk, classifyStroke, figureFromGeometry, type FigureHint } from 
 import { buildStrokeGroups } from '../transcribe/regions';
 import { resetSynthetic } from '../__tests__/shapes';
 import { arcPath, arrowsBetweenWords, curvedArrow, flowchartWithLoop, mindMap, nestedBoxes, sequenceDiagram, stateMachine, tableGrid, twoFiguresWithNotes, type Scene } from '../__tests__/complexScenes';
+import { buildScene } from '../sim/scenes';
 
 beforeEach(() => resetSynthetic());
+
+describe('composite arrow direction', () => {
+  it.each([['sequence-diagram', 72, 'messy', 's68'], ['state-machine', 63, 'normal', 's23']] as const)('uses the actual head rather than a nearby glyph or another connector: %s', (kind, seed, messiness, shaft) => {
+    const scene = buildScene(kind, seed, messiness);
+    const analysis = analyseInk(scene.strokes, buildStrokeGroups(scene.strokes));
+    const arrow = analysis.groups.flatMap((g) => g.arrows).find((a) => a.strokeIds.includes(shaft))!;
+    expect(arrow).toBeDefined();
+    expect(arrow.head.x > arrow.tail.x).toBe(kind === 'state-machine');
+    expect(arrow.strokeIds).toContain(kind === 'state-machine' ? 's24' : 's69');
+  });
+});
 
 /** Analyse a scene; `labelFor` names a group after the scene label whose strokes it holds. */
 function run(scene: Scene) {

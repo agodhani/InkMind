@@ -648,13 +648,14 @@ export function chainSegments(pieces: { strokeId: string; segments: Segment[] }[
 /** Lines + small marks at one end → arrow. `shafts` are candidate shaft strokes, `marks` are candidate heads. */
 const HEAD_KINDS = new Set<StrokeShapeKind>(['vee', 'polyline', 'curve', 'triangle', 'arrow']);
 
-function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupIndex: number, minShaft = 25): { arrows: Arrow[]; used: Set<string> } {
+function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupIndex: number, minShaft: number, drawingOrder: StrokeShape[]): { arrows: Arrow[]; used: Set<string> } {
   const arrows: Arrow[] = [];
   const used = new Set<string>();
   for (const shaft of shafts) {
     if (shaft.length < minShaft || used.has(shaft.strokeId)) continue;
     if (shaft.kind === 'curve' && shaft.length < 2 * MIN_LINE_SIZE) continue;
     const ends: [Offset, Offset][] = [[shaft.start, shaft.end], [shaft.end, shaft.start]];
+    const proposals: { tip: Offset; tail: Offset; heads: StrokeShape[]; proximity: number }[] = [];
     for (const [tip, tail] of ends) {
       const axisTail = shaft.kind === 'curve' && shaft.vertices.length >= 2 ? (tip === shaft.end ? shaft.vertices[shaft.vertices.length - 2] : shaft.vertices[1]) : tail;
       const heads = marks.filter((m) => {
@@ -666,6 +667,8 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
         // The shaft tip touches the head, and the head sits on the shaft's axis (straight shafts).
         if (!contains(m.bbox, tip, Math.max(4, 0.05 * shaft.length))) return false;
         if (shaft.kind !== 'curve' && perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.5 * m.diag + 2) return false;
+        const back = { x: axisTail.x - tip.x, y: axisTail.y - tip.y };
+        if ((center(m.bbox).x - tip.x) * back.x + (center(m.bbox).y - tip.y) * back.y < 0) return false;
         return dist(center(m.bbox), tip) <= Math.max(14, 0.3 * shaft.length);
       });
       const wings = heads.filter((h) => h.kind === 'line');
@@ -680,11 +683,14 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
         return side(center(p.bbox)) * side(center(q.bbox)) < 0;
       }));
       if (heads.length >= 1 && heads.length <= 3 && (heads.some((h) => h.kind !== 'line') || splitHead)) {
-        arrows.push({ strokeIds: [shaft.strokeId, ...heads.map((h) => h.strokeId)], tail, head: tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
-        used.add(shaft.strokeId);
-        heads.forEach((h) => used.add(h.strokeId));
-        break;
+        proposals.push({ tip, tail, heads, proximity: Math.min(...heads.map((h) => Math.abs(drawingOrder.indexOf(h) - drawingOrder.indexOf(shaft)))) });
       }
+    }
+    const best = proposals.sort((a, b) => a.proximity - b.proximity)[0];
+    if (best) {
+      arrows.push({ strokeIds: [shaft.strokeId, ...best.heads.map((h) => h.strokeId)], tail: best.tail, head: best.tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
+      used.add(shaft.strokeId);
+      best.heads.forEach((h) => used.add(h.strokeId));
     }
   }
   return { arrows, used };
@@ -809,7 +815,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   arrows.forEach((a) => a.strokeIds.forEach((id) => usedIds.add(id)));
   const shaftCandidates = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline' || s.kind === 'curve'));
   const marks = shapes.filter((s) => !usedIds.has(s.strokeId) && (shapes.length <= 2 || s.diag <= Math.max(2.5 * medH, 0.35 * Math.max(gw, gh))));
-  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20);
+  const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20, shapes);
   arrows.push(...composite.arrows);
   const baselineText = shapes.length >= 6 && gw > 2 * gh && gh <= 2.8 * medH;
   if (baselineText) {

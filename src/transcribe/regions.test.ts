@@ -193,11 +193,11 @@ describe('geometry-first structure', () => {
     expect(out.cells).toEqual([['header']]);
     expect(out.labels).toEqual(expect.arrayContaining(['model word', 'group word', 'header', 'extra column', 'last row']));
   });
-  it('keeps geometry nodes, directions, kinds, missing edges, order and nesting', () => {
+  it('keeps geometry structure but takes an unopposed model direction', () => {
     const prior = normaliseFigure({ kind: 'flowchart', names: { n1: 'start', n2: 'work', n3: 'end', n9: 'extra' }, edges: [{ from: 'n2', to: 'n1', label: 'yes', kind: 'line' }, { from: 'n1', to: 'n3' }], sequence: ['n3', 'n1', 'n2'] })!;
     const out = mergeWithGeometry(prior, hint, prior.labels, geo);
     expect(out.nodes).toEqual([{ id: 'n1', label: 'start', shape: 'rectangle', group: 1 }, { id: 'n2', label: 'work', shape: 'rectangle', group: 2, parent: 'n1' }, { id: 'n3', label: 'end', shape: 'rectangle', group: 3 }, { id: 'n9', label: 'extra' }]);
-    expect(out.edges).toEqual([{ from: 'start', to: 'work', kind: 'arrow', label: 'yes', inferred: true }, { from: 'work', to: 'end', kind: 'line', inferred: true }]);
+    expect(out.edges).toEqual([{ from: 'work', to: 'start', kind: 'arrow', label: 'yes', inferred: true }, { from: 'work', to: 'end', kind: 'line', inferred: true }]);
     expect(out.sequence).toEqual(['start', 'work', 'end']);
   });
   it('uses text-group names before model node names and ignores model nesting when geometry has nesting', () => {
@@ -221,6 +221,22 @@ describe('geometry-first structure', () => {
     expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['send', 'return']);
     prior.edges.pop();
     expect(mergeWithGeometry(prior, hint, [], { ...geometry, edges: geometry.edges.slice(0, 1) }).edges[0].label).toBe('return');
+  });
+  it('assigns repeated messages once, preferring consistent labels over array order', () => {
+    const geometry = { nodes: [{ id: 'a', label: 'agent' }, { id: 'b', label: 'env' }], edges: [{ from: 'agent', to: 'env', label: 'reset' }, { from: 'agent', to: 'env', label: 'action' }, { from: 'env', to: 'agent' }, { from: 'env', to: 'agent' }], unnamed: [] };
+    const scene = buildScene('sequence-diagram', 72, 'messy');
+    const prior: FigureInfo = { kind: 'sequence', shapes: [], labels: [], edges: scene.figures[0].edges! };
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges.map((e) => e.label)).toEqual(['reset', 'action', 'state', 'reward']);
+    expect(mergeWithGeometry({ ...prior, edges: prior.edges.slice(0, 1) }, hint, [], geometry).edges.filter((e) => e.label === 'action')).toHaveLength(1);
+  });
+  it('fills a sole missing exit even with equal counts, but rejects extra connected transitions', () => {
+    const geometry = { nodes: ['idle', 'run', 'wait', 'done'].map((label, i) => ({ id: `n${i}`, label })), edges: [{ from: 'idle', to: 'run' }, { from: 'run', to: 'wait' }, { from: 'wait', to: 'run' }, { from: 'run', to: 'done' }], unnamed: [] };
+    const scene = buildScene('state-machine', 64, 'messy');
+    const prior: FigureInfo = { kind: 'graph', shapes: [], labels: [], edges: [...scene.figures[0].edges!, { from: 'wait', to: 'done', label: 'exit' }] };
+    expect(mergeWithGeometry(prior, hint, [], geometry).edges).toHaveLength(4);
+    const gap = { ...geometry, edges: [{ from: 'idle', to: 'run' }, { from: 'run', to: 'wait' }] };
+    const model = { ...prior, edges: [{ from: 'idle', to: 'run' }, { from: 'wait', to: 'done' }] };
+    expect(mergeWithGeometry(model, hint, [], gap).edges).toContainEqual({ from: 'wait', to: 'done', inferred: false });
   });
   it('resolves fallback sequence ids and preserves the drawn table dimensions', () => {
     const prior = normaliseFigure({ labels: ['n1, N3'], sequence: ['n1', 'N3'], cells: [['a', 'b', 'extra'], ['c'], ['extra']] })!;
@@ -844,7 +860,7 @@ describe('reconcileFigureBlocks', () => {
     expect(figure.labels).toContain('go');
     expect(figure.labels).not.toContain('N1');
     expect(figure.sequence).toEqual(['go', 'rectangle 2']);
-    expect(figure.edges).toEqual([{ from: 'go', to: 'rectangle 2', label: 'back', kind: 'arrow', inferred: true }]);
+    expect(figure.edges).toEqual([{ from: 'rectangle 2', to: 'go', label: 'back', kind: 'arrow', inferred: true }]);
   });
 
   it('turns a model "table" text block on a drawn grid into the figure cells', () => {

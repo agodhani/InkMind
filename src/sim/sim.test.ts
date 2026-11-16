@@ -291,7 +291,20 @@ describe('relation metrics', () => {
     const wrong = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1', label: 'a' }] })]);
     expect(wrong.edgesFound).toBe(1);
     const bare = relationMetrics([sm], [block('sm', { kind: 'graph', shapes: [], labels: [], edges: [{ from: 'q0', to: 'q1' }] })]);
-    expect(bare.edgesFound).toBe(2);
+    expect(bare.edgesFound).toBe(1);
+  });
+
+  it('matches scene messages one-to-one, including unlabeled and duplicate predictions', () => {
+    const scene = buildScene('sequence-diagram', 72, 'messy');
+    const f = scene.figures[0];
+    const edges = f.edges!;
+    const score = (predicted: typeof edges) => relationMetrics([f], [block('', { kind: 'sequence', shapes: [], labels: [], edges: predicted })]);
+    expect(score([edges[0], edges[0], edges[0]]).predictedMatched).toBe(1);
+    expect(score([edges[0], edges[0], edges[0]]).edgesFound).toBe(1);
+    expect(score([]).edgesFound).toBe(0);
+    expect(score([{ ...edges[0], label: 'wrong' }]).edgesFound).toBe(0);
+    expect(score([{ ...edges[1], label: undefined }, edges[1]]).edgesFound).toBe(2);
+    expect(score([{ ...edges[1], label: undefined }, edges[1]]).predictedMatched).toBe(2);
   });
 
   it('measures sequence order with Kendall tau and exact order', () => {
