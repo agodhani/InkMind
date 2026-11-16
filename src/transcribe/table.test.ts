@@ -3,6 +3,44 @@ import type { DigitalBlock, FigureInfo } from '../model/page';
 import { buildScene, expectedTableCells } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
 import { buildStrokeGroups, figuresOf, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import { normaliseBlocks } from './openaiCompat';
+import { cellGrid } from './figure';
+import { parseOllamaOutput } from './ollama';
+
+describe('model table payloads', () => {
+  const expected = [['model', 'size'], ['A', '3b'], ['B', '7b']];
+  it.each([
+    expected,
+    JSON.stringify(expected),
+    "[['model', 'size'], ['A', '3b'], ['B', '7b']]",
+    [{ header: 'model', cells: ['A', 'B'] }, { header: 'size', cells: ['3b', '7b'] }],
+    { header: ['model', 'size'], rows: [['A', '3b'], ['B', '7b']] },
+    [{ model: 'A', size: '3b' }, { model: 'B', size: '7b' }],
+    'model\tsize\nA\t3b\nB\t7b',
+  ])('normalizes tableData form %# without dropping header or cell words', (tableData) => {
+    expect(cellGrid(tableData)).toEqual(expected);
+    for (const blocks of [normaliseBlocks({ blocks: [{ kind: 'table', tableData }] }), parseOllamaOutput(JSON.stringify({ blocks: [{ kind: 'table', tableData }] }), 'compact')]) {
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].kind).toBe('table');
+      expect(blocks[0].figure!.cells).toEqual(expected);
+      expect(blocks[0].text).toBe('model\tsize\nA\t3b\nB\t7b');
+    }
+  });
+  it('handles quoted punctuation and ragged columns without evaluating expressions', () => {
+    expect(cellGrid("[['name', 'quote'], ['O\\'Reilly', 'say \"hi\" now']]")).toEqual([['name', 'quote'], ["O'Reilly", 'say "hi" now']]);
+    expect(cellGrid([{ header: 'a', cells: [1, 2] }, { header: 'b', cells: [3] }])).toEqual([['a', 'b'], ['1', '3'], ['2', '']]);
+    expect(cellGrid("[['a'], dangerous()]")).toEqual([]);
+    expect(cellGrid('[[broken')).toEqual([]);
+    expect(cellGrid([])).toEqual([]);
+    expect(cellGrid(null)).toEqual([]);
+    expect(normaliseBlocks({ blocks: [{ kind: 'table', tableData: [] }] })).toEqual([]);
+  });
+  it('retains supplementary names without duplicating rows', () => {
+    const [block] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: expected, columnNames: ['model', 'size'], rowNames: ['A', 'B'] }] });
+    expect(block.figure!.cells).toEqual(expected);
+    expect(block.figure!.labels).toEqual(expect.arrayContaining(expected.flat()));
+  });
+});
 
 describe.each([111, 112])('table scene %s', (seed) => {
   const scene = buildScene('table', seed, seed === 112 ? 'messy' : 'normal');
@@ -60,6 +98,22 @@ describe.each([111, 112])('table scene %s', (seed) => {
 
   it('retains a correctly dimensioned unpositioned cell grid as the fallback', () => {
     expect(reconcile([reader({ kind: 'table', shapes: [], labels: [], edges: [], cells: expected })])[0].figure!.cells).toEqual(expected);
+  });
+
+  it.each([false, true])('merges a model table block into the geometry table, bbox-only: %s', (bboxOnly) => {
+    const [raw] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: expected, groupIndices: bboxOnly ? [] : groups.map((g) => g.index), bbox: scene.figures[0].bbox }] });
+    const block = rawToDigitalBlock(raw, groups, { left: 0, top: 0, right: scene.width, bottom: scene.height }, { width: scene.width, height: scene.height }, scene.strokes);
+    const out = reconcile([block]);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('diagram');
+    expect(out[0].figure!.cells).toEqual(expected);
+    expect(out[0].figure!.labels).toEqual(expect.arrayContaining(expected.flat().filter(Boolean)));
+  });
+
+  it('prefers positioned cell text over an unordered table block grid', () => {
+    const [raw] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: [...expected].reverse(), groupIndices: groups.map((g) => g.index) }] });
+    const block = rawToDigitalBlock(raw, groups, { left: 0, top: 0, right: scene.width, bottom: scene.height }, { width: scene.width, height: scene.height }, scene.strokes);
+    expect(reconcile([block, ...textBlocks()])[0].figure!.cells).toEqual(expected);
   });
 
   it('does not spill a malformed or oversized model grid beyond geometry cells', () => {

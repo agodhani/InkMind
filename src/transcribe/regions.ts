@@ -159,9 +159,10 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   const figBoxOf = (fig: FigureHint) => groups.filter((g) => g.figure?.id === fig.id).map((g) => g.bbox).reduce(unionBounds);
   const orphanOwner = new Map<DigitalBlock, number>();
   for (const b of incoming) {
-    if (b.kind !== 'diagram' || b.strokeIds.length > 0) continue;
+    if ((b.kind !== 'diagram' && b.kind !== 'table') || b.strokeIds.length > 0) continue;
     const c = { x: (b.bbox.left + b.bbox.right) / 2, y: (b.bbox.top + b.bbox.bottom) / 2 };
     const ranked = figures
+      .filter((f) => b.kind !== 'table' || f.kind === 'table')
       .map((f) => ({ f, box: figBoxOf(f) }))
       .map(({ f, box }) => ({ f, hit: boundsIntersect(b.bbox, box), near: boundsIntersect(b.bbox, expandBounds(box, Math.max(box.right - box.left, box.bottom - box.top))), d: Math.hypot(c.x - (box.left + box.right) / 2, c.y - (box.top + box.bottom) / 2) }))
       .filter((r) => r.hit || r.near)
@@ -184,7 +185,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         // Text the model lumped together with part of the figure: its words must survive, so it
         // stays a text block on the strokes outside the figure (the figure takes the rest).
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
-        if (b.kind === 'diagram') {
+        if (b.kind === 'diagram' || (b.kind === 'table' && fig.kind === 'table')) {
           const insideMajority = inside.length >= outside.length;
           const remainingDrawing = outside.some((id) => drawingIds.has(id));
           members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: insideMajority || !remainingDrawing ? b.figure : undefined, text: insideMajority ? b.text : '' });
@@ -215,7 +216,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       return cleanLabel(hit.text) || undefined;
     };
     // The model may have answered with several diagram blocks for one figure: fold them into one.
-    const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
+    const prior = members.filter((b) => b.kind === 'diagram' || (b.kind === 'table' && fig.kind === 'table')).map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
     const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, (node) => {
       const ids = new Set(node.strokeIds ?? []);

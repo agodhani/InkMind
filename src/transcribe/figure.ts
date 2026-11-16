@@ -49,7 +49,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   // "a → b" written as a step is two steps (arrow glyphs only: "ready to ship" is one step).
   const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !unwantedRef(l));
   // Cells only describe tables; small models echo the placeholder grid onto every figure.
-  const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
+  const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid', 'tableData'])) : [];
   labels.push(...cells.flat().filter((word) => word && !labels.includes(word)));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
@@ -237,11 +237,23 @@ export function cellGrid(value: unknown): string[][] {
     return t.split(/\s+/);
   };
   if (typeof value === 'string') {
+    const literal = value.trim();
+    if (literal.startsWith('[')) {
+      try { return cellGrid(JSON.parse(literal)); } catch { /* Python-style quoted strings are also common. */ }
+      try {
+        const json = literal.replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, (token) => token.startsWith("'") ? JSON.stringify(token.slice(1, -1).replace(/\\(['\\])/g, '$1')) : token);
+        return cellGrid(JSON.parse(json));
+      } catch { return []; }
+    }
     for (const line of value.split(/\n+/)) {
       const cells = splitRow(line);
       if (cells) pushRow(cells);
     }
   } else if (Array.isArray(value)) {
+    if (value.length && value.every((v) => v && typeof v === 'object' && !Array.isArray(v) && typeof v.header === 'string' && Array.isArray(v.cells))) {
+      const columns = value.map((v) => [v.header, ...v.cells]);
+      return cellGrid(Array.from({ length: Math.min(MAX_ITEMS, Math.max(...columns.map((c) => c.length))) }, (_, r) => columns.map((c) => c[r] ?? '')));
+    }
     let headers: string[] | null = null;
     for (const row of value) {
       if (Array.isArray(row)) pushRow(row.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : stringList(c)[0] ?? '')), true);
@@ -263,8 +275,12 @@ export function cellGrid(value: unknown): string[][] {
     }
   } else if (typeof value === 'object') {
     const o = value as Record<string, unknown>;
-    const inner = firstDefined(o, ['rows', 'cells', 'data']);
-    if (inner !== undefined) return cellGrid(inner);
+    const inner = firstDefined(o, ['rows', 'cells', 'data', 'tableData']);
+    if (inner !== undefined) {
+      const grid = cellGrid(inner);
+      const headers = stringList(o.header ?? o.headers);
+      return headers.length && JSON.stringify(grid[0]) !== JSON.stringify(headers) ? cellGrid([headers, ...grid]) : grid;
+    }
     for (const [k, val] of Object.entries(o)) pushRow([k, ...stringList(val)]);
   }
   const width = Math.max(0, ...rows.map((r) => r.length));
