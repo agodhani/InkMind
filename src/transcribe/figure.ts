@@ -30,11 +30,24 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
     if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
     for (const [id, value] of Object.entries(box)) {
       if (!/^n\d+$/i.test(id) || !value || typeof value !== 'object') continue;
-      const label = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      const existing = nodes.find((n) => n.id.toLowerCase() === id.toLowerCase());
+      const readLabel = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      const label = readLabel && !isGroupRef(readLabel) ? readLabel : existing?.label;
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
       if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
-      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push(...nodeList([{ ...value, id, label }]));
+      else {
+        const positioned = nodeList([{ ...value, id, label }])[0];
+        if (!positioned) continue;
+        if (!existing) nodes.push(positioned);
+        else {
+          if (!existing.bbox && positioned.bbox) existing.bbox = positioned.bbox;
+          if (existing.group === undefined && positioned.group !== undefined) existing.group = positioned.group;
+          if (!existing.shape && positioned.shape) existing.shape = positioned.shape;
+          if (positioned.groupIndices?.length) existing.groupIndices = [...new Set([...(existing.groupIndices ?? []), ...positioned.groupIndices])];
+          if (positioned.strokeIds?.length) existing.strokeIds = [...new Set([...(existing.strokeIds ?? []), ...positioned.strokeIds])];
+        }
+      }
     }
   }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.

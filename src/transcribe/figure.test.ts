@@ -3,6 +3,21 @@ import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserve
 import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it.each([{ names: { n1: 'start' } }, { nodes: [{ id: 'n1', label: 'start' }] }])('attaches separate node boxes to existing ids: %j', (source) => {
+    const out = normaliseFigure({ ...source, nodeBoxes: [{ N1: { bbox: [10, 20, 40, 50], groupIndices: [3] } }] })!;
+    expect(out.nodes).toEqual([{ id: 'n1', label: 'start', bbox: { left: 10, top: 20, right: 40, bottom: 50 }, groupIndices: [3] }]);
+  });
+  it('preserves existing node fields and merges labelled box anchors without duplicate nodes', () => {
+    const out = normaliseFigure({ nodes: [{ id: 'n1', label: 'start', shape: 'circle', strokeIds: ['stroke-a'], groupIndices: [1] }], 'node boxes': [{ n1: { label: 'start', bbox: [10, 20, 40, 50], strokeIds: ['stroke-b'], groupIndices: [2] } }] })!;
+    expect(out.nodes).toEqual([{ id: 'n1', label: 'start', shape: 'circle', strokeIds: ['stroke-a', 'stroke-b'], groupIndices: [1, 2], bbox: { left: 10, top: 20, right: 40, bottom: 50 } }]);
+  });
+  it('ignores malformed boxes and preserves explicit node boxes over duplicate box metadata', () => {
+    const source = { nodes: [{ id: 'n1', label: 'start', bbox: [1, 2, 30, 40] }] };
+    for (const bbox of [[10, 20, 50, 60], [50, 60, 10, 20], []]) {
+      expect(normaliseFigure({ ...source, node_boxes: { n1: { bbox } } })!.nodes![0].bbox).toEqual({ left: 1, top: 2, right: 30, bottom: 40 });
+    }
+    expect(normaliseFigure({ names: { n1: 'start' }, nodeBoxes: { n1: { bbox: [] } } })!.nodes).toEqual([{ id: 'n1', label: 'start' }]);
+  });
   it('binds repeated message occurrences once each and rejects missing or invalid edge indices', () => {
     const figure = { kind: 'sequence' as const, shapes: [], labels: [], edges: [{ from: 'a', to: 'b', label: 'ack' }, { from: 'a', to: 'b', label: 'ack' }], sequence: ['ack', 'ack', 'unbound'] };
     expect(sequenceEdgeIndices(figure)).toEqual([0, 1, null]);
