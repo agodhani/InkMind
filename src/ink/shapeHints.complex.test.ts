@@ -15,6 +15,8 @@ describe('nested ellipses', () => {
     expect(fig.nodes).toHaveLength(scene.figures[0].labels.length);
     expect(fig.nodes.filter((n) => n.parent !== undefined)).toHaveLength(scene.figures[0].contains!.length);
     expect(fig.relations).toEqual([]);
+    expect(fig.order).toEqual([]);
+    expect(figureFromGeometry(fig, () => undefined).sequence).toBeUndefined();
     if (seed === 92) {
       const ellipse = analysis.groups.flatMap((g) => g.closed).find((c) => c.strokeIds.includes('s59'))!;
       expect(ellipse.kind).toBe('ellipse');

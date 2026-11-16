@@ -1,6 +1,6 @@
 # after-geom
 
-Transcriber: `geometry` · image: pdf · render: pdf raster · reconcile: on · 2026-11-16T01:48:00.586Z
+Transcriber: `geometry` · image: pdf · render: pdf raster · reconcile: on · 2026-11-16T02:03:09.979Z
 
 | page | kind | WER | CER | figures found | text leak | labels found | edges found · precision | sequence | nesting | diagram blocks / figures | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|

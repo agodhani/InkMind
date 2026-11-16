@@ -1,6 +1,6 @@
 # Synthetic shape suite — after-replay
 
-5 dataset(s): tables-mindmaps, nested, state-machines, sequences, trees-graphs · 2026-11-16T01:47:59.378Z
+5 dataset(s): tables-mindmaps, nested, state-machines, sequences, trees-graphs · 2026-11-16T02:03:09.021Z
 
 ## By dataset
 

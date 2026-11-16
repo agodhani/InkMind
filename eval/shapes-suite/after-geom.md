@@ -1,6 +1,6 @@
 # Synthetic shape suite — after-geom
 
-14 dataset(s): shapes-basic, graphs, cubes-3d, flowcharts, mixed-notes, flowcharts-complex, state-machines, sequences, trees-graphs, nested, charts, tables-mindmaps, math-sketches, notes-complex · 2026-11-16T01:48:00.764Z
+14 dataset(s): shapes-basic, graphs, cubes-3d, flowcharts, mixed-notes, flowcharts-complex, state-machines, sequences, trees-graphs, nested, charts, tables-mindmaps, math-sketches, notes-complex · 2026-11-16T02:03:10.096Z
 
 ## By dataset
 

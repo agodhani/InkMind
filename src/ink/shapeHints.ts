@@ -1710,7 +1710,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const stepNodes = nodes.filter((n) => linked(n) || (n.parent === undefined && !container(n)));
       order = topologicalOrder(stepNodes.map((n) => n.id), forward, rank);
       orderBasis = 'arrow order';
-    } else if (nodes.length >= 2 && !grid) {
+    } else if (nodes.length >= 2 && !grid && !nodes.some((n) => n.parent !== undefined)) {
       order = [...nodes].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!).map((n) => n.id);
       orderBasis = horizontalLayout ? 'left→right' : 'top→bottom';
     }

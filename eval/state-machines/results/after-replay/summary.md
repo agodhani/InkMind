@@ -1,6 +1,6 @@
 # after-replay
 
-Transcriber: `replay:main-w4-dots3` · image: pdf · render: pdf raster · reconcile: on · 2026-11-16T01:47:59.244Z
+Transcriber: `replay:main-w4-dots3` · image: pdf · render: pdf raster · reconcile: on · 2026-11-16T02:03:08.915Z
 
 | page | kind | WER | CER | figures found | text leak | labels found | edges found · precision | sequence | nesting | diagram blocks / figures | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
