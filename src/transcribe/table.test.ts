@@ -100,6 +100,19 @@ describe.each([111, 112])('table scene %s', (seed) => {
     expect(reconcile([reader({ kind: 'table', shapes: [], labels: [], edges: [], cells: expected })])[0].figure!.cells).toEqual(expected);
   });
 
+  it('overrides one positioned cell without blanking the remaining prior cells', () => {
+    const p = positions[0];
+    const prior: FigureInfo = { kind: 'table', shapes: [], labels: [], edges: [], cells: expected, nodes: [{ id: 'positioned', label: 'corrected', bbox: p.bbox }] };
+    const corrected = expected.map((row) => row.map((word) => word === p.text ? 'corrected' : word));
+    expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(corrected);
+  });
+
+  it('keeps repeated fallback words when only one occurrence is positioned', () => {
+    const cells = expected.map((row) => row.map(() => 'same'));
+    const prior: FigureInfo = { kind: 'table', shapes: [], labels: [], edges: [], cells, nodes: [{ id: 'positioned', label: 'same', bbox: positions[0].bbox }] };
+    expect(reconcile([reader(prior)])[0].figure!.cells).toEqual(cells);
+  });
+
   it.each([false, true])('merges a model table block into the geometry table, bbox-only: %s', (bboxOnly) => {
     const [raw] = normaliseBlocks({ blocks: [{ kind: 'table', tableData: expected, groupIndices: bboxOnly ? [] : groups.map((g) => g.index), bbox: scene.figures[0].bbox }] });
     const block = rawToDigitalBlock(raw, groups, { left: 0, top: 0, right: scene.width, bottom: scene.height }, { width: scene.width, height: scene.height }, scene.strokes);
