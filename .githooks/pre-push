@@ -1,3 +1,8 @@
 #!/bin/sh
 # InkMind's own gate (replaces hosted CI). Skip once with: git push --no-verify
+# The gate runs on the working tree, so it must equal what is being pushed.
+if ! git diff --quiet HEAD --; then
+  echo "pre-push: uncommitted changes to tracked files; commit or stash them so the check tests what you push." >&2
+  exit 1
+fi
 exec npm run -s check
