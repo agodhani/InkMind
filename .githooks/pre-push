@@ -1,0 +1,3 @@
+#!/bin/sh
+# InkMind's own gate (replaces hosted CI). Skip once with: git push --no-verify
+exec npm run -s check
