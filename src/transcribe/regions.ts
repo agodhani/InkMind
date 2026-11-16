@@ -404,9 +404,7 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const used = new Set([...(geo.nodes ?? []).filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label.toLowerCase()), ...[...rename.values()].map((s) => s.toLowerCase())]);
-    const available = (prior?.nodes ?? []).filter((n) => !used.has(n.label.toLowerCase()));
-    const m = modelNodeFor(g, geo.nodes ?? [], available.length ? available : prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
