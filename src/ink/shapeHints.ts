@@ -220,6 +220,7 @@ export interface FigureHint {
   messageGroups?: number[];
   /** Tables: group index of the text in each cell, row-major; -1 for an empty cell. */
   cells?: number[][];
+  cellBounds?: BoundingBox[][];
   summary: string;
 }
 
@@ -996,7 +997,9 @@ interface Grid {
  */
 function detectGrid(segments: Segment[]): Grid | null {
   const long = segments.filter((sg) => segLen(sg) >= MIN_LINE_SIZE);
-  const hs = long.filter(isHorizontal), vs = long.filter(isVertical);
+  const horizontal = long.filter(isHorizontal), vertical = long.filter(isVertical);
+  const hs = horizontal.filter((s) => segLen(s) >= 0.7 * Math.max(...horizontal.map(segLen)));
+  const vs = vertical.filter((s) => segLen(s) >= 0.7 * Math.max(...vertical.map(segLen)));
   if (hs.length < 2 || vs.length < 2) return null;
   const left = Math.min(...vs.map((sg) => (sg.a.x + sg.b.x) / 2)), right = Math.max(...vs.map((sg) => (sg.a.x + sg.b.x) / 2));
   const top = Math.min(...hs.map((sg) => (sg.a.y + sg.b.y) / 2)), bottom = Math.max(...hs.map((sg) => (sg.a.y + sg.b.y) / 2));
@@ -1287,7 +1290,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     if (claimed.has(t.index)) continue;
     for (const [r, box] of figureBoxes) {
       const fw = width(box), fh = height(box);
-      const hasClosed = members.get(r)!.some((i) => byIndex.get(i)!.closed.length > 0);
+      const hasClosed = members.get(r)!.some((i) => byIndex.get(i)!.closed.length > 0) && !members.get(r)!.some((i) => byIndex.get(i)!.axes);
       const pad = hasClosed ? 18 : Math.max(24, 0.15 * Math.max(fw, fh));
       if (hasClosed && t.bbox.top > box.bottom) continue;
       if (contains(expand(box, pad), center(t.bbox)) && width(t.bbox) <= 0.8 * fw && height(t.bbox) <= 0.5 * fh) {
@@ -1318,7 +1321,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const curves = gs.flatMap((g) => g.curves);
     const lifelines = tall.map((l, i) => ({ l, i })).filter(({ l, i }) => usedLifelines.has(i) && inFigure(l.groupIndex)).sort((a, b) => a.l.x - b.l.x);
     const nested = closedHere.some((c) => closedHere.some((outer) => c !== outer && shapeArea(outer) > shapeArea(c) && fullyContains({ ...outer, shape: outer.kind }, { ...c, shape: c.kind })));
-    const grid = !nested && !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.looseSegments), ...rectEdges]) : null;
+    const grid = !nested && !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.shapes.filter((s) => s.kind === 'line').flatMap((s) => s.segments)), ...rectEdges]) : null;
     const figBox = gs.map((g) => g.bbox).reduce(unionBox);
 
     // ---- nodes
@@ -1618,9 +1621,9 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         const cell = cellOf(p);
         if (cell && cells![cell.row][cell.col] === -1) cells![cell.row][cell.col] = groupIndex;
       };
-      for (const t of textGroups) {
-        if (!contains(grid.bbox, center(t.bbox))) continue;
-        place(t.index, center(t.bbox));
+      for (const t of analyses) {
+        if (!t.shapes.some((s) => contains(grid.bbox, center(s.bbox)))) continue;
+        if (t.textStrokes.length) place(t.index, center(t.textStrokes.map((s) => s.bbox).reduce(unionBox)));
         if (!inFigure(t.index)) {
           groupIndices.push(t.index);
           groupIndices.sort((a, b) => a - b);
@@ -1699,6 +1702,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       summary: `${figureName(id)} (${axes && !cube ? 'sketch' : kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
     };
     if (cells) fig.cells = cells;
+    if (grid) fig.cellBounds = grid.ys.slice(0, -1).map((top, r) => grid.xs.slice(0, -1).map((left, c) => ({ left, top, right: grid.xs[c + 1], bottom: grid.ys[r + 1] })));
     if (lifelines.length >= 2) fig.messageGroups = relations.map((r) => r.labelGroup ?? -1);
     figures.push(fig);
   });

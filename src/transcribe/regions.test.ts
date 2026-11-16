@@ -65,6 +65,24 @@ describe('notes page segmentation', () => {
     expect(result.filter((b) => b.kind !== 'diagram').every((b) => !b.text && !b.figure)).toBe(true);
     expect(new Set(result.flatMap((b) => b.strokeIds))).toEqual(new Set(strokeIds));
   });
+
+  it('retains structural words on a minority figure when the remainder is only prose', () => {
+    const scene = buildScene('mixed-notes', 43);
+    const model: DigitalBlock = { id: 'reader', kind: 'diagram', text: '', confidence: 0.9, bbox: scene.figures[0].bbox, strokeIds: scene.strokes.map((s) => s.id), figure: normaliseFigure({ labels: ['input', 'ok?', 'output'] }) };
+    const result = reconcileFigureBlocks([model], buildStrokeGroups(scene.strokes), scene.strokes);
+    const diagram = result.find((b) => b.kind === 'diagram')!;
+    expect(diagram.figure!.labels).toEqual(expect.arrayContaining(['input', 'ok?', 'output']));
+    expect(result.filter((b) => b.kind !== 'diagram').every((b) => !b.figure)).toBe(true);
+  });
+
+  it('keeps chart titles and x-axis labels despite closed shapes in stacked bars', () => {
+    const scene = buildScene('bar-stacked', 104, 'messy');
+    const model: DigitalBlock = { id: 'reader', kind: 'diagram', text: '', confidence: 0.9, bbox: scene.figures[0].bbox, strokeIds: scene.strokes.map((s) => s.id) };
+    const result = reconcileFigureBlocks([model], buildStrokeGroups(scene.strokes), scene.strokes);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('diagram');
+    expect(new Set(result[0].strokeIds)).toEqual(new Set(scene.strokes.map((s) => s.id)));
+  });
 });
 
 describe('geometry-first structure', () => {

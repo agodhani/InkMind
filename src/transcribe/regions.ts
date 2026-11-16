@@ -182,9 +182,9 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
         if (b.kind === 'diagram') {
           const insideMajority = inside.length >= outside.length;
-          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: insideMajority ? b.figure : undefined, text: insideMajority ? b.text : '' });
           const remainingDrawing = outside.some((id) => drawingIds.has(id));
-          rest.push({ ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: insideMajority ? undefined : b.figure, text: insideMajority ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: insideMajority || !remainingDrawing ? b.figure : undefined, text: insideMajority ? b.text : '' });
+          rest.push({ ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: insideMajority || !remainingDrawing ? undefined : b.figure, text: insideMajority ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
         } else rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
     }
@@ -219,8 +219,27 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
     }));
-    // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
-    if (figure.kind === 'table' && !prior?.cells?.length) {
+    if (figure.kind === 'table' && fig.cellBounds) {
+      const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
+      const fallback = prior?.cells ?? (tableText ? cellGrid(tableText.text) : []);
+      const fits = fallback.length > 0 && fallback.length <= fig.cellBounds.length && fallback.every((row, r) => row.length <= fig.cellBounds![r].length);
+      figure.cells = fig.cellBounds.map((row) => row.map((cell) => {
+        const within = (box: BoundingBox) => box.left >= cell.left - 6 && box.right <= cell.right + 6 && box.top >= cell.top - 6 && box.bottom <= cell.bottom + 6;
+        const located = [
+          ...textMembers.filter((b) => b.text.trim() && within(b.bbox)).map((b) => ({ text: b.text, bbox: b.bbox })),
+          ...(prior?.nodes ?? []).flatMap((n) => {
+            const anchored = (n.strokeIds ?? []).flatMap((id) => strokeById.has(id) ? [strokeById.get(id)!] : []);
+            const bbox = n.bbox ?? strokesBounds(anchored);
+            return bbox && within(bbox) ? [{ text: n.label, bbox }] : [];
+          }),
+        ];
+        const unique = located.filter((b, i) => located.findIndex((other) => sameText(other.text, b.text)) === i);
+        unique.sort((a, b) => Math.abs(a.bbox.top - b.bbox.top) > 12 ? a.bbox.top - b.bbox.top : a.bbox.left - b.bbox.left);
+        return unique.map((b) => cleanLabel(b.text)).join(' ');
+      }));
+      if (!figure.cells.flat().some(Boolean) && fits) figure.cells = fig.cellBounds.map((row, r) => row.map((_, c) => fallback[r]?.[c] ?? ''));
+      figure.labels = dedupe([...figure.labels, ...figure.cells.flat().filter(Boolean)]);
+    } else if (figure.kind === 'table' && !prior?.cells?.length) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
       const cells = tableText ? cellGrid(tableText.text) : [];
       if (cells.flat().filter(Boolean).length >= 2) {
@@ -451,6 +470,13 @@ export function rawToDigitalBlock(
   let bbox: BoundingBox;
   if (groupList.length > 0) {
     bbox = groupList.map((g) => g.bbox).reduce(unionBounds);
+    const positioned = pageBox(raw.bbox);
+    const table = groupList.find((g) => g.figure?.cellBounds)?.figure;
+    if (raw.kind !== 'diagram' && positioned.right > positioned.left && positioned.bottom > positioned.top && table?.cellBounds?.flat().some((cell) => fullyContains({ bbox: expandBounds(cell, 6), shape: 'rectangle' }, { bbox: positioned, shape: 'text' }))) {
+      bbox = positioned;
+      const ids = new Set(strokeIds);
+      strokeIds = regionStrokes.filter((s) => ids.has(s.id) && boundsIntersect(positioned, strokeBounds(s))).map((s) => s.id);
+    }
   } else {
     bbox = pageBox(raw.bbox);
     strokeIds = regionStrokes.filter((s) => boundsIntersect(bbox, strokeBounds(s), -2)).map((s) => s.id);
