@@ -1084,7 +1084,8 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   for (const inner of closed) {
     if (inner.kind !== 'circle' && inner.kind !== 'ellipse') continue;
     const outer = closed.filter((c) => c !== inner && (c.kind === 'circle' || c.kind === 'ellipse') &&
-      width(inner.bbox) / width(c.bbox) >= 0.75 && height(inner.bbox) / height(c.bbox) >= 0.75 &&
+      width(inner.bbox) / width(c.bbox) >= 0.55 && height(inner.bbox) / height(c.bbox) >= 0.55 &&
+      width(inner.bbox) * height(inner.bbox) / (width(c.bbox) * height(c.bbox)) >= 0.45 &&
       width(inner.bbox) / width(c.bbox) < 0.95 && height(inner.bbox) / height(c.bbox) < 0.95 &&
       dist(center(inner.bbox), center(c.bbox)) <= 0.12 * Math.min(width(c.bbox), height(c.bbox)) && fullyContains({ ...c, shape: c.kind }, { ...inner, shape: inner.kind }))
       .sort((a, b) => width(a.bbox) * height(a.bbox) - width(b.bbox) * height(b.bbox))[0];
