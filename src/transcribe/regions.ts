@@ -588,6 +588,8 @@ export function rawToDigitalBlock(
 }
 
 function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] {
+  if (!fresh.length) return edited.map(row => [...row]);
+  const sameGrid = edited.length === fresh.length && edited.every((row, r) => row.length === fresh[r].length);
   const uniqueIndex = (values: string[], value: string) => {
     if (!value.trim()) return undefined;
     const indices = values.flatMap((word, i) => sameText(word, value) ? [i] : []);
@@ -595,41 +597,50 @@ function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] 
   };
   const headers = fresh[0] ?? [];
   const columns = headers.map((word) => uniqueIndex(headers, word) === undefined ? undefined : uniqueIndex(edited[0] ?? [], word));
+  const positional = sameGrid && new Set(headers).size === headers.length && new Set(edited[0]).size === edited[0].length;
   const keyColumn = columns.indexOf(0);
   const oldKeys = edited.slice(1).map((row) => row[0] ?? '');
   const newKeys = fresh.slice(1).map((row) => row[keyColumn] ?? '');
   return fresh.map((row, r) => {
     const key = row[keyColumn] ?? '';
     const match = keyColumn >= 0 && uniqueIndex(newKeys, key) !== undefined ? uniqueIndex(oldKeys, key) : undefined;
-    const oldRow = r === 0 ? 0 : match === undefined ? undefined : match + 1;
+    const oldRow = r === 0 ? 0 : match === undefined ? positional ? r : undefined : match + 1;
     return row.map((cell, c) => {
-      const oldColumn = columns[c];
+      const oldColumn = columns[c] ?? (positional ? c : undefined);
       return oldRow === undefined || oldColumn === undefined ? cell : edited[oldRow]?.[oldColumn] ?? cell;
     });
   });
 }
 
-function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo {
+function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retainedIds: Set<string>): FigureInfo {
+  const fresh = { ...incoming, nodes: incoming.nodes?.map((node) => ({ ...node })), edges: incoming.edges.map((edge) => ({ ...edge })) };
   const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
   const matches = new Map<string, FigureNode>();
   const used = new Set<FigureNode>();
-  for (const basis of ['stroke', 'group', 'label', 'id'] as const) for (const node of newNodes) {
+  const inkMatches = matchPairs(newNodes.map(node => oldNodes.map(old => {
+    const shared = (node.strokeIds ?? []).filter(id => old.strokeIds?.includes(id)).length;
+    if (!shared) return -1;
+    const overlap = shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
+    return overlap + (sameText(node.id, old.id) ? 0.000001 : 0);
+  })));
+  for (const [i, j] of inkMatches) { matches.set(newNodes[i].id, oldNodes[j]); used.add(oldNodes[j]); }
+  for (const basis of ['group', 'label', 'id'] as const) for (const node of newNodes) {
     if (matches.has(node.id)) continue;
-    const overlap = (old: FigureNode) => {
-      const shared = (node.strokeIds ?? []).filter((id) => old.strokeIds?.includes(id)).length;
-      return shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
-    };
-    const best = Math.max(0, ...oldNodes.filter((old) => !used.has(old)).map(overlap));
-    let candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'stroke' ? best > 0 && overlap(old) === best
-      : basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
+    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
       : basis === 'label' ? sameText(old.label, node.label)
       : node.group !== undefined && old.group === node.group && newNodes.filter((n) => n.group === node.group).length === 1));
-    if (basis === 'stroke' && candidates.length > 1 && best === 1) {
-      const unchanged = candidates.filter((old) => sameText(old.id, node.id));
-      if (unchanged.length === 1) candidates = unchanged;
-    }
     if (candidates.length === 1) { matches.set(node.id, candidates[0]); used.add(candidates[0]); }
   }
+  for (const old of oldNodes) {
+    if (used.has(old) || !old.strokeIds?.some(id => retainedIds.has(id))) continue;
+    let id = old.id;
+    while (newNodes.some(node => node.id === id)) id += '-edited';
+    const node = { ...old, id, strokeIds: old.strokeIds.filter(id => retainedIds.has(id)) };
+    newNodes.push(node);
+    matches.set(id, old);
+    used.add(old);
+  }
+  if (newNodes.length) fresh.nodes = newNodes;
   const nodeFor = (nodes: FigureNode[], ref: string) => nodes.find((n) => sameText(n.id, ref)) ?? nodes.find((n) => sameText(n.label, ref));
   const newNodeForOld = (ref: string) => {
     const old = nodeFor(oldNodes, ref);
@@ -656,8 +667,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
       if (usedEdges.has(j)) return [];
       const forward = sameEndpoint(old.from, edge.from) && sameEndpoint(old.to, edge.to);
       const compatible = forward || (edited.kind !== 'sequence' && sameEndpoint(old.from, edge.to) && sameEndpoint(old.to, edge.from));
-      if (!compatible) return [];
-      return (basis === 'stroke' ? overlap(old) > 0 : !old.strokeIds?.length || !edge.strokeIds?.length) ? [j] : [];
+      return (basis === 'stroke' ? overlap(old) > 0 : compatible && (!old.strokeIds?.length || !edge.strokeIds?.length)) ? [j] : [];
     });
     if (basis === 'stroke') {
       const best = Math.max(0, ...candidates.map((j) => overlap(edited.edges[j])));
@@ -666,10 +676,23 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     }
     if (candidates.length) { edgeMatches.set(i, candidates[0]); usedEdges.add(candidates[0]); }
   });
+  edited.edges.forEach((edge, i) => {
+    if (usedEdges.has(i) || !edge.strokeIds?.some(id => retainedIds.has(id))) return;
+    edgeMatches.set(fresh.edges.length, i);
+    fresh.edges.push({ ...edge, strokeIds: edge.strokeIds.filter(id => retainedIds.has(id)) });
+    usedEdges.add(i);
+  });
+  const oldEndpoint = (ref: string) => {
+    const old = nodeFor(oldNodes, ref), node = newNodeForOld(ref);
+    return old && node && sameText(ref, old.id) && !sameText(old.id, old.label) ? node.id : ref;
+  };
   const edges = fresh.edges.map((edge, i) => {
     const index = edgeMatches.get(i);
     const match = index === undefined ? undefined : edited.edges[index];
-    return { ...edge, from: renamed(edge.from), to: renamed(edge.to), ...(match?.label !== undefined ? { label: match.label } : {}) };
+    const anchored = match?.strokeIds?.some(id => edge.strokeIds?.includes(id));
+    return { ...edge, from: anchored ? oldEndpoint(match!.from) : renamed(edge.from), to: anchored ? oldEndpoint(match!.to) : renamed(edge.to),
+      ...(match ? { label: match.label } : {}),
+      ...(anchored ? { strokeIds: dedupe([...(match!.strokeIds ?? []).filter(id => retainedIds.has(id)), ...(edge.strokeIds ?? [])]) } : {}) };
   });
   const sequenceWords = new Map<string, string>();
   for (const word of edited.sequence ?? []) {
@@ -743,7 +766,9 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     ...(edited.cells ? { cells: fresh.cells ? preserveEditedCells(edited.cells, fresh.cells) : edited.cells.map((row) => [...row]) } : {}),
     ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
       const old = matches.get(n.id);
-      return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
+      const retained = old?.strokeIds?.filter(id => retainedIds.has(id)) ?? [];
+      return { ...n, label: old?.label ?? n.label, ...(retained.length ? { strokeIds: dedupe([...retained, ...(n.strokeIds ?? [])]) }
+        : n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
     }) } : {}),
     ...(sequence ? { sequence } : {}),
     ...(edited.sequence && (edited.sequenceBaseline || newMessages.length || edited.sequenceEdges || fresh.sequenceEdges) ? {
@@ -755,7 +780,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
 function preserveEditedBlock(edited: DigitalBlock, fresh: DigitalBlock): DigitalBlock {
   return {
     ...fresh, id: edited.id, text: edited.text, userEdited: true,
-    ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure) : edited.figure } : {}),
+    ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure, new Set(fresh.strokeIds)) : edited.figure } : {}),
   };
 }
 
