@@ -773,6 +773,13 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   const marks = shapes.filter((s) => !usedIds.has(s.strokeId) && (shapes.length <= 2 || s.diag <= Math.max(2.5 * medH, 0.35 * Math.max(gw, gh))));
   const composite = findCompositeArrows(shaftCandidates, marks, group.index, shapes.length >= 4 ? Math.max(20, 2 * medH) : 20);
   arrows.push(...composite.arrows);
+  const baselineText = shapes.length >= 6 && gw > 2 * gh && gh <= 2.8 * medH;
+  if (baselineText) {
+    closed.splice(0);
+    arrows.splice(0);
+    usedIds.clear();
+    composite.used.clear();
+  }
   composite.used.forEach((id) => usedIds.add(id));
 
   const segmentSources = shapes.filter((s) => !usedIds.has(s.strokeId) && (s.kind === 'line' || s.kind === 'polyline') && s.length >= MIN_LINE_SIZE);
@@ -1196,6 +1203,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const tol = Math.max(20, 0.3 * len);
       for (const t of textGroups) {
         if (attached.has(t.index) || width(t.bbox) > Math.max(1.6 * len, 80)) continue;
+        if (g.closed.length >= 2 && t.bbox.top > Math.max(...g.closed.map((c) => c.bbox.bottom))) continue;
         const d = boxDistance(t.bbox, m);
         if (d <= tol && !closed.some((c) => contains(c.bbox, center(t.bbox)))) labelCandidates.push({ g, a, t, score: d / tol });
       }
@@ -1254,7 +1262,9 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     if (claimed.has(t.index)) continue;
     for (const [r, box] of figureBoxes) {
       const fw = width(box), fh = height(box);
-      const pad = Math.max(24, 0.15 * Math.max(fw, fh));
+      const hasClosed = members.get(r)!.some((i) => byIndex.get(i)!.closed.length > 0);
+      const pad = hasClosed ? 18 : Math.max(24, 0.15 * Math.max(fw, fh));
+      if (hasClosed && t.bbox.top > box.bottom) continue;
       if (contains(expand(box, pad), center(t.bbox)) && width(t.bbox) <= 0.8 * fw && height(t.bbox) <= 0.5 * fh) {
         members.get(r)!.push(t.index);
         claimed.add(t.index);

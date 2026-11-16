@@ -3,7 +3,7 @@ import { getStrokeBoundingBox, getStrokeStartTime } from '../types/brush';
 import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
-import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
+import { analyseGroup, analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
 import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, sequenceEdgeIndices, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
@@ -99,7 +99,16 @@ export function computeDirtyRegions(
  * when it is part of a drawing, the figure it belongs to.
  */
 export function buildStrokeGroups(strokes: InkStroke[]): StrokeGroupMeta[] {
-  const clusters = clusterStrokes(strokes, { spatialThreshold: 30, temporalThreshold: 4000 });
+  const initial = clusterStrokes(strokes, { spatialThreshold: 30, temporalThreshold: 4000 });
+  const clusters = initial.flatMap((c) => {
+    const ink = c.strokes as InkStroke[];
+    const a = analyseGroup({ index: 0, strokeIds: ink.map((s) => s.id), bbox: c.bounds }, ink);
+    if (a.closed.length < 2 || a.axes || a.cube) return [c];
+    const box = a.closed.map((s) => s.bbox).reduce(unionBounds);
+    const outside = new Set(a.textStrokes.filter((s) => !boundsIntersect(s.bbox, box)).map((s) => s.strokeId));
+    if (!outside.size) return [c];
+    return [ink.filter((s) => !outside.has(s.id)), ink.filter((s) => outside.has(s.id))].flatMap((part) => clusterStrokes(part, { spatialThreshold: 30, temporalThreshold: 4000 }));
+  });
   const ordered = [...clusters].sort((a, b) => a.startTime - b.startTime);
   const writtenOrder = new Map(ordered.map((c, i) => [c, i]));
   const groups: StrokeGroupMeta[] = clusters
@@ -166,12 +175,17 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
       if (orphanOwner.get(b) === fig.id) members.push(b);
       else if (inside.length === 0) rest.push(b);
-      else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
+      else if (inside.length === b.strokeIds.length) members.push(b);
       else {
         // Text the model lumped together with part of the figure: its words must survive, so it
         // stays a text block on the strokes outside the figure (the figure takes the rest).
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
-        rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+        if (b.kind === 'diagram') {
+          const insideMajority = inside.length >= outside.length;
+          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: insideMajority ? b.figure : undefined, text: insideMajority ? b.text : '' });
+          const remainingDrawing = outside.some((id) => drawingIds.has(id));
+          rest.push({ ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: insideMajority ? undefined : b.figure, text: insideMajority ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+        } else rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
     }
     const diagrams = members.filter((b) => b.kind === 'diagram');
@@ -211,7 +225,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         figure.labels = dedupe([...figure.labels.filter((l) => !cells.some((row) => row.join(' ') === l)), ...cells.flat().filter(Boolean)]);
       }
     }
-    const strokeIds = dedupe([...members.flatMap((b) => b.strokeIds), ...figStrokeIds]);
+    const strokeIds = dedupe([...figStrokeIds, ...members.flatMap((b) => b.strokeIds)]);
     const bbox = boundsOf(strokeIds, diagram?.bbox ?? figGroups.map((g) => g.bbox).reduce(unionBounds));
     const text = diagrams.map((b) => b.text.trim()).find(Boolean) || figureCaption(figure);
     const confidence = diagrams.length ? Math.min(...diagrams.map((b) => b.confidence)) : textMembers.length ? Math.min(...textMembers.map((b) => b.confidence)) : 0.4;

@@ -7,6 +7,65 @@ import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, merg
 import type { StrokeGroupMeta } from './types';
 import { normaliseFigure } from './figure';
 import type { FigureHint } from '../ink/shapeHints';
+import { buildScene, DATASETS } from '../sim/scenes';
+import { getStrokeBoundingBox } from '../types/brush';
+
+describe('notes page segmentation', () => {
+  it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('keeps figures separate on $kind seed $seed', ({ kind, seed, messiness }) => {
+    const scene = buildScene(kind, seed, messiness);
+    const groups = buildStrokeGroups(scene.strokes);
+    const blocks = reconcileFigureBlocks([], groups, scene.strokes);
+    expect(blocks.filter((b) => b.kind === 'diagram')).toHaveLength(scene.figures.length);
+    for (const figure of scene.figures) {
+      const owner = blocks.find((b) => b.strokeIds.includes(figure.strokeIds[0]));
+      expect(owner).toBeDefined();
+      expect(owner!.strokeIds).toEqual(expect.arrayContaining(figure.strokeIds));
+      for (const other of scene.figures.filter((f) => f !== figure)) {
+        expect(owner!.strokeIds.some((id) => other.strokeIds.includes(id))).toBe(false);
+      }
+    }
+    const incoming: DigitalBlock[] = [{ id: 'whole-page', kind: 'diagram', text: '', confidence: 0.9, bbox: { left: 0, top: 0, right: scene.width, bottom: scene.height }, strokeIds: scene.strokes.map((s) => s.id) }];
+    const covered = new Set(reconcileFigureBlocks(incoming, groups, scene.strokes).flatMap((b) => b.strokeIds));
+    expect(covered).toEqual(new Set(scene.strokes.map((s) => s.id)));
+  });
+
+  it.each([41, 43, 134])('does not invent diagrams or edges on prose from seed %s', (seed) => {
+    const scene = buildScene(seed === 134 ? 'notes-complex' : 'mixed-notes', seed, seed === 134 ? 'messy' : 'normal');
+    const ink = scene.strokes.filter((s) => getStrokeBoundingBox(s)!.bottom < 200);
+    expect(reconcileFigureBlocks([], buildStrokeGroups(ink), ink)).toEqual([]);
+  });
+
+  it('splits a model diagram spanning figures and preserves outside text strokes', () => {
+    const scene = buildScene('notes-complex', 131);
+    const groups = buildStrokeGroups(scene.strokes);
+    const model: DigitalBlock = { id: 'model', kind: 'diagram', text: 'model words', confidence: 0.9, bbox: { left: 0, top: 0, right: 1000, bottom: 1400 }, strokeIds: scene.strokes.map((s) => s.id) };
+    const result = reconcileFigureBlocks([model], groups, scene.strokes);
+    const diagrams = result.filter((b) => b.kind === 'diagram');
+    expect(diagrams).toHaveLength(2);
+    expect(new Set(result.flatMap((b) => b.strokeIds)).size).toBe(scene.strokes.length);
+    for (const b of diagrams) expect(b.strokeIds.every((id) => groups.some((g) => g.figure && g.strokeIds.includes(id)))).toBe(true);
+    expect(result.some((b) => b.kind === 'paragraph' && b.text === 'model words')).toBe(true);
+  });
+
+  it('handles empty ink', () => {
+    expect(reconcileFigureBlocks([], buildStrokeGroups([]), [])).toEqual([]);
+  });
+
+  it('preserves model labels and caption on the majority figure without duplicating them on prose', () => {
+    const scene = buildScene('mixed-notes', 43);
+    const drawing = scene.figures[0];
+    const prose = scene.strokes.filter((s) => !drawing.strokeIds.includes(s.id)).slice(0, 3);
+    const strokeIds = [...drawing.strokeIds, ...prose.map((s) => s.id)];
+    const ink = scene.strokes;
+    const model: DigitalBlock = { id: 'reader', kind: 'diagram', text: 'Start then Decide then Finish', confidence: 0.9, bbox: drawing.bbox, strokeIds, figure: normaliseFigure({ labels: ['Start', 'Decide', 'Finish'] }) };
+    const result = reconcileFigureBlocks([model], buildStrokeGroups(ink), ink);
+    const diagram = result.find((b) => b.kind === 'diagram')!;
+    expect(diagram.text).toBe(model.text);
+    expect(diagram.figure!.labels).toEqual(expect.arrayContaining(['Start', 'Decide', 'Finish']));
+    expect(result.filter((b) => b.kind !== 'diagram').every((b) => !b.text && !b.figure)).toBe(true);
+    expect(new Set(result.flatMap((b) => b.strokeIds))).toEqual(new Set(strokeIds));
+  });
+});
 
 describe('geometry-first structure', () => {
   const hint: FigureHint = { id: 0, groupIndices: [], kind: 'flowchart', shapes: ['rectangle'], labelGroups: [], labelInside: {}, labelHostGroups: [], nodes: [], relations: [], edges: [], order: [], orderBasis: '', summary: '' };

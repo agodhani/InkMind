@@ -957,14 +957,16 @@ function drawNotesPage(p: Pen, width: number, height: number, fig: FigFn): strin
     case 'flowchart': {
       const f = rng.pick(FLOWS);
       fig('flowchart', `flowchart: ${f.nodes.map((n) => n.label).join(' → ')}`, () => {
-        return drawFlowchart(p, { x: box.x, y: box.y + 20, w: width - box.x - 100, h: box.h - 40 }, { nodes: f.nodes, direction: 'right', edgeLabels: f.edgeLabels }, 15);
+        const labels = drawFlowchart(p, { x: box.x, y: box.y + 20, w: width - box.x - 100, h: box.h - 40 }, { nodes: f.nodes, direction: 'right', edgeLabels: f.edgeLabels }, 15);
+        return { labels, ...flowRelations(f) };
       });
       break;
     }
     case 'tree': {
       const t = rng.pick(TREES);
       fig('tree', `tree with root ${t.root}`, () => {
-        return drawTree(p, { x: box.x + 60, y: box.y, w: 440, h: box.h }, t, 14);
+        const labels = drawTree(p, { x: box.x + 60, y: box.y, w: 440, h: box.h }, t, 14);
+        return { labels, ...treeRelations(t) };
       });
       break;
     }

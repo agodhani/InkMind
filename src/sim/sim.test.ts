@@ -154,6 +154,14 @@ describe('scenes', () => {
     expect(s.figures[0].labels.length).toBeGreaterThan(0);
     expect(s.strokes.length).toBeGreaterThan(s.figures[0].strokeIds.length);
   });
+  it.each([41, 42, 43])('mixed-notes seed %s records drawn relations between labelled nodes', (seed) => {
+    const f = buildScene('mixed-notes', seed).figures[0];
+    expect(f.edges).toHaveLength(seed === 43 ? 2 : 3);
+    for (const edge of f.edges!) {
+      expect(f.labels).toContain(edge.from);
+      expect(f.labels).toContain(edge.to);
+    }
+  });
   it('datasets reference only known kinds and round-trip through reference.md', () => {
     for (const [name, pages] of Object.entries(DATASETS)) {
       expect(pages.length).toBeGreaterThan(0);
