@@ -813,10 +813,19 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   arrows.push(...composite.arrows);
   const baselineText = shapes.length >= 6 && gw > 2 * gh && gh <= 2.8 * medH;
   if (baselineText) {
-    closed.splice(0);
-    arrows.splice(0);
-    usedIds.clear();
+    const textHeight = glyphHeight || medH;
+    const retainedArrows = arrows.filter((a) => {
+      const span = dist(a.tail, a.head);
+      const from = closed.find((c) => boxDistance(c.bbox, a.tail) <= 12);
+      const to = closed.find((c) => boxDistance(c.bbox, a.head) <= 12);
+      return span >= 2 * textHeight || (span >= textHeight && from && to && from !== to);
+    });
+    const retainedShapes = closed.filter((c) => height(c.bbox) >= 2 * textHeight || retainedArrows.some((a) => boxDistance(c.bbox, a.tail) <= 12 || boxDistance(c.bbox, a.head) <= 12));
+    [...closed.flatMap((c) => c.strokeIds), ...arrows.flatMap((a) => a.strokeIds)].forEach((id) => usedIds.delete(id));
+    closed.splice(0, closed.length, ...retainedShapes);
+    arrows.splice(0, arrows.length, ...retainedArrows);
     composite.used.clear();
+    [...closed.flatMap((c) => c.strokeIds), ...arrows.flatMap((a) => a.strokeIds)].forEach((id) => usedIds.add(id));
   }
   composite.used.forEach((id) => usedIds.add(id));
 
