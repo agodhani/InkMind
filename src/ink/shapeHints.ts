@@ -847,7 +847,7 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
   const looseMin = shapes.length <= 2 ? MIN_LINE_SIZE : Math.max(MIN_LINE_SIZE * 0.5, 2 * medH);
   const looseStrokes = cube ? straight : rest.filter((s) => (s.kind === 'line' || s.kind === 'polyline') && s.length >= looseMin);
   const looseSegments = looseStrokes.flatMap((s) => s.segments);
-  const dashes = rest.filter((s) => s.length >= 6 && s.length <= 32 && height(s.bbox) > 1.5 * width(s.bbox));
+  const dashes = rest.filter((s) => s.length >= 6 && s.length <= 32 && height(s.bbox) > 1.5 * width(s.bbox) && !closed.some((c) => contains(c.bbox, center(s.bbox))));
   const usedDashes = new Set<string>();
   const columnSize = (dash: StrokeShape) => dashes.filter((s) => Math.abs(center(s.bbox).x - center(dash.bbox).x) <= 10).length;
   for (const dash of [...dashes].sort((a, b) => columnSize(b) - columnSize(a))) {

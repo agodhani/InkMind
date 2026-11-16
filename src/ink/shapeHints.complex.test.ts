@@ -7,6 +7,18 @@ import { buildScene } from '../sim/scenes';
 
 beforeEach(() => resetSynthetic());
 
+describe('plain tree links', () => {
+  it('does not turn aligned node-letter stems into a dashed connector', () => {
+    const scene = buildScene('tree-deep', 81);
+    const groups = buildStrokeGroups(scene.strokes);
+    const analysis = analyseInk(scene.strokes, groups);
+    const fig = analysis.figures[0];
+    expect(fig.relations).toHaveLength(scene.figures[0].edges!.length);
+    expect(fig.relations).not.toContainEqual(expect.objectContaining({ from: 'n2', to: 'n9' }));
+    expect(analysis.groups.flatMap((g) => g.looseSegments)).not.toContainEqual({ a: { x: 293.4, y: 229.8 }, b: { x: 289.2, y: 552.5 } });
+  });
+});
+
 describe('accepting states and transition ownership', () => {
   it('does not claim a notes line below the graph as a transition label', () => {
     const scene = buildScene('notes-complex', 132, 'messy');
