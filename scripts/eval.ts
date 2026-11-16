@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { InkStroke } from '../src/model/page';
 import { sortBlocksForReading } from '../src/model/page';
-import { buildStrokeGroups, mergeBlocks, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
+import { attachUnclaimedStrokes, buildStrokeGroups, mergeBlocks, rawToDigitalBlock, reconcileFigureBlocks } from '../src/transcribe/regions';
 import { OpenRouterTranscriber } from '../src/transcribe/openrouter';
 import { OllamaTranscriber, ollamaPromptStyle } from '../src/transcribe/ollama';
 import { replayResponses } from '../src/transcribe/replay';
@@ -365,15 +365,10 @@ export async function runEval(args: Args): Promise<EvalResult> {
       continue;
     }
     // Same post-processing as useTranscription on a fresh page: geometry reconciliation (figure groups from
-    // shape hints), unclaimed strokes attached to the last block, then mergeBlocks into an empty page.
+    // shape hints), unclaimed strokes retained outside diagrams, then mergeBlocks into an empty page.
     let incoming = args.reconcile ? reconcileFigureBlocks(result.blocks, pageGroups, page.strokes) : result.blocks;
     if (args.reconcile) {
-      const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
-      const unclaimed = page.strokes.filter((st) => !claimed.has(st.id)).map((st) => st.id);
-      if (args.provider !== 'geometry' && unclaimed.length && incoming.length) {
-        incoming = [...incoming];
-        incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
-      }
+      if (args.provider !== 'geometry') incoming = attachUnclaimedStrokes(incoming, page.strokes);
       incoming = mergeBlocks([], [], incoming);
     }
     const blocks = sortBlocksForReading(incoming);

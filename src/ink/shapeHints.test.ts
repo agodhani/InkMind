@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { analyseInk, chainSegments, classifyStroke, looksLikeCube } from './shapeHints';
+import { analyseGroup, analyseInk, chainSegments, classifyStroke, looksLikeCube } from './shapeHints';
 import { buildStrokeGroups } from '../transcribe/regions';
 import { arrowStroke, arrowTwoStrokes, axes, circle, cube, curve, ellipse, line, polygon, rect, rectLines, resetSynthetic, textLine } from '../__tests__/shapes';
 import type { InkStroke } from '../model/page';
@@ -7,6 +7,22 @@ import type { InkStroke } from '../model/page';
 beforeEach(() => resetSynthetic());
 
 const analyse = (strokes: InkStroke[]) => analyseInk(strokes, buildStrokeGroups(strokes));
+
+describe('wide shallow baselines', () => {
+  it('keeps a horizontal chain of four boxes and three connector arrows', () => {
+    const strokes = Array.from({ length: 4 }, (_, i) => rect(i * 160, 0, i * 160 + 80, 40));
+    strokes.push(...Array.from({ length: 3 }, (_, i) => arrowStroke(i * 160 + 80, 20, (i + 1) * 160, 20)));
+    const group = analyseGroup({ index: 0, strokeIds: strokes.map((s) => s.id), bbox: { left: -2, top: -2, right: 562, bottom: 42 } }, strokes);
+    expect(group.closed).toHaveLength(4);
+    expect(group.arrows).toHaveLength(3);
+  });
+  it('still suppresses letter-sized closed shapes on a baseline without connectors', () => {
+    const strokes = Array.from({ length: 6 }, (_, i) => rect(i * 40, 0, i * 40 + 24, 26));
+    const group = analyseGroup({ index: 0, strokeIds: strokes.map((s) => s.id), bbox: { left: -2, top: -2, right: 226, bottom: 28 } }, strokes);
+    expect(group.closed).toEqual([]);
+    expect(group.arrows).toEqual([]);
+  });
+});
 
 describe('classifyStroke', () => {
   it('recognises circles and ellipses by roundness', () => {

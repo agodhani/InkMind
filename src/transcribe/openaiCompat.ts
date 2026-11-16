@@ -1,6 +1,6 @@
 import type { RawBlock, TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { BLOCK_KINDS, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
-import { normaliseFigure } from './figure';
+import { cellGrid, normaliseFigure, stringList } from './figure';
 import { FIGURE_KINDS, type BlockKind, type FigureKind } from '../model/page';
 
 export interface OpenAICompatOptions {
@@ -135,7 +135,9 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
     const figureKind = (FIGURE_KINDS as string[]).includes(rawKind.toLowerCase()) ? (rawKind.toLowerCase() as FigureKind) : undefined;
     const hasFigure = (item.figure !== null && typeof item.figure === 'object') || (typeof item.figure === 'string' && item.figure.trim().length > 0);
     const kind = (BLOCK_KINDS as string[]).includes(rawKind) ? (rawKind as BlockKind) : figureKind || hasFigure ? 'diagram' : 'unknown';
-    const text = typeof item.text === 'string' ? item.text : '';
+    const tableFigure = kind === 'table' ? normaliseFigure(item.figure, 'table') : undefined;
+    const table = kind === 'table' ? normaliseFigure({ ...tableFigure, kind: 'table', cells: cellGrid(item.tableData ?? item.table ?? item.cells ?? item.rows ?? tableFigure?.cells), labels: [...(tableFigure?.labels ?? []), ...stringList(item.columnNames), ...stringList(item.rowNames)] }) : undefined;
+    const text = typeof item.text === 'string' && item.text.trim() ? item.text : table?.cells?.map((row) => row.join('\t')).join('\n') ?? '';
     if (!text.trim() && kind !== 'diagram') continue;
     const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     const rawBox = item.bbox;
@@ -154,6 +156,7 @@ export function normaliseBlocks(json: unknown): RawBlock[] {
       marker: typeof item.marker === 'string' && item.marker ? item.marker : undefined,
       level: typeof item.level === 'number' ? item.level : undefined,
     };
+    if (table) block.figure = table;
     if (kind === 'diagram') {
       // Accept `figure`, or the figure fields spilled onto the block itself.
       const figure = normaliseFigure(item.figure ?? pickFigureFields(item), figureKind);

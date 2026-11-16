@@ -21,17 +21,43 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   const shapes = stringList(firstDefined(obj, ['shapes', 'shape', 'elements', 'components', 'objects', 'nodes_shapes']));
   const rawNodes = firstDefined(obj, ['nodes', 'node', 'boxes', 'states', 'vertices', 'names']);
   const nodes = nodeList(rawNodes, firstDefined(obj, ['children', 'contains', 'nesting', 'nested', 'containment']));
+  if (Array.isArray(obj.labels)) for (const [i, value] of obj.labels.entries()) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) nodes.push(...nodeList([{ id: `label${i + 1}`, ...value }]).filter((n) => n.bbox || n.groupIndices?.length || n.group !== undefined || n.strokeIds?.length));
+  }
   const boxedWords: FigureNode[] = [];
+  const boxCreatedNodes = new Set<FigureNode>();
   const messages: string[] = stringList(obj.messages);
   for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
     if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
     for (const [id, value] of Object.entries(box)) {
       if (!/^n\d+$/i.test(id) || !value || typeof value !== 'object') continue;
-      const label = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      const byId = nodes.find((n) => n.id.toLowerCase() === id.toLowerCase());
+      const readLabel = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
+      const word = readLabel && !isGroupRef(readLabel) ? readLabel : undefined;
+      const existing = byId && (!word || byId.label.toLowerCase() === word.toLowerCase())
+        ? byId
+        : word ? nodes.find((n) => !n.bbox && !boxCreatedNodes.has(n) && n.label.toLowerCase() === word.toLowerCase()) : undefined;
+      const label = word ?? existing?.label;
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
       if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
-      else if (!nodes.some((n) => n.id.toLowerCase() === id.toLowerCase())) nodes.push({ id, label });
+      else {
+        let positionedId = id;
+        if (!existing) for (let suffix = 1; nodes.some((n) => n.id.toLowerCase() === positionedId.toLowerCase()); suffix++) positionedId = `${id}-box${suffix}`;
+        const positioned = nodeList([{ ...value, id: positionedId, label }])[0];
+        if (!positioned) continue;
+        if (!existing) {
+          nodes.push(positioned);
+          boxCreatedNodes.add(positioned);
+        }
+        else {
+          if (!existing.bbox && positioned.bbox) existing.bbox = positioned.bbox;
+          if (existing.group === undefined && positioned.group !== undefined) existing.group = positioned.group;
+          if (!existing.shape && positioned.shape) existing.shape = positioned.shape;
+          if (positioned.groupIndices?.length) existing.groupIndices = [...new Set([...(existing.groupIndices ?? []), ...positioned.groupIndices])];
+          if (positioned.strokeIds?.length) existing.strokeIds = [...new Set([...(existing.strokeIds ?? []), ...positioned.strokeIds])];
+        }
+      }
     }
   }
   // Small models answer with the hint ids ("n2") where a word was asked for: resolve them through the node list.
@@ -46,7 +72,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
   // "a → b" written as a step is two steps (arrow glyphs only: "ready to ship" is one step).
   const sequence = dedupeText(stringList(firstDefined(obj, ['sequence', 'steps', 'order', 'step_order', 'flow', 'timeline'])).map(byRef).flatMap((step) => step.split(ARROW_GLYPH_RE).map(cleanText).filter(Boolean))).filter((l) => !unwantedRef(l));
   // Cells only describe tables; small models echo the placeholder grid onto every figure.
-  const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid'])) : [];
+  const cells = kind === undefined || kind === 'table' ? cellGrid(firstDefined(obj, ['cells', 'rows', 'table', 'grid', 'tableData'])) : [];
   labels.push(...cells.flat().filter((word) => word && !labels.includes(word)));
   if (!kind && shapes.length === 0 && labels.length === 0 && edges.length === 0 && sequence.length === 0 && cells.length === 0) return undefined;
   const fig: FigureInfo = { kind: kind ?? fallbackKind ?? (cells.length ? 'table' : 'sketch'), shapes, labels, edges };
@@ -118,6 +144,9 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     if (node.parent) n.parent = node.parent;
     if (node.parents?.length) n.parents = [...node.parents];
     if (node.group !== undefined) n.group = node.group;
+    if (node.bbox) n.bbox = node.bbox;
+    if (node.groupIndices?.length) n.groupIndices = node.groupIndices;
+    if (node.strokeIds?.length) n.strokeIds = node.strokeIds;
     out.push(n);
     return n;
   };
@@ -134,19 +163,26 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
       const own = firstDefined(o, ['parent', 'inside', 'within', 'container']);
       const kids = firstDefined(o, ['children', 'contains', 'nested', 'inner']);
       const groupRaw = firstDefined(o, ['group', 'labelGroup', 'label_group', 'groupIndex', 'group_index']);
+      const groupIndices = Array.isArray(o.groupIndices) ? o.groupIndices.filter((n): n is number => Number.isInteger(n) && Number(n) >= 0) : [];
+      const box = Array.isArray(o.bbox) ? { left: o.bbox[0], top: o.bbox[1], right: o.bbox[2], bottom: o.bbox[3] } : o.bbox as Record<string, unknown> | undefined;
+      const bbox = box && (['left', 'top', 'right', 'bottom'] as const).every((k) => typeof box[k] === 'number' && Number.isFinite(box[k])) && Number(box.right) > Number(box.left) && Number(box.bottom) > Number(box.top)
+        ? { left: Number(box.left), top: Number(box.top), right: Number(box.right), bottom: Number(box.bottom) } : undefined;
       const groupNum = typeof groupRaw === 'number' ? groupRaw : typeof groupRaw === 'string' && /^\D*\d+\s*$/.test(groupRaw) ? Number(groupRaw.replace(/\D+/g, '')) : NaN;
       if (label !== undefined || id !== undefined) {
         const text = typeof label === 'string' || typeof label === 'number' ? String(label) : typeof id === 'string' || typeof id === 'number' ? String(id) : stringList(label)[0];
         if (!text) return;
         const shapeText = typeof shape === 'string' ? cleanText(shape).toLowerCase() : '';
         const node = add({
-          id: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined,
+          id: typeof id === 'string' || typeof id === 'number' ? String(id) : bbox || groupIndices.length || Array.isArray(o.strokeIds) ? `position${out.length + 1}` : undefined,
           label: text,
           // "box 2" / "shape 1" are the prompt's placeholders, not a shape.
           shape: shapeText && !/^(box|shape|node)\s*\d+$/.test(shapeText) && !isGroupRef(shapeText) ? shapeText : undefined,
           parent: typeof own === 'string' ? cleanText(own) || undefined : parent,
           parents: stringList(o.parents),
           ...(Number.isInteger(groupNum) && groupNum >= 0 ? { group: groupNum } : {}),
+          ...(bbox ? { bbox } : {}),
+          ...(groupIndices.length ? { groupIndices } : {}),
+          ...(Array.isArray(o.strokeIds) ? { strokeIds: o.strokeIds.filter((s): s is string => typeof s === 'string') } : {}),
         });
         if (node && kids !== undefined) visit(kids, node.id);
       } else {
@@ -224,11 +260,23 @@ export function cellGrid(value: unknown): string[][] {
     return t.split(/\s+/);
   };
   if (typeof value === 'string') {
+    const literal = value.trim();
+    if (literal.startsWith('[')) {
+      try { return cellGrid(JSON.parse(literal)); } catch { /* Python-style quoted strings are also common. */ }
+      try {
+        const json = literal.replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, (token) => token.startsWith("'") ? JSON.stringify(token.slice(1, -1).replace(/\\(['\\])/g, '$1')) : token);
+        return cellGrid(JSON.parse(json));
+      } catch { return []; }
+    }
     for (const line of value.split(/\n+/)) {
       const cells = splitRow(line);
       if (cells) pushRow(cells);
     }
   } else if (Array.isArray(value)) {
+    if (value.length && value.every((v) => v && typeof v === 'object' && !Array.isArray(v) && typeof v.header === 'string' && Array.isArray(v.cells))) {
+      const columns = value.map((v) => [v.header, ...v.cells]);
+      return cellGrid(Array.from({ length: Math.min(MAX_ITEMS, Math.max(...columns.map((c) => c.length))) }, (_, r) => columns.map((c) => c[r] ?? '')));
+    }
     let headers: string[] | null = null;
     for (const row of value) {
       if (Array.isArray(row)) pushRow(row.map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : stringList(c)[0] ?? '')), true);
@@ -250,8 +298,12 @@ export function cellGrid(value: unknown): string[][] {
     }
   } else if (typeof value === 'object') {
     const o = value as Record<string, unknown>;
-    const inner = firstDefined(o, ['rows', 'cells', 'data']);
-    if (inner !== undefined) return cellGrid(inner);
+    const inner = firstDefined(o, ['rows', 'cells', 'data', 'tableData']);
+    if (inner !== undefined) {
+      const grid = cellGrid(inner);
+      const headers = stringList(o.header ?? o.headers);
+      return headers.length && JSON.stringify(grid[0]) !== JSON.stringify(headers) ? cellGrid([headers, ...grid]) : grid;
+    }
     for (const [k, val] of Object.entries(o)) pushRow([k, ...stringList(val)]);
   }
   const width = Math.max(0, ...rows.map((r) => r.length));

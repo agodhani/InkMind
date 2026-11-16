@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke, Page } from '../model/page';
 import type { HandwritingProfile, Transcriber } from './types';
-import { buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks, strokesBounds, type DirtyRegion } from './regions';
+import { attachUnclaimedStrokes, buildStrokeGroups, computeDirtyRegions, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks, strokesBounds, type DirtyRegion } from './regions';
 import { MODEL_RENDER, renderStrokesToPng } from './render';
 
 /**
@@ -103,11 +103,7 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
           replacedBlockIds = protectedResult.replacedIds;
         }
         // Any region stroke the model didn't claim is still "covered" so it is not re-sent forever.
-        const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
-        const unclaimed = region.strokes.filter((s) => !claimed.has(s.id)).map((s) => s.id);
-        if (unclaimed.length && incoming.length) {
-          incoming[incoming.length - 1] = { ...incoming[incoming.length - 1], strokeIds: [...incoming[incoming.length - 1].strokeIds, ...unclaimed] };
-        }
+        incoming = attachUnclaimedStrokes(incoming, region.strokes);
         onBlocks(current.id, (blocks) => mergeBlocks(blocks, replacedBlockIds, incoming));
         setStatus((s) => ({ ...s, pendingRegions: Math.max(0, s.pendingRegions - 1), lastModel: result.model, lastDurationMs: result.durationMs }));
       }

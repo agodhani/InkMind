@@ -3,11 +3,15 @@ import { getStrokeBoundingBox, getStrokeStartTime } from '../types/brush';
 import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
-import { analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
+import { analyseGroup, analyseInk, figureFromGeometry, fullyContains, type FigureHint, type FigureNodeHint } from '../ink/shapeHints';
 import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, sequenceEdgeIndices, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
+
+function isPlotLabel(fig: FigureHint, box: BoundingBox): boolean {
+  return fig.plotLabelBounds?.some((bbox) => fullyContains({ bbox, shape: 'rectangle' }, { bbox: box, shape: 'text' }) && box.bottom - box.top <= 0.15 * (fig.plotLabelBounds![0].bottom - fig.plotLabelBounds![0].top)) ?? false;
+}
 
 export interface DirtyRegion {
   bounds: BoundingBox;
@@ -99,7 +103,16 @@ export function computeDirtyRegions(
  * when it is part of a drawing, the figure it belongs to.
  */
 export function buildStrokeGroups(strokes: InkStroke[]): StrokeGroupMeta[] {
-  const clusters = clusterStrokes(strokes, { spatialThreshold: 30, temporalThreshold: 4000 });
+  const initial = clusterStrokes(strokes, { spatialThreshold: 30, temporalThreshold: 4000 });
+  const clusters = initial.flatMap((c) => {
+    const ink = c.strokes as InkStroke[];
+    const a = analyseGroup({ index: 0, strokeIds: ink.map((s) => s.id), bbox: c.bounds }, ink);
+    if (a.closed.length < 2 || a.axes || a.cube) return [c];
+    const box = a.closed.map((s) => s.bbox).reduce(unionBounds);
+    const outside = new Set(a.textStrokes.filter((s) => !boundsIntersect(s.bbox, box)).map((s) => s.strokeId));
+    if (!outside.size) return [c];
+    return [ink.filter((s) => !outside.has(s.id)), ink.filter((s) => outside.has(s.id))].flatMap((part) => clusterStrokes(part, { spatialThreshold: 30, temporalThreshold: 4000 }));
+  });
   const ordered = [...clusters].sort((a, b) => a.startTime - b.startTime);
   const writtenOrder = new Map(ordered.map((c, i) => [c, i]));
   const groups: StrokeGroupMeta[] = clusters
@@ -138,7 +151,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     ? { ...b, kind: 'paragraph', text: b.figure.labels.join('\n'), figure: undefined } : b);
   const figures = figuresOf(groups);
   if (figures.length === 0) return incoming;
-  if (figures.length === 1 && groups.every((g) => g.figure)) incoming = incoming.map((b) => b.kind !== 'diagram' && !b.strokeIds.length && b.text.trim()
+  if (figures.length === 1 && groups.every((g) => g.figure)) incoming = incoming.map((b) => b.kind !== 'diagram' && !b.strokeIds.length && b.text.trim() && (!figures[0].plotLabelBounds || isPlotLabel(figures[0], b.bbox))
     ? { ...b, strokeIds: groups.flatMap((g) => g.strokeIds) } : b);
   const strokeById = new Map(strokes.map((s) => [s.id, s]));
   const boundsOf = (ids: string[], fallback: BoundingBox) => strokesBounds(ids.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s)) ?? fallback;
@@ -146,14 +159,24 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   const figBoxOf = (fig: FigureHint) => groups.filter((g) => g.figure?.id === fig.id).map((g) => g.bbox).reduce(unionBounds);
   const orphanOwner = new Map<DigitalBlock, number>();
   for (const b of incoming) {
-    if (b.kind !== 'diagram' || b.strokeIds.length > 0) continue;
+    if ((b.kind !== 'diagram' && b.kind !== 'table') || b.strokeIds.length > 0) continue;
     const c = { x: (b.bbox.left + b.bbox.right) / 2, y: (b.bbox.top + b.bbox.bottom) / 2 };
     const ranked = figures
+      .filter((f) => b.kind !== 'table' || f.kind === 'table')
       .map((f) => ({ f, box: figBoxOf(f) }))
       .map(({ f, box }) => ({ f, hit: boundsIntersect(b.bbox, box), near: boundsIntersect(b.bbox, expandBounds(box, Math.max(box.right - box.left, box.bottom - box.top))), d: Math.hypot(c.x - (box.left + box.right) / 2, c.y - (box.top + box.bottom) / 2) }))
       .filter((r) => r.hit || r.near)
       .sort((p, q) => Number(q.hit) - Number(p.hit) || p.d - q.d);
     if (ranked.length) orphanOwner.set(b, ranked[0].f.id);
+  }
+  const metadataOwner = new Map<DigitalBlock, number>();
+  for (const b of incoming) {
+    const ids = new Set(b.strokeIds);
+    const ranked = figures.filter((f) => b.kind !== 'table' || f.kind === 'table').map((f) => ({
+      id: f.id,
+      count: groups.filter((g) => g.figure?.id === f.id).flatMap((g) => g.strokeIds).filter((id) => ids.has(id)).length,
+    })).sort((a, b) => b.count - a.count);
+    if (ranked[0]?.count) metadataOwner.set(b, ranked[0].id);
   }
   let blocks = incoming;
   for (const fig of figures) {
@@ -166,19 +189,27 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       const inside = b.strokeIds.filter((id) => figStrokeIds.has(id));
       if (orphanOwner.get(b) === fig.id) members.push(b);
       else if (inside.length === 0) rest.push(b);
-      else if (b.kind === 'diagram' || inside.length === b.strokeIds.length) members.push(b);
+      else if (inside.length === b.strokeIds.length) members.push(b);
       else {
         // Text the model lumped together with part of the figure: its words must survive, so it
         // stays a text block on the strokes outside the figure (the figure takes the rest).
         const outside = b.strokeIds.filter((id) => !figStrokeIds.has(id));
-        rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
+        if (b.kind === 'diagram' || (b.kind === 'table' && fig.kind === 'table')) {
+          const ownsMetadata = metadataOwner.get(b) === fig.id;
+          const remainingDrawing = outside.some((id) => drawingIds.has(id));
+          members.push({ ...b, strokeIds: inside, bbox: boundsOf(inside, b.bbox), figure: ownsMetadata ? b.figure : undefined, text: ownsMetadata ? b.text : '' });
+          const remainder: DigitalBlock = { ...b, id: newId('blk'), kind: remainingDrawing ? 'diagram' : 'paragraph', figure: ownsMetadata ? undefined : b.figure, text: ownsMetadata ? '' : b.text, strokeIds: outside, bbox: boundsOf(outside, b.bbox) };
+          rest.push(remainder);
+          const owner = metadataOwner.get(b);
+          if (owner !== undefined) metadataOwner.set(remainder, owner);
+        } else rest.push({ ...b, strokeIds: outside, bbox: boundsOf(outside, b.bbox) });
       }
     }
     const diagrams = members.filter((b) => b.kind === 'diagram');
     const diagram = diagrams[0];
     const textMembers = members.filter((b) => b.kind !== 'diagram' && b.text.trim());
     // Text the model read on the figure's label groups are labels; text "read" on drawn strokes is noise.
-    const labelTexts = textMembers.filter((b) => b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
+    const labelTexts = textMembers.filter((b) => fig.plotLabelBounds ? isPlotLabel(fig, b.bbox) : b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
     const labelGroupIdx = new Set([...fig.labelGroups, ...fig.labelHostGroups]);
     const labelFor = (groupIndex: number) => {
       const ids = new Set(groups[groupIndex]?.strokeIds ?? []);
@@ -197,11 +228,37 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
       return cleanLabel(hit.text) || undefined;
     };
     // The model may have answered with several diagram blocks for one figure: fold them into one.
-    const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
+    const prior = members.filter((b) => b.kind === 'diagram' || (b.kind === 'table' && fig.kind === 'table')).map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
-    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups));
-    // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
-    if (figure.kind === 'table' && !prior?.cells?.length) {
+    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, (node) => {
+      const ids = new Set(node.strokeIds ?? []);
+      const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
+        .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
+      return hit ? cleanLabel(hit.text) : undefined;
+    }));
+    if (figure.kind === 'table' && fig.cellBounds) {
+      const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
+      const fallback = prior?.cells ?? (tableText ? cellGrid(tableText.text) : []);
+      const fits = fallback.length > 0 && fallback.length <= fig.cellBounds.length && fallback.every((row, r) => row.length <= fig.cellBounds![r].length);
+      figure.cells = fig.cellBounds.map((row) => row.map((cell) => {
+        const within = (box: BoundingBox) => box.left >= cell.left - 6 && box.right <= cell.right + 6 && box.top >= cell.top - 6 && box.bottom <= cell.bottom + 6;
+        const located = [
+          ...textMembers.filter((b) => b.text.trim() && within(b.bbox)).map((b) => ({ text: b.text, bbox: b.bbox })),
+          ...(prior?.nodes ?? []).flatMap((n) => {
+            const anchored = (n.strokeIds ?? []).flatMap((id) => strokeById.has(id) ? [strokeById.get(id)!] : []);
+            const bbox = n.bbox ?? strokesBounds(anchored);
+            return bbox && within(bbox) ? [{ text: n.label, bbox }] : [];
+          }),
+        ];
+        const unique = located.filter((b, i) => located.findIndex((other) => sameText(other.text, b.text)) === i);
+        unique.sort((a, b) => Math.abs(a.bbox.top - b.bbox.top) > 12 ? a.bbox.top - b.bbox.top : a.bbox.left - b.bbox.left);
+        return unique.map((b) => cleanLabel(b.text)).join(' ');
+      }));
+      if (fits) {
+        figure.cells = figure.cells.map((row, r) => row.map((word, c) => word || fallback[r]?.[c] || ''));
+      }
+      figure.labels = dedupe([...figure.labels, ...figure.cells.flat().filter(Boolean)]);
+    } else if (figure.kind === 'table' && !prior?.cells?.length) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
       const cells = tableText ? cellGrid(tableText.text) : [];
       if (cells.flat().filter(Boolean).length >= 2) {
@@ -211,7 +268,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
         figure.labels = dedupe([...figure.labels.filter((l) => !cells.some((row) => row.join(' ') === l)), ...cells.flat().filter(Boolean)]);
       }
     }
-    const strokeIds = dedupe([...members.flatMap((b) => b.strokeIds), ...figStrokeIds]);
+    const strokeIds = dedupe([...figStrokeIds, ...members.flatMap((b) => b.strokeIds)]);
     const bbox = boundsOf(strokeIds, diagram?.bbox ?? figGroups.map((g) => g.bbox).reduce(unionBounds));
     const text = diagrams.map((b) => b.text.trim()).find(Boolean) || figureCaption(figure);
     const confidence = diagrams.length ? Math.min(...diagrams.map((b) => b.confidence)) : textMembers.length ? Math.min(...textMembers.map((b) => b.confidence)) : 0.4;
@@ -223,6 +280,24 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
   // Small models sometimes return an empty "diagram" for a line of text beside a figure: it carries nothing, drop it.
   const figureStrokeIds = new Set(groups.filter((g) => g.figure).flatMap((g) => g.strokeIds));
   blocks = blocks.filter((b) => b.kind !== 'diagram' || b.text.trim() || b.figure || b.strokeIds.some((id) => figureStrokeIds.has(id)));
+  return sortBlocksForReading(blocks);
+}
+
+export function attachUnclaimedStrokes(incoming: DigitalBlock[], strokes: InkStroke[]): DigitalBlock[] {
+  if (!incoming.length) return incoming;
+  const claimed = new Set(incoming.flatMap((b) => b.strokeIds));
+  const unclaimed = strokes.filter((s) => !claimed.has(s.id));
+  if (!unclaimed.length) return incoming;
+  const target = incoming.findLastIndex((b) => b.kind !== 'diagram');
+  const blocks = [...incoming];
+  if (target < 0) {
+    blocks.push({ id: newId('blk'), kind: 'paragraph', text: '', strokeIds: unclaimed.map((s) => s.id), bbox: strokesBounds(unclaimed)!, confidence: 0.4 });
+  } else {
+    const b = blocks[target];
+    const strokeIds = [...b.strokeIds, ...unclaimed.map((s) => s.id)];
+    const ids = new Set(strokeIds);
+    blocks[target] = { ...b, strokeIds, bbox: strokesBounds(strokes.filter((s) => ids.has(s.id))) ?? b.bbox };
+  }
   return sortBlocksForReading(blocks);
 }
 
@@ -263,7 +338,20 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
-function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[]): FigureNode | undefined {
+function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[], hint?: FigureNodeHint): FigureNode | undefined {
+  if (g.bbox) {
+    const positioned = modelNodes.map((n) => {
+      const overlap = n.strokeIds?.filter((id) => (hint?.strokeIds ?? g.strokeIds)?.includes(id)).length ?? 0;
+      const c = n.bbox ? { x: (n.bbox.left + n.bbox.right) / 2, y: (n.bbox.top + n.bbox.bottom) / 2 } : undefined;
+      const box = expandBounds(g.bbox!, 12);
+      const inside = c && c.x >= box.left && c.x <= box.right && c.y >= box.top && c.y <= box.bottom;
+      const error = (b: BoundingBox) => n.bbox ? (Math.abs(n.bbox.left - b.left) + Math.abs(n.bbox.right - b.right)) / Math.max(1, b.right - b.left) + (Math.abs(n.bbox.top - b.top) + Math.abs(n.bbox.bottom - b.bottom)) / Math.max(1, b.bottom - b.top) : Infinity;
+      const fit = Math.min(error(g.bbox!), hint ? error(hint.bbox) : Infinity);
+      return { n, overlap, inside, fit, d: c ? Math.hypot(c.x - (g.bbox!.left + g.bbox!.right) / 2, c.y - (g.bbox!.top + g.bbox!.bottom) / 2) : Infinity };
+    }).filter((m) => m.overlap > 0 || m.inside || m.fit < 0.25).sort((a, b) => b.overlap - a.overlap || a.fit - b.fit || a.d - b.d);
+    if (positioned.length) return positioned[0].n;
+    modelNodes = modelNodes.filter((n) => !n.bbox && !n.strokeIds?.length);
+  }
   return (g.group !== undefined && geoNodes.filter((n) => n.group === g.group).length === 1 ? modelNodes.find((n) => n.group === g.group) : undefined) ??
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
@@ -273,7 +361,7 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
   for (const g of geo.nodes ?? []) {
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
@@ -292,6 +380,16 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
     const order = dedupe([...spatialOrder, ...fig.nodes.map((n) => n.id), ...pending.map((n) => n.id)]);
     pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
+  }
+  if (fig.kind === 'mindmap') {
+    const used = new Set<string>();
+    for (const n of geo.nodes ?? []) {
+      const base = rename.get(n.label) ?? n.label;
+      let name = base, suffix = 2;
+      while (used.has(name.toLowerCase())) name = `${base} (${suffix++})`;
+      used.add(name.toLowerCase());
+      if (name !== n.label) rename.set(n.label, name);
+    }
   }
   if (rename.size === 0) return geo;
   const r = (s: string) => rename.get(s) ?? s;
@@ -314,23 +412,33 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
 export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
   const kind = fig.kind;
   const geo = nameGeometryNodes(geoIn, prior, fig, labels);
+  const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
   const aliases = new Map<string, string>();
   for (const g of nodes) {
-    const m = modelNodeFor(g, nodes, prior?.nodes ?? []);
+    const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (!matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
     const extra = { ...m };
-    if (geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
+    if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    if (geometryNesting && extra.bbox) {
+      const enclosing = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline' && fullyContains(n, { bbox: extra.bbox!, shape: extra.shape ?? 'text' }));
+      const nearest = enclosing.filter((n) => !enclosing.some((other) => other !== n && fullyContains(n, other)));
+      if (nearest.length) {
+        extra.parent = nearest[0].id;
+        extra.parents = nearest.map((n) => n.id);
+      }
+    }
     nodes.push(extra);
   }
   const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
   const knownNode = (s: string) => nodes.find((n) => sameText(n.label, resolve(s)) || sameText(n.id, s));
   const hasNesting = geo.nodes?.some((n) => n.parent !== undefined);
-  if (!hasNesting) for (const g of nodes) {
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
+  if (!hasNesting && !geometryNesting) for (const g of nodes) {
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     const parent = m?.parent && knownNode(m.parent);
     if (!g.parent && parent && parent.id !== g.id) g.parent = parent.id;
     const parents = m?.parents?.map(knownNode).filter((p): p is FigureNode => !!p && p.id !== g.id).map((p) => p.id);
@@ -345,7 +453,7 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
     return { ...e, ...(label ? { label } : {}), inferred: true };
   });
-  if (modelEdges.length > geo.edges.length) for (const e of modelEdges) {
+  if (fig.kind !== 'mindmap' && modelEdges.length > geo.edges.length) for (const e of modelEdges) {
     const from = knownNode(e.from), to = knownNode(e.to);
     if (!from || !to || from.id === to.id || !geo.nodes?.some((n) => n.id === from.id) || !geo.nodes?.some((n) => n.id === to.id)) continue;
     const candidate = { ...e, from: from.label, to: to.label };
@@ -387,20 +495,29 @@ export function rawToDigitalBlock(
   imageSize: { width: number; height: number },
   regionStrokes: InkStroke[],
 ): DigitalBlock {
+  const sx = (imageBounds.right - imageBounds.left) / Math.max(1, imageSize.width);
+  const sy = (imageBounds.bottom - imageBounds.top) / Math.max(1, imageSize.height);
+  const pageBox = (b: BoundingBox): BoundingBox => ({ left: imageBounds.left + b.left * sx, top: imageBounds.top + b.top * sy, right: imageBounds.left + b.right * sx, bottom: imageBounds.top + b.bottom * sy });
+  const figure = raw.figure?.nodes ? { ...raw.figure, nodes: raw.figure.nodes.map((n) => {
+    const located = n.groupIndices?.flatMap((i) => groups[i]?.strokeIds ?? []) ?? [];
+    return { ...n, ...(n.bbox ? { bbox: pageBox(n.bbox) } : {}), ...(located.length ? { strokeIds: dedupe([...(n.strokeIds ?? []), ...located]) } : {}) };
+  }) } : raw.figure;
   const groupList = raw.groupIndices.map((i) => groups[i]).filter((g): g is StrokeGroupMeta => !!g);
   let strokeIds = groupList.flatMap((g) => g.strokeIds);
   let bbox: BoundingBox;
   if (groupList.length > 0) {
     bbox = groupList.map((g) => g.bbox).reduce(unionBounds);
+    const positioned = pageBox(raw.bbox);
+    const table = groupList.find((g) => g.figure?.cellBounds)?.figure;
+    const plot = groupList.find((g) => g.figure?.plotLabelBounds)?.figure;
+    const cellPosition = table?.cellBounds?.flat().some((cell) => fullyContains({ bbox: expandBounds(cell, 6), shape: 'rectangle' }, { bbox: positioned, shape: 'text' }));
+    if (raw.kind !== 'diagram' && positioned.right > positioned.left && positioned.bottom > positioned.top && (cellPosition || plot)) {
+      bbox = positioned;
+      const ids = new Set(strokeIds);
+      strokeIds = regionStrokes.filter((s) => ids.has(s.id) && boundsIntersect(positioned, strokeBounds(s))).map((s) => s.id);
+    }
   } else {
-    const sx = (imageBounds.right - imageBounds.left) / Math.max(1, imageSize.width);
-    const sy = (imageBounds.bottom - imageBounds.top) / Math.max(1, imageSize.height);
-    bbox = {
-      left: imageBounds.left + raw.bbox.left * sx,
-      top: imageBounds.top + raw.bbox.top * sy,
-      right: imageBounds.left + raw.bbox.right * sx,
-      bottom: imageBounds.top + raw.bbox.bottom * sy,
-    };
+    bbox = pageBox(raw.bbox);
     strokeIds = regionStrokes.filter((s) => boundsIntersect(bbox, strokeBounds(s), -2)).map((s) => s.id);
   }
   return {
@@ -412,7 +529,7 @@ export function rawToDigitalBlock(
     confidence: Math.max(0, Math.min(1, raw.confidence ?? 0.5)),
     marker: raw.marker,
     level: raw.level,
-    ...(raw.figure ? { figure: raw.figure } : {}),
+    ...(figure ? { figure } : {}),
   };
 }
 
