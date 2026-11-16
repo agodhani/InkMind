@@ -26,8 +26,8 @@ it.each([60, 85])('preserves separately labelled concentric containers, inner ra
 
 it('carries a separately grouped label from the inner accepting-state ring', () => {
   resetSynthetic();
-  const fig = analyse([[circle(200, 200, 60), circle(200, 200, 50)], word('q1', 200, 200)]).figures[0];
-  expect(fig.nodes).toHaveLength(1);
-  expect(fig.nodes[0].labelGroup).toBe(1);
-  expect(figureFromGeometry(fig, (i) => i === 1 ? 'q1' : undefined).nodes![0].label).toBe('q1');
+  const fig = analyse([[circle(200, 200, 60), circle(200, 200, 50), circle(400, 200, 60)], word('q2', 400, 200), word('q1', 200, 200)]).figures[0];
+  expect(fig.nodes).toHaveLength(2);
+  expect(fig.nodes.find((n) => n.bbox.left < 200)!.labelGroup).toBe(2);
+  expect(figureFromGeometry(fig, (i) => ['unused', 'q2', 'q1'][i]).nodes!.map((n) => n.label).sort()).toEqual(['q1', 'q2']);
 });
