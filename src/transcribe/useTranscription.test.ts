@@ -31,3 +31,27 @@ describe('app render budget', () => {
     act(() => root.unmount());
   });
 });
+
+describe('live transcription off', () => {
+  it('does not transcribe on a pause, but Transcribe now still does', async () => {
+    vi.useFakeTimers();
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const page = { ...createPage(), strokes: [line(0, 0, 200, 100)] };
+    const transcriber = new OllamaTranscriber({ model: 'qwen2.5vl:3b' });
+    let api: ReturnType<typeof useTranscription>;
+    function Harness() {
+      const current = useTranscription({ page, transcriber, profile: { glossary: [], habits: [], examples: [] }, enabled: false, onBlocks: vi.fn() });
+      useEffect(() => { api = current; }, [current]);
+      return null;
+    }
+    const root = createRoot(document.createElement('div'));
+    act(() => root.render(createElement(Harness)));
+    act(() => api.markStrokesDirty(page.strokes));
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(renderStrokesToPng).not.toHaveBeenCalled();
+    expect(api!.status.state).toBe('idle');
+    await act(() => api.flushNow());
+    expect(renderStrokesToPng).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  });
+});

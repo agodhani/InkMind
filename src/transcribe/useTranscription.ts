@@ -46,9 +46,9 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
   profileRef.current = profile;
   const [status, setStatus] = useState<TranscriptionStatus>({ state: 'idle', pendingRegions: 0 });
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (manual = false) => {
     const current = pageRef.current;
-    if (!current || running.current || !enabled) return;
+    if (!current || running.current || (!enabled && !manual)) return;
     if (dirty.current.size === 0 && deleted.current.size === 0) return;
 
     const dirtyIds = new Set(dirty.current);
@@ -123,12 +123,14 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
 
   const schedule = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+    if (!enabled) return; // live off: ink stays dirty until the user asks (flushNow / retranscribeAll)
     setStatus((s) => (s.state === 'running' ? s : { ...s, state: 'waiting' }));
     timer.current = window.setTimeout(() => {
       timer.current = null;
       void run();
     }, IDLE_DEBOUNCE_MS);
-  }, [run]);
+  }, [run, enabled]);
 
   const markStrokesDirty = useCallback(
     (strokes: InkStroke[]) => {
@@ -154,8 +156,9 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
     if (!current) return;
     onBlocks(current.id, () => []);
     current.strokes.forEach((s) => dirty.current.add(s.id));
-    schedule();
-  }, [onBlocks, schedule]);
+    if (enabled) schedule();
+    else void run(true);
+  }, [onBlocks, schedule, run, enabled]);
 
   // Reset tracking when switching pages.
   useEffect(() => {
@@ -167,7 +170,13 @@ export function useTranscription({ page, transcriber, profile, enabled, scope = 
     setStatus({ state: 'idle', pendingRegions: 0 });
   }, [page?.id]);
 
-  return { status, markStrokesDirty, markStrokesDeleted, retranscribeAll, flushNow: run };
+  const flushNow = useCallback(() => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+    return run(true);
+  }, [run]);
+
+  return { status, markStrokesDirty, markStrokesDeleted, retranscribeAll, flushNow };
 }
 
 function wholePageRegion(page: Page): DirtyRegion[] {
