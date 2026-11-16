@@ -670,7 +670,15 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
       });
       const wings = heads.filter((h) => h.kind === 'line');
       const cross = (p: Offset) => (tip.x - axisTail.x) * (p.y - tip.y) - (tip.y - axisTail.y) * (p.x - tip.x);
-      const splitHead = wings.some((p) => wings.some((q) => p !== q && cross(center(p.bbox)) * cross(center(q.bbox)) < 0));
+      const splitHead = wings.some((p) => wings.some((q) => {
+        if (p === q) return false;
+        if (cross(center(p.bbox)) * cross(center(q.bbox)) < 0) return true;
+        const joins = [p.start, p.end].flatMap((a) => [q.start, q.end].map((b) => ({ a, b, d: dist(a, b) }))).sort((a, b) => a.d - b.d);
+        if (joins[0].d > 6) return false;
+        const join = mid(joins[0].a, joins[0].b);
+        const side = (v: Offset) => (tip.x - axisTail.x) * (v.y - join.y) - (tip.y - axisTail.y) * (v.x - join.x);
+        return side(center(p.bbox)) * side(center(q.bbox)) < 0;
+      }));
       if (heads.length >= 1 && heads.length <= 3 && (heads.some((h) => h.kind !== 'line') || splitHead)) {
         arrows.push({ strokeIds: [shaft.strokeId, ...heads.map((h) => h.strokeId)], tail, head: tip, groupIndex, ...(shaft.kind === 'curve' ? { curved: true } : {}) });
         used.add(shaft.strokeId);
@@ -786,6 +794,9 @@ export function analyseGroup(group: GroupLike, strokes: InkStroke[]): GroupAnaly
       if (pieces.some((s) => usedIds.has(s.strokeId))) break;
       const chained = chainSegments(pieces.map((s) => ({ strokeId: s.strokeId, segments: s.segments })));
       if (!chained || diagOf(bboxOf(chained.corners)) < MIN_SHAPE_SIZE || height(bboxOf(chained.corners)) < 1.6 * glyphHeight) continue;
+      const box = bboxOf(chained.corners);
+      const host = (p: Offset) => closed.find((c) => width(c.bbox) * height(c.bbox) < 0.25 * width(box) * height(box) && boxDistance(c.bbox, p) <= 12);
+      if (pieces.every((s) => { const a = host(s.start), b = host(s.end); return a && b && a !== b; })) continue;
       closed.push({ kind: classifyCorners(chained.corners), strokeIds: chained.strokeIds, bbox: bboxOf(chained.corners), corners: chained.corners, groupIndex: group.index });
       chained.strokeIds.forEach((id) => usedIds.add(id));
       break;
@@ -1812,10 +1823,8 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
     if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
     if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
-    if (fig.kind === 'mindmap' || n.strokeIds) {
-      node.bbox = n.labelBounds ?? n.bbox;
-      if (fig.kind === 'mindmap') node.strokeIds = n.strokeIds ?? node.strokeIds;
-    }
+    node.bbox = n.labelBounds ?? n.bbox;
+    if (fig.kind === 'mindmap') node.strokeIds = n.strokeIds ?? node.strokeIds;
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {
