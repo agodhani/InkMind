@@ -665,7 +665,7 @@ function findCompositeArrows(shafts: StrokeShape[], marks: StrokeShape[], groupI
         if (m.kind === 'line' && (angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) < 10 || angleDiff(orientation({ a: m.start, b: m.end }), orientation({ a: axisTail, b: tip })) > 80)) return false;
         // The shaft tip touches the head, and the head sits on the shaft's axis (straight shafts).
         if (!contains(m.bbox, tip, Math.max(4, 0.05 * shaft.length))) return false;
-        if (shaft.kind !== 'curve' && perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.4 * m.diag + 2) return false;
+        if (shaft.kind !== 'curve' && perpDistance(center(m.bbox), shaft.start, shaft.end) > 0.5 * m.diag + 2) return false;
         return dist(center(m.bbox), tip) <= Math.max(14, 0.3 * shaft.length);
       });
       const wings = heads.filter((h) => h.kind === 'line');
@@ -1092,6 +1092,26 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     for (const { c } of near) if (c !== best && boxInside(c.bbox, best.bbox) && shapeArea(c) < shapeArea(best)) best = c;
     return best;
   };
+  const routePieces = analyses.filter((g) => !g.cube && !g.axes).flatMap((g) => g.shapes
+    .filter((s) => s.segments.some((seg) => g.looseSegments.includes(seg)))
+    .map((s) => ({ s, groupIndex: g.index })));
+  const traceTail = (a: Arrow) => {
+    type Route = { shape: ClosedShape; tail: Offset; pieces: typeof routePieces };
+    const found: Route[] = [];
+    const walk = (p: Offset, pieces: typeof routePieces) => {
+      const shape = pieces.length ? nearestShape(p, a.strokeIds) : undefined;
+      if (shape && boxDistance(shape.bbox, p) <= 10) { found.push({ shape, tail: p, pieces }); return; }
+      if (pieces.length >= 8) return;
+      for (const piece of routePieces) {
+        if (pieces.includes(piece)) continue;
+        const { s } = piece;
+        if (dist(p, s.start) <= 10) walk(s.end, [...pieces, piece]);
+        else if (dist(p, s.end) <= 10) walk(s.start, [...pieces, piece]);
+      }
+    };
+    walk(a.tail, []);
+    return new Set(found.map((r) => r.shape)).size === 1 ? found.sort((a, b) => a.pieces.length - b.pieces.length)[0] : undefined;
+  };
   const nearestText = (p: Offset, maxD: number, groupIndex: number, exclude?: number): GroupAnalysis | undefined => {
     let best: GroupAnalysis | undefined, bestD = Infinity;
     const bounds = plotBoundsFor(groupIndex);
@@ -1212,6 +1232,14 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const span = Math.max(dist(a.tail, a.head), 0.6 * diagOf(box));
       let from = nearestShape(a.tail, a.strokeIds);
       let to = nearestShape(a.head, a.strokeIds);
+      const route = !from && to ? traceTail(a) : undefined;
+      if (route) {
+        from = route.shape;
+        a.tail = route.tail;
+        a.curved = true;
+        a.strokeIds.push(...route.pieces.map((p) => p.s.strokeId));
+        route.pieces.forEach((p) => uf.union(g.index, p.groupIndex));
+      }
       if (from && to && from === to) {
         // A curved arrow that leaves and re-enters one shape is a self-loop; a straight arrow can't
         // do that — only its head counts.
