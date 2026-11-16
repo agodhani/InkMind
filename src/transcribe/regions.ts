@@ -705,7 +705,8 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
     const index = edgeMatches.get(i);
     const match = index === undefined ? undefined : edited.edges[index];
     const anchored = match?.strokeIds?.some(id => edge.strokeIds?.includes(id));
-    return { ...edge, from: anchored ? oldEndpoint(match!.from) : renamed(edge.from), to: anchored ? oldEndpoint(match!.to) : renamed(edge.to),
+    const unchangedInk = anchored && edge.strokeIds!.every(id => match!.strokeIds!.includes(id));
+    return { ...edge, from: unchangedInk ? oldEndpoint(match!.from) : renamed(edge.from), to: unchangedInk ? oldEndpoint(match!.to) : renamed(edge.to),
       ...(match ? { label: match.label } : {}),
       ...(anchored ? { strokeIds: dedupe([...(match!.strokeIds ?? []).filter(id => retainedIds.has(id)), ...(edge.strokeIds ?? [])]) } : {}) };
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DigitalBlock, FigureInfo } from '../model/page';
 import { mergeBlocks } from './regions';
+import { figureEndpointLabel } from '../views/figureView';
 
 function reread(edited: FigureInfo, incoming: FigureInfo, retained?: string[]): FigureInfo {
   const ink = (figure: FigureInfo) => [...(figure.nodes ?? []), ...figure.edges].flatMap(record => record.strokeIds ?? []);
@@ -24,5 +25,26 @@ describe('edited table identity matching', () => {
   ])('does not reuse an identity-matched old row or column for positional fallback: $fresh', ({ fresh, expected }) => {
     const edited: FigureInfo = { kind: 'table', shapes: [], labels: [], edges: [], cells };
     expect(reread(edited, { ...edited, cells: fresh }).cells).toEqual(expected);
+  });
+});
+
+describe('edited arrow direction', () => {
+  it.each([
+    { ink: ['shaft', 'old-head', 'label'], expected: ['left', 'right'] },
+    { ink: ['shaft', 'label'], expected: ['left', 'right'] },
+    { ink: ['shaft', 'new-head', 'label'], expected: ['right', 'left'] },
+  ])('preserves endpoints only for unchanged/subset arrow ink: $ink', ({ ink, expected }) => {
+    const edited: FigureInfo = { kind: 'flowchart', shapes: [], labels: [], nodes: [
+      { id: 'a', label: 'left', strokeIds: ['left-node'] }, { id: 'b', label: 'right', strokeIds: ['right-node'] },
+    ], edges: [{ from: 'a', to: 'b', label: 'corrected relationship', strokeIds: ['shaft', 'old-head', 'label'] }] };
+    const incoming: FigureInfo = { ...edited, nodes: edited.nodes!.map(node => ({ ...node, id: `new-${node.id}`, label: '[unread]' })),
+      edges: [{ from: 'new-b', to: 'new-a', label: '[unread edge]', strokeIds: ink }] };
+    const retained = ['left-node', 'right-node', ...ink];
+    const result = reread(edited, incoming, retained), edge = result.edges[0];
+    expect([figureEndpointLabel(result, edge.from), figureEndpointLabel(result, edge.to)]).toEqual(expected);
+    expect(edge.label).toBe('corrected relationship');
+    expect(edge.strokeIds!.every(id => retained.includes(id))).toBe(true);
+    expect(edge.strokeIds).toEqual(expect.arrayContaining(ink));
+    expect(result.edges).toHaveLength(1);
   });
 });
