@@ -25,6 +25,7 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
     if (value && typeof value === 'object' && !Array.isArray(value)) nodes.push(...nodeList([{ id: `label${i + 1}`, ...value }]).filter((n) => n.bbox || n.groupIndices?.length || n.group !== undefined || n.strokeIds?.length));
   }
   const boxedWords: FigureNode[] = [];
+  const boxCreatedNodes = new Set<FigureNode>();
   const messages: string[] = stringList(obj.messages);
   for (const box of [firstDefined(obj, ['node boxes', 'node_boxes', 'nodeBoxes'])].flat()) {
     if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
@@ -33,8 +34,9 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
       const byId = nodes.find((n) => n.id.toLowerCase() === id.toLowerCase());
       const readLabel = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
       const word = readLabel && !isGroupRef(readLabel) ? readLabel : undefined;
-      const matching = word ? nodes.filter((n) => n.label.toLowerCase() === word.toLowerCase()) : [];
-      const existing = word ? matching.find((n) => n === byId) ?? matching[0] : byId;
+      const existing = byId && (!word || byId.label.toLowerCase() === word.toLowerCase())
+        ? byId
+        : word ? nodes.find((n) => !n.bbox && !boxCreatedNodes.has(n) && n.label.toLowerCase() === word.toLowerCase()) : undefined;
       const label = word ?? existing?.label;
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
@@ -44,7 +46,10 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
         if (!existing) for (let suffix = 1; nodes.some((n) => n.id.toLowerCase() === positionedId.toLowerCase()); suffix++) positionedId = `${id}-box${suffix}`;
         const positioned = nodeList([{ ...value, id: positionedId, label }])[0];
         if (!positioned) continue;
-        if (!existing) nodes.push(positioned);
+        if (!existing) {
+          nodes.push(positioned);
+          boxCreatedNodes.add(positioned);
+        }
         else {
           if (!existing.bbox && positioned.bbox) existing.bbox = positioned.bbox;
           if (existing.group === undefined && positioned.group !== undefined) existing.group = positioned.group;

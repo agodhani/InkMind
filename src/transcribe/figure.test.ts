@@ -3,6 +3,20 @@ import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserve
 import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it.each([{ bbox: [10, 20, 40, 50] }, { bbox: undefined }, { bbox: [] }])('keeps distinct box ids with repeated words separate: %j', ({ bbox }) => {
+    const out = normaliseFigure({ nodeBoxes: { n1: { label: 'food', bbox, groupIndices: [1] }, n2: { label: 'food', bbox: [60, 20, 90, 50], groupIndices: [2] } } })!;
+    expect(out.nodes).toEqual([
+      { id: 'n1', label: 'food', groupIndices: [1], ...(bbox?.length === 4 ? { bbox: { left: 10, top: 20, right: 40, bottom: 50 } } : {}) },
+      { id: 'n2', label: 'food', bbox: { left: 60, top: 20, right: 90, bottom: 50 }, groupIndices: [2] },
+    ]);
+  });
+  it('does not match a differently identified box to an already positioned node by label', () => {
+    const out = normaliseFigure({ nodes: [{ id: 'n1', label: 'food', bbox: [10, 20, 40, 50] }], nodeBoxes: { n2: { label: 'food', bbox: [60, 20, 90, 50] } } })!;
+    expect(out.nodes).toEqual([
+      { id: 'n1', label: 'food', bbox: { left: 10, top: 20, right: 40, bottom: 50 } },
+      { id: 'n2', label: 'food', bbox: { left: 60, top: 20, right: 90, bottom: 50 } },
+    ]);
+  });
   it('matches labelled boxes to node words before conflicting hint ids', () => {
     const out = normaliseFigure({ names: { n1: 'start', n2: 'finish' }, nodeBoxes: { n1: { label: 'FINISH', bbox: [10, 20, 40, 50] } } })!;
     expect(out.nodes).toEqual([{ id: 'n1', label: 'start' }, { id: 'n2', label: 'finish', bbox: { left: 10, top: 20, right: 40, bottom: 50 } }]);
