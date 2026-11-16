@@ -9,6 +9,10 @@ import type { RawBlock, StrokeGroupMeta } from './types';
 
 export const REGION_PAD = 40;
 
+function isPlotLabel(fig: FigureHint, box: BoundingBox): boolean {
+  return fig.plotLabelBounds?.some((bbox) => fullyContains({ bbox, shape: 'rectangle' }, { bbox: box, shape: 'text' }) && box.bottom - box.top <= 0.15 * (fig.plotLabelBounds![0].bottom - fig.plotLabelBounds![0].top)) ?? false;
+}
+
 export interface DirtyRegion {
   bounds: BoundingBox;
   strokes: InkStroke[];
@@ -147,7 +151,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     ? { ...b, kind: 'paragraph', text: b.figure.labels.join('\n'), figure: undefined } : b);
   const figures = figuresOf(groups);
   if (figures.length === 0) return incoming;
-  if (figures.length === 1 && groups.every((g) => g.figure)) incoming = incoming.map((b) => b.kind !== 'diagram' && !b.strokeIds.length && b.text.trim()
+  if (figures.length === 1 && groups.every((g) => g.figure)) incoming = incoming.map((b) => b.kind !== 'diagram' && !b.strokeIds.length && b.text.trim() && (!figures[0].plotLabelBounds || isPlotLabel(figures[0], b.bbox))
     ? { ...b, strokeIds: groups.flatMap((g) => g.strokeIds) } : b);
   const strokeById = new Map(strokes.map((s) => [s.id, s]));
   const boundsOf = (ids: string[], fallback: BoundingBox) => strokesBounds(ids.map((id) => strokeById.get(id)).filter((s): s is InkStroke => !!s)) ?? fallback;
@@ -192,7 +196,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const diagram = diagrams[0];
     const textMembers = members.filter((b) => b.kind !== 'diagram' && b.text.trim());
     // Text the model read on the figure's label groups are labels; text "read" on drawn strokes is noise.
-    const labelTexts = textMembers.filter((b) => b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
+    const labelTexts = textMembers.filter((b) => fig.plotLabelBounds ? isPlotLabel(fig, b.bbox) : b.strokeIds.some((id) => labelStrokeIds.has(id))).flatMap((b) => b.text.split('\n')).map(cleanLabel).filter(Boolean);
     const labelGroupIdx = new Set([...fig.labelGroups, ...fig.labelHostGroups]);
     const labelFor = (groupIndex: number) => {
       const ids = new Set(groups[groupIndex]?.strokeIds ?? []);
@@ -472,7 +476,9 @@ export function rawToDigitalBlock(
     bbox = groupList.map((g) => g.bbox).reduce(unionBounds);
     const positioned = pageBox(raw.bbox);
     const table = groupList.find((g) => g.figure?.cellBounds)?.figure;
-    if (raw.kind !== 'diagram' && positioned.right > positioned.left && positioned.bottom > positioned.top && table?.cellBounds?.flat().some((cell) => fullyContains({ bbox: expandBounds(cell, 6), shape: 'rectangle' }, { bbox: positioned, shape: 'text' }))) {
+    const plot = groupList.find((g) => g.figure?.plotLabelBounds)?.figure;
+    const cellPosition = table?.cellBounds?.flat().some((cell) => fullyContains({ bbox: expandBounds(cell, 6), shape: 'rectangle' }, { bbox: positioned, shape: 'text' }));
+    if (raw.kind !== 'diagram' && positioned.right > positioned.left && positioned.bottom > positioned.top && (cellPosition || plot)) {
       bbox = positioned;
       const ids = new Set(strokeIds);
       strokeIds = regionStrokes.filter((s) => ids.has(s.id) && boundsIntersect(positioned, strokeBounds(s))).map((s) => s.id);

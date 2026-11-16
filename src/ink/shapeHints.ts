@@ -221,6 +221,7 @@ export interface FigureHint {
   /** Tables: group index of the text in each cell, row-major; -1 for an empty cell. */
   cells?: number[][];
   cellBounds?: BoundingBox[][];
+  plotLabelBounds?: BoundingBox[];
   summary: string;
 }
 
@@ -1047,6 +1048,24 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
   const attached = new Set<number>();
   const textGroups = analyses.filter((a) => !a.graphic && a.textStrokes.length > 0);
   const shapeArea = (c: ClosedShape) => Math.max(1, width(c.bbox) * height(c.bbox));
+  const plotRegions = new Map<number, BoundingBox[]>();
+  for (const g of analyses.filter((a) => a.axes && !a.cube)) {
+    const axisBox = g.shapes.filter((s) => g.axes!.strokeIds.includes(s.strokeId)).map((s) => s.bbox).reduce(unionBox);
+    const size = Math.min(width(axisBox), height(axisBox));
+    const heights = analyses.flatMap((a) => a.textStrokes).filter((s) => intersects(s.bbox, expand(axisBox, size * 0.2)) && height(s.bbox) >= 6 && height(s.bbox) <= size * 0.08).map((s) => height(s.bbox)).sort((a, b) => a - b);
+    const textHeight = heights[Math.floor(heights.length * 0.8)] ?? 12;
+    const margin = Math.max(24, Math.min(4 * textHeight, size * 0.18));
+    const regions = [expand(axisBox, margin)];
+    for (const legend of closed.filter((c) => c.kind === 'rectangle' && width(c.bbox) < width(axisBox) * 0.5 && height(c.bbox) < height(axisBox) * 0.5 && intersects(axisBox, c.bbox, margin))) {
+      const samples = analyses.flatMap((a) => a.shapes).some((s) => s.kind === 'line' && fullyContains({ bbox: legend.bbox, shape: 'rectangle' }, { bbox: s.bbox, shape: 'text' }) && s.segments.some((seg) => isHorizontal(seg) && segLen(seg) >= Math.max(textHeight, width(legend.bbox) * 0.1) && segLen(seg) < width(legend.bbox) * 0.7));
+      if (!samples) continue;
+      regions.push(legend.bbox);
+      uf.union(g.index, legend.groupIndex);
+    }
+    plotRegions.set(g.index, regions);
+  }
+  const plotBoundsFor = (index: number) => [...plotRegions.entries()].filter(([i]) => uf.find(i) === uf.find(index)).flatMap(([, regions]) => regions);
+  const fitsPlot = (bounds: BoundingBox[], box: BoundingBox) => !bounds.length || bounds.some((bbox) => fullyContains({ bbox, shape: 'rectangle' }, { bbox: box, shape: 'text' }));
 
   const boxInside = (inner: BoundingBox, outer: BoundingBox, pad = 3) => inner.left >= outer.left - pad && inner.top >= outer.top - pad && inner.right <= outer.right + pad && inner.bottom <= outer.bottom + pad;
   const nearestShape = (p: Offset, exclude: string[]): ClosedShape | undefined => {
@@ -1062,10 +1081,11 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     for (const { c } of near) if (c !== best && boxInside(c.bbox, best.bbox) && shapeArea(c) < shapeArea(best)) best = c;
     return best;
   };
-  const nearestText = (p: Offset, maxD: number, exclude?: number): GroupAnalysis | undefined => {
+  const nearestText = (p: Offset, maxD: number, groupIndex: number, exclude?: number): GroupAnalysis | undefined => {
     let best: GroupAnalysis | undefined, bestD = Infinity;
+    const bounds = plotBoundsFor(groupIndex);
     for (const t of textGroups) {
-      if (t.index === exclude) continue;
+      if (t.index === exclude || !fitsPlot(bounds, t.bbox)) continue;
       const d = boxDistance(t.bbox, p);
       if (d <= maxD && d < bestD) {
         best = t;
@@ -1148,7 +1168,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         uf.union(g.index, to.groupIndex);
       } else if ((from || to) && !(from && to)) {
         const shape = (from ?? to)!, free = from ? sg.b : sg.a;
-        const t = nearestText(free, Math.max(14, 0.15 * segLen(sg)));
+        const t = nearestText(free, Math.max(14, 0.15 * segLen(sg)), g.index);
         if (t && !contains(shape.bbox, center(t.bbox))) {
           lineLinks.push({ from: closed.indexOf(shape), to: -1, toLabel: t.index, groupIndex: g.index });
           linkGroups.add(g.index);
@@ -1197,7 +1217,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       }
       const textTol = Math.max(16, 0.2 * span);
       if (!from) {
-        const t = nearestText(a.tail, textTol);
+        const t = nearestText(a.tail, textTol, g.index);
         if (t && !(a.to !== undefined && contains(closed[a.to].bbox, center(t.bbox)))) {
           a.fromLabel = t.index;
           attached.add(t.index);
@@ -1205,7 +1225,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
         }
       }
       if (!to) {
-        const t = nearestText(a.head, textTol, a.fromLabel);
+        const t = nearestText(a.head, textTol, g.index, a.fromLabel);
         if (t && !(a.from !== undefined && contains(closed[a.from].bbox, center(t.bbox)))) {
           a.toLabel = t.index;
           attached.add(t.index);
@@ -1231,6 +1251,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const tol = Math.max(20, 0.3 * len);
       for (const t of textGroups) {
         if (attached.has(t.index) || width(t.bbox) > Math.max(1.6 * len, 80)) continue;
+        if (!fitsPlot(plotBoundsFor(g.index), t.bbox)) continue;
         if (g.closed.length >= 2 && t.bbox.top > Math.max(...g.closed.map((c) => c.bbox.bottom))) continue;
         const d = boxDistance(t.bbox, m);
         if (d <= tol && !closed.some((c) => contains(c.bbox, center(t.bbox)))) labelCandidates.push({ g, a, t, score: d / tol });
@@ -1290,6 +1311,15 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     if (claimed.has(t.index)) continue;
     for (const [r, box] of figureBoxes) {
       const fw = width(box), fh = height(box);
+      const plotBounds = members.get(r)!.flatMap((i) => plotRegions.get(i) ?? []);
+      if (plotBounds.length) {
+        if (plotBounds.some((bbox) => fullyContains({ bbox, shape: 'rectangle' }, { bbox: t.bbox, shape: 'text' })) && height(t.bbox) <= 0.15 * height(plotBounds[0]) && width(t.bbox) <= 0.8 * fw) {
+          members.get(r)!.push(t.index);
+          claimed.add(t.index);
+          break;
+        }
+        continue;
+      }
       const hasClosed = members.get(r)!.some((i) => byIndex.get(i)!.closed.length > 0) && !members.get(r)!.some((i) => byIndex.get(i)!.axes);
       const pad = hasClosed ? 18 : Math.max(24, 0.15 * Math.max(fw, fh));
       if (hasClosed && t.bbox.top > box.bottom) continue;
@@ -1702,6 +1732,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       summary: `${figureName(id)} (${axes && !cube ? 'sketch' : kind}; groups ${groupIndices.join(', ')}): ${summaryParts.join('; ')}`,
     };
     if (cells) fig.cells = cells;
+    if (axes && !cube) fig.plotLabelBounds = gs.flatMap((g) => plotRegions.get(g.index) ?? []);
     if (grid) fig.cellBounds = grid.ys.slice(0, -1).map((top, r) => grid.xs.slice(0, -1).map((left, c) => ({ left, top, right: grid.xs[c + 1], bottom: grid.ys[r + 1] })));
     if (lifelines.length >= 2) fig.messageGroups = relations.map((r) => r.labelGroup ?? -1);
     figures.push(fig);
