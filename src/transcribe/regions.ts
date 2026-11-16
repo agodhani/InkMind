@@ -3,7 +3,7 @@ import { getStrokeBoundingBox, getStrokeStartTime } from '../types/brush';
 import type { DigitalBlock, FigureEdge, FigureInfo, FigureNode, InkStroke } from '../model/page';
 import { boundsIntersect, expandBounds, newId, sortBlocksForReading, unionBounds } from '../model/page';
 import { clusterStrokes } from '../ink/StrokeClustering';
-import { analyseGroup, analyseInk, figureFromGeometry, type FigureHint } from '../ink/shapeHints';
+import { analyseGroup, analyseInk, figureFromGeometry, fullyContains, type FigureHint, type FigureNodeHint } from '../ink/shapeHints';
 import { cellGrid, figureCaption, isGroupRef, resolveNodeRefs, sequenceEdgeIndices, stringList } from './figure';
 import type { RawBlock, StrokeGroupMeta } from './types';
 
@@ -213,12 +213,12 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     // The model may have answered with several diagram blocks for one figure: fold them into one.
     const prior = diagrams.map((b) => b.figure).filter((f): f is FigureInfo => !!f).reduce<FigureInfo | undefined>((acc, f) => (acc ? mergeFigures(acc, f) : f), undefined);
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
-    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, fig.kind === 'mindmap' ? (node) => {
+    const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, (node) => {
       const ids = new Set(node.strokeIds ?? []);
       const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
-    } : undefined));
+    }));
     // The model often answers a drawn grid with a "table" text block ("name qty\nnut 12"): those are the cells.
     if (figure.kind === 'table' && !prior?.cells?.length) {
       const tableText = textMembers.find((b) => b.kind === 'table') ?? textMembers.find((b) => b.text.includes('\n'));
@@ -282,16 +282,19 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
  * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
-function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[]): FigureNode | undefined {
+function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[], hint?: FigureNodeHint): FigureNode | undefined {
   if (g.bbox) {
     const positioned = modelNodes.map((n) => {
-      const overlap = n.strokeIds?.filter((id) => g.strokeIds?.includes(id)).length ?? 0;
+      const overlap = n.strokeIds?.filter((id) => (hint?.strokeIds ?? g.strokeIds)?.includes(id)).length ?? 0;
       const c = n.bbox ? { x: (n.bbox.left + n.bbox.right) / 2, y: (n.bbox.top + n.bbox.bottom) / 2 } : undefined;
       const box = expandBounds(g.bbox!, 12);
       const inside = c && c.x >= box.left && c.x <= box.right && c.y >= box.top && c.y <= box.bottom;
-      return { n, overlap, inside, d: c ? Math.hypot(c.x - (g.bbox!.left + g.bbox!.right) / 2, c.y - (g.bbox!.top + g.bbox!.bottom) / 2) : Infinity };
-    }).filter((m) => m.overlap > 0 || m.inside).sort((a, b) => b.overlap - a.overlap || a.d - b.d);
+      const error = (b: BoundingBox) => n.bbox ? (Math.abs(n.bbox.left - b.left) + Math.abs(n.bbox.right - b.right)) / Math.max(1, b.right - b.left) + (Math.abs(n.bbox.top - b.top) + Math.abs(n.bbox.bottom - b.bottom)) / Math.max(1, b.bottom - b.top) : Infinity;
+      const fit = Math.min(error(g.bbox!), hint ? error(hint.bbox) : Infinity);
+      return { n, overlap, inside, fit, d: c ? Math.hypot(c.x - (g.bbox!.left + g.bbox!.right) / 2, c.y - (g.bbox!.top + g.bbox!.bottom) / 2) : Infinity };
+    }).filter((m) => m.overlap > 0 || m.inside || m.fit < 0.25).sort((a, b) => b.overlap - a.overlap || a.fit - b.fit || a.d - b.d);
     if (positioned.length) return positioned[0].n;
+    modelNodes = modelNodes.filter((n) => !n.bbox && !n.strokeIds?.length);
   }
   return (g.group !== undefined && geoNodes.filter((n) => n.group === g.group).length === 1 ? modelNodes.find((n) => n.group === g.group) : undefined) ??
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
@@ -302,7 +305,7 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
   for (const g of geo.nodes ?? []) {
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
@@ -353,23 +356,33 @@ function sameEdge(a: FigureEdge, b: FigureEdge): boolean {
 export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint, labels: string[], geoIn: ReturnType<typeof figureFromGeometry>): FigureInfo {
   const kind = fig.kind;
   const geo = nameGeometryNodes(geoIn, prior, fig, labels);
+  const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
   const aliases = new Map<string, string>();
   for (const g of nodes) {
-    const m = modelNodeFor(g, nodes, prior?.nodes ?? []);
+    const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.id, m.id))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
     const extra = { ...m };
-    if (geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
+    if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    if (geometryNesting && extra.bbox) {
+      const enclosing = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline' && fullyContains(n, { bbox: extra.bbox!, shape: extra.shape ?? 'text' }));
+      const nearest = enclosing.filter((n) => !enclosing.some((other) => other !== n && fullyContains(n, other)));
+      if (nearest.length) {
+        extra.parent = nearest[0].id;
+        extra.parents = nearest.map((n) => n.id);
+      }
+    }
     nodes.push(extra);
   }
   const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
   const knownNode = (s: string) => nodes.find((n) => sameText(n.label, resolve(s)) || sameText(n.id, s));
   const hasNesting = geo.nodes?.some((n) => n.parent !== undefined);
-  if (!hasNesting) for (const g of nodes) {
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? []);
+  if (!hasNesting && !geometryNesting) for (const g of nodes) {
+    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
     const parent = m?.parent && knownNode(m.parent);
     if (!g.parent && parent && parent.id !== g.id) g.parent = parent.id;
     const parents = m?.parents?.map(knownNode).filter((p): p is FigureNode => !!p && p.id !== g.id).map((p) => p.id);

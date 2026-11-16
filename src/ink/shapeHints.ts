@@ -103,6 +103,30 @@ export interface GroupLike {
   bbox: BoundingBox;
 }
 
+function pointInPolygon(p: Offset, corners: Offset[]): boolean {
+  let inside = false;
+  for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+    const a = corners[i], b = corners[j];
+    const cross = (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x);
+    if (Math.abs(cross) < 1e-6 && p.x >= Math.min(a.x, b.x) && p.x <= Math.max(a.x, b.x) && p.y >= Math.min(a.y, b.y) && p.y <= Math.max(a.y, b.y)) return true;
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Full containment, not bbox overlap or membership of just the centre point. */
+export function fullyContains(outer: { bbox: BoundingBox; shape: string; corners?: Offset[] }, inner: { bbox: BoundingBox; shape: string; corners?: Offset[] }): boolean {
+  const b = inner.bbox, o = outer.bbox;
+  const ellipse = (shape: string) => shape === 'circle' || shape === 'ellipse';
+  const c = center(b), rx = width(b) / 2, ry = height(b) / 2;
+  const points = ellipse(inner.shape)
+    ? Array.from({ length: 64 }, (_, i) => ({ x: c.x + rx * Math.cos(i * Math.PI / 32), y: c.y + ry * Math.sin(i * Math.PI / 32) }))
+    : inner.corners?.length ? inner.corners : [{ x: b.left, y: b.top }, { x: b.right, y: b.top }, { x: b.right, y: b.bottom }, { x: b.left, y: b.bottom }];
+  return points.every((p) => ellipse(outer.shape)
+    ? width(o) > 0 && height(o) > 0 && ((p.x - center(o).x) / (width(o) / 2)) ** 2 + ((p.y - center(o).y) / (height(o) / 2)) ** 2 <= 1
+    : outer.corners?.length ? pointInPolygon(p, outer.corners) : contains(o, p));
+}
+
 function textRegions(ink: StrokeShape[]): BoundingBox[] {
   if (!ink.length) return [];
   const heights = ink.map((s) => height(s.bbox)).sort((a, b) => a - b);
@@ -1293,7 +1317,7 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     const arrows = gs.flatMap((g) => g.arrows);
     const curves = gs.flatMap((g) => g.curves);
     const lifelines = tall.map((l, i) => ({ l, i })).filter(({ l, i }) => usedLifelines.has(i) && inFigure(l.groupIndex)).sort((a, b) => a.l.x - b.l.x);
-    const nested = closedHere.some((c) => closedHere.some((outer) => c !== outer && shapeArea(outer) > 1.2 * shapeArea(c) && boxInside(c.bbox, outer.bbox)));
+    const nested = closedHere.some((c) => closedHere.some((outer) => c !== outer && shapeArea(outer) > shapeArea(c) && fullyContains({ ...outer, shape: outer.kind }, { ...c, shape: c.kind })));
     const grid = !nested && !cube && !axes && lifelines.length === 0 ? detectGrid([...gs.flatMap((g) => g.looseSegments), ...rectEdges]) : null;
     const figBox = gs.map((g) => g.bbox).reduce(unionBox);
 
@@ -1374,13 +1398,19 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
       if (host) nodes.push({ id: '', shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box });
     }
-    // Nesting from bbox containment (innermost enclosing shape = parent); ids in reading order,
+    // Innermost fully enclosing shapes are parents; ids in reading order,
     // a container right before the nodes drawn inside it.
     const area = (b: BoundingBox) => Math.max(1, width(b) * height(b));
     const parentOf = new Map<FigureNodeHint, FigureNodeHint>();
+    const parentsOf = new Map<FigureNodeHint, FigureNodeHint[]>();
+    const outline = (n: FigureNodeHint) => ({ ...n, corners: closedHere.find((c) => c.bbox === n.bbox)?.corners });
     for (const n of nodes) {
-      const enclosing = nodes.filter((m) => m !== n && m.shape !== 'text' && m.shape !== 'lifeline' && area(m.bbox) > 1.2 * area(n.bbox) && boxInside(n.bbox, m.bbox));
-      if (enclosing.length) parentOf.set(n, enclosing.reduce((a, b) => (area(a.bbox) <= area(b.bbox) ? a : b)));
+      const enclosing = nodes.filter((m) => m !== n && m.shape !== 'text' && m.shape !== 'lifeline' && area(m.bbox) > area(n.bbox) && fullyContains(outline(m), outline(n)));
+      const nearest = enclosing.filter((m) => !enclosing.some((other) => other !== m && fullyContains(outline(m), outline(other))));
+      if (nearest.length) {
+        parentOf.set(n, nearest[0]);
+        parentsOf.set(n, nearest);
+      }
     }
     const numbered: FigureNodeHint[] = [];
     const assign = (parent: FigureNodeHint | undefined) => {
@@ -1397,16 +1427,19 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       numbered.push(n);
     }
     nodes.splice(0, nodes.length, ...numbered);
-    for (const [n, p] of parentOf) n.parent = p.id;
+    for (const [n, p] of parentOf) {
+      n.parent = p.id;
+      if (parentsOf.get(n)!.length > 1) n.parents = parentsOf.get(n)!.map((m) => m.id);
+    }
     const circles = nodes.filter((n) => n.shape === 'circle' || n.shape === 'ellipse');
     const inEllipse = (n: FigureNodeHint, p: Offset) => ((p.x - center(n.bbox).x) / (width(n.bbox) / 2)) ** 2 + ((p.y - center(n.bbox).y) / (height(n.bbox) / 2)) ** 2 <= 1;
-    const venn = circles.length >= 2 && circles.some((a) => circles.some((b) => a !== b && Math.max(a.bbox.left, b.bbox.left) < Math.min(a.bbox.right, b.bbox.right) && Math.max(a.bbox.top, b.bbox.top) < Math.min(a.bbox.bottom, b.bbox.bottom) && !boxInside(a.bbox, b.bbox) && !boxInside(b.bbox, a.bbox)));
+    const venn = circles.length >= 2 && circles.some((a) => circles.some((b) => a !== b && Math.max(a.bbox.left, b.bbox.left) < Math.min(a.bbox.right, b.bbox.right) && Math.max(a.bbox.top, b.bbox.top) < Math.min(a.bbox.bottom, b.bbox.bottom) && !fullyContains(a, b) && !fullyContains(b, a)));
     for (const n of nodes) {
-      const local = ink.filter((s) => contains(n.labelBounds ?? n.bbox, center(s.bbox)) && !nodes.some((child) => child !== n && child.parent === n.id && contains(child.bbox, center(s.bbox))));
+      const local = ink.filter((s) => contains(n.labelBounds ?? n.bbox, center(s.bbox)) && !nodes.some((child) => child !== n && (child.parent === n.id || child.parents?.includes(n.id)) && contains(child.bbox, center(s.bbox))));
       const boxes = textRegions(local);
       if (boxes.length) n.labelBounds = venn && circles.includes(n)
         ? boxes.filter((b) => circles.filter((c) => inEllipse(c, center(b))).length === 1).sort((a, b) => dist(center(b), center(figBox)) - dist(center(a), center(figBox)))[0] ?? boxes[0]
-        : local.map((s) => s.bbox).reduce(unionBox);
+        : nested ? boxes[0] : local.map((s) => s.bbox).reduce(unionBox);
       if (n.labelBounds) {
         const pad = Math.max(4, height(n.labelBounds) * 0.3);
         n.labelBounds = { left: n.labelBounds.left - pad, top: n.labelBounds.top - pad, right: n.labelBounds.right + pad, bottom: n.labelBounds.bottom + pad };
@@ -1414,9 +1447,13 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
     }
     if (venn) for (const box of regions) {
       if (circles.some((n) => n.labelBounds && contains(n.labelBounds, center(box)))) continue;
-      const parents = circles.filter((n) => inEllipse(n, center(box))).map((n) => n.id);
+      const parents = circles.filter((n) => fullyContains(n, { bbox: box, shape: 'text' })).map((n) => n.id);
       const host = gs.find((g) => g.textStrokes.some((s) => contains(box, center(s.bbox))));
       if (parents.length && host) nodes.push({ id: `n${nodes.length + 1}`, shape: 'text', groupIndex: host.index, bbox: box, labelBounds: box, parent: parents[0], parents });
+    }
+    if (nested || venn) for (const n of nodes) {
+      const box = n.labelBounds ?? n.bbox;
+      n.strokeIds = ink.filter((s) => contains(box, center(s.bbox))).map((s) => s.strokeId);
     }
 
     // ---- relations
@@ -1740,9 +1777,9 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
     if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
     if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
-    if (fig.kind === 'mindmap') {
+    if (fig.kind === 'mindmap' || n.strokeIds) {
       node.bbox = n.labelBounds ?? n.bbox;
-      node.strokeIds = n.strokeIds ?? node.strokeIds;
+      if (fig.kind === 'mindmap') node.strokeIds = n.strokeIds ?? node.strokeIds;
     }
     return node;
   });
