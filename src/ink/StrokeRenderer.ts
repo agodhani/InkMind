@@ -88,6 +88,7 @@ function renderSimpleStroke(
   if (inputs.length === 1) {
     // Single point - draw a dot
     const p = inputs[0];
+    ctx.fillStyle = ctx.strokeStyle;
     ctx.arc(p.x, p.y, ctx.lineWidth / 2, 0, Math.PI * 2);
     ctx.fill();
     return;
@@ -133,6 +134,7 @@ function renderVariableWidthStroke(
     const p = inputs[0];
     const pressure = p.pressure ?? 1.0;
     const radius = (baseWidth * pressure) / 2;
+    ctx.fillStyle = ctx.strokeStyle;
     ctx.beginPath();
     ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.fill();

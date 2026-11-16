@@ -59,7 +59,7 @@ function scoreScene(drawn: Drawn, pageStrokes: InkStroke[], blocks: DigitalBlock
   const got = pageStrokes.slice(drawn.startIndex);
   const idMap = alignStrokes(drawn.scene.strokes, got);
   const figures = expectations(drawn.scene, idMap);
-  return { metrics: diagramMetrics(figures, blocks), relations: relationMetrics(figures, blocks), missing: drawn.scene.strokes.length - idMap.size, got: got.length };
+  return { metrics: diagramMetrics(figures, blocks), relations: relationMetrics(figures, blocks), captured: idMap.size, missing: drawn.scene.strokes.length - idMap.size, got: got.length };
 }
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -346,7 +346,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         </fieldset>
         {progress && (
           <span className="progress">
-            {progress[0]}/{progress[1]} strokes
+            {result?.captured ?? progress[0]}/{progress[1]} strokes
           </span>
         )}
         {suite?.running && (

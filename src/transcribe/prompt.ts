@@ -31,12 +31,13 @@ Rules:
   {"kind": "flowchart|graph|plot|sketch|tree|cube|shape|table|sequence|mindmap|other",
    "shapes": ["<shape drawn>", ...],
    "labels": ["<word written in the figure>", ...],
-   "nodes": [{"id": "<node id from the hints>", "group": <number of that node's label group from the hints>, "label": "<word written in/at that node>", "shape": "<its shape>", "parent": "<id of the node it is drawn inside, only when nested>"}],
+   "nodes": [{"id": "<node id from the hints>", "group": <number of that node's label group from the hints>, "label": "<word written in/at that node>", "shape": "<its shape>", "parent": "<id of the node it is drawn inside, only when nested>", "parents": ["<every containing set id for overlap membership>"]}],
    "edges": [{"from": "<label of the node the arrow leaves>", "to": "<label of the node it points at>", "label": "<text on the arrow, optional>", "kind": "arrow|line|self-loop"}],
    "sequence": ["<first step's label>", "<second step's label>", ...],
    "cells": [["<row 1 col 1>", "<row 1 col 2>"], ["<row 2 col 1>", ...]]}.
   labels are ONLY words physically written in the figure, verbatim (use [] when there are none). edges name nodes by their WRITTEN LABEL, never by node id or group number, and follow each drawn arrow from tail to head (a back-edge goes from the later step to the earlier one; a self-loop has from = to). sequence lists the steps/states in arrow order (the hints' "step order"), or reading order when nothing connects. nodes is for flowcharts, graphs, trees, state machines, mind maps and nested shapes — one entry per hinted node, in hint order, with parent set for a shape inside another. cells is for tables only, row by row, header row first. Omit sequence/nodes/cells when they do not apply. Never copy the placeholders or examples from these instructions, and never use group numbers ("group 3") or node ids ("n2") as labels — write the words the person wrote. If a label cannot be read, use its shape name ("diamond", "box 2") rather than inventing a word.
 - margin_note: short text written in a margin or rotated, clearly separate from the main flow.
+- Venn diagrams: each set is a circle/ellipse node; each written member is a text node. A member in an overlap has every containing set in parents (and one in parent). Set circles never contain one another. Supply per-word positions or word-specific groups when available. Otherwise report only memberships you can identify explicitly through parent/parents; label list order alone does not establish word positions or membership.
 - Crossed-out text: omit it.
 - Never describe or summarise what the writing is about. Every text block must be a transcription of
   words that are physically on the page. If a line is hard to read, give your best guess of the words

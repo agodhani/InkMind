@@ -249,12 +249,17 @@ export function InkCanvas({
     const mode = activeMode.current;
     activeMode.current = null;
     if (mode === 'draw') {
+      if (e.type === 'pointerup') {
+        const pt = toCanvasPoint(e);
+        builder.current.addPoint(pt.x, pt.y, e.pressure);
+      }
       const stroke = builder.current.finish();
       builder.current.cancel();
       drawOverlay();
       const d = downInfo.current;
       const moved = d ? Math.hypot(e.clientX - d.x, e.clientY - d.y) : 0;
-      if (stroke && !(moved < 4 && d && performance.now() - d.t < 250 && stroke.inputs.inputs.length < 4)) {
+      const mouseTap = e.pointerType === 'mouse' && moved < 4 && d && performance.now() - d.t < 250 && (stroke?.inputs.inputs.length ?? 0) < 4;
+      if (stroke && !mouseTap) {
         onStrokeComplete({ ...stroke, id: newId('stk') });
       } else if (onTapStroke) {
         const pt = toCanvasPoint(e);

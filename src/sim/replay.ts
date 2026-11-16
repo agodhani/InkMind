@@ -110,8 +110,8 @@ export function replayStrokes(opts: ReplayOptions): Promise<number> {
 }
 
 /**
- * Maps scene stroke ids to the ids the page assigned. Strokes arrive in order, but InkCanvas may drop
- * some (e.g. dots treated as taps), so match consecutively by the first point instead of by index.
+ * Maps scene stroke ids to the ids the page assigned, matching consecutively by the first point
+ * so an interrupted or incomplete replay does not shift all subsequent ids.
  */
 export function alignStrokes(expected: InkStroke[], got: InkStroke[], tolerance = 6): Map<string, string> {
   const map = new Map<string, string>();

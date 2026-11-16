@@ -6,6 +6,8 @@ import type { DigitalBlock, FigureInfo } from '../model/page';
 import { DiagramCard } from './DiagramCard';
 import { DigitalView } from './DigitalView';
 import { figureToMermaid, renameFigureNodes } from './figureView';
+import { buildScene } from '../sim/scenes';
+import { expectedBlocks } from '../sim/expectedBlocks';
 
 vi.mock('../transcribe/render', () => ({ renderStrokesToPng: () => null }));
 
@@ -30,6 +32,40 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('renders circle sets with shared members under both sets and an explicit overlap', () => {
+    const scene = buildScene('venn', 2, 'normal');
+    const b = expectedBlocks(scene, new Map())[0];
+    render(b);
+    const roots = [...container.querySelectorAll('.card-nodes > ul > li')];
+    expect(roots).toHaveLength(2);
+    expect(roots[0].textContent).toContain('cats');
+    expect(roots[0].textContent).toContain('fur');
+    expect(roots[0].textContent).toContain('pets');
+    expect(roots[1].textContent).toContain('dogs');
+    expect(roots[1].textContent).toContain('bark');
+    expect(roots[1].textContent).toContain('pets');
+    expect(roots[0].querySelector('.node-glyph')!.textContent).toBe('◯');
+    expect(container.querySelector('[aria-label="Overlaps"]')!.textContent).toContain('cats ∩ dogs: pets');
+    expect(container.querySelector('[aria-label="Labels"]')).toBeNull();
+    click(roots[1].querySelectorAll('button')[2]);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.nodes!.find(n => n.label === 'pets')!.strokeIds);
+  });
+  it('highlights only open page, json, or user ink after injecting sequence seed 2', () => {
+    const scene = buildScene('sequence-diagram', 2, 'normal');
+    const b = expectedBlocks(scene, new Map())[0];
+    render(b);
+    const steps = [...container.querySelectorAll('.card-steps button')];
+    click(steps.find(e => e.textContent!.includes('open page'))!);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.edges[0].strokeIds);
+    click(steps.find(e => e.textContent!.includes('json'))!);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.edges[4].strokeIds);
+    const user = [...container.querySelectorAll('.card-nodes button')].find(e => e.textContent!.includes('user'))!;
+    click(user);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.nodes![0].strokeIds);
+    expect(user.getAttribute('aria-pressed')).toBe('true');
+    click(user);
+    expect(highlight).toHaveBeenLastCalledWith(null);
+  });
   it('shows current labels on saved links whose endpoints retain original node ids', () => {
     const original = block({ nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] });
     render({ ...original, figure: renameFigureNodes(original.figure!, new Map([['A', 'Alpha']])) });

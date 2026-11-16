@@ -1,5 +1,6 @@
 import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { toImagePx } from './prompt';
+import { figureFromGeometry } from '../ink/shapeHints';
 
 /**
  * Offline stand-in: one paragraph per stroke group, text is a placeholder.
@@ -21,12 +22,21 @@ export class MockTranscriber implements Transcriber {
       const b = toImagePx(g.bbox, req);
       const wide = b.right - b.left > 260 && b.bottom - b.top > 120;
       const n = g.writtenOrder + 1;
+      const geometry = wide && g.figure ? figureFromGeometry(g.figure, index => {
+        const group = req.groups.find(g => g.index === index);
+        return group ? `[Handwriting ${group.writtenOrder + 1}: ${group.strokeIds.length} strokes]` : undefined;
+      }, req.groups) : undefined;
       return {
         kind: wide ? ('diagram' as const) : ('paragraph' as const),
         text: wide ? `Sketch ${n} with ${g.strokeIds.length} strokes` : `[Handwriting ${n}: ${g.strokeIds.length} strokes]`,
         bbox: b,
         groupIndices: [g.index],
         confidence: 0.2,
+        ...(geometry && g.figure ? { figure: {
+          kind: g.figure.kind, shapes: g.figure.shapes, labels: geometry.nodes?.map(n => n.label) ?? [],
+          nodes: geometry.nodes?.map(n => ({ ...n, ...(n.bbox ? { bbox: toImagePx(n.bbox, req) } : {}) })),
+          edges: geometry.edges, sequence: geometry.sequence, sequenceEdges: geometry.sequenceEdges, cells: geometry.cells,
+        } } : {}),
       };
     });
     return { blocks, model: 'mock', durationMs: performance.now() - started };

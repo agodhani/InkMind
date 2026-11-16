@@ -754,6 +754,10 @@ export function expectedTableCells(labels: string[]): string[][] | undefined {
 }
 
 export function expectedNodeShapes(f: Figure): Map<string, string> {
+  if (f.type === 'venn') return new Map([
+    ...(f.nodes ?? []).map(label => [label, 'circle'] as [string, string]),
+    ...[...new Set(f.contains?.map(c => c.inner))].map(label => [label, 'text'] as [string, string]),
+  ]);
   const matches = (labels: string[]) => JSON.stringify(labels) === JSON.stringify(f.nodes);
   if (f.type === 'flowchart-complex') {
     const spec = COMPLEX_FLOWS.find(s => matches(s.nodes.map(n => n.label ?? n.id)));

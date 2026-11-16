@@ -476,7 +476,7 @@ describe('mergeBlocks', () => {
     incoming.figure.cells = [['item', 'qty', 'status'], ['kept', 'wrong', 'more'], ['new row', '3', 'active']];
     expect(cells()).toEqual([['item', 'qty', 'status'], ['kept', '', 'more'], ['new row', '3', 'active']]);
     incoming.figure.cells = [];
-    expect(cells()).toEqual([]);
+    expect(cells()).toEqual([['item', 'qty'], ['kept', '']]);
   });
   it('anchors corrected table cells when a new left column shifts and reorders existing cells', () => {
     const existing = editedDiagram(), incoming = redrawnDiagram('model caption');

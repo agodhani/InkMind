@@ -39,6 +39,27 @@ describe('simulator tester controls', () => {
 });
 
 describe('suite results', () => {
+  it('filters passing groups and passing children of mixed groups, and restores them when unchecked', () => {
+    const passing = (kind: SuiteResult['kind'], seed: number): SuiteResult => {
+      const scene = buildScene(kind, seed), blocks = expectedBlocks(scene, new Map());
+      return { kind, seed, messiness: 'normal', title: scene.title, diagrams: diagramMetrics(scene.figures, blocks), relations: relationMetrics(scene.figures, blocks), seconds: 1 };
+    };
+    const timeline = passing('timeline', 2), sequence = passing('sequence-diagram', 3), venn = passing('venn', 4);
+    const failed: SuiteResult = { ...sequence, seed: 5, relations: { ...sequence.relations, edgesFound: 0 } };
+    act(() => root.render(createElement(SuiteResults, { results: [timeline, sequence, venn, failed], running: false, copied: false, onOpen: vi.fn(), onCopy: vi.fn() })));
+    for (const button of container.querySelectorAll('button[aria-expanded]')) click(button);
+    const visibleRows = () => [...container.querySelectorAll<HTMLTableRowElement>('tbody tr')].filter(row => !row.hidden);
+    expect(visibleRows()).toHaveLength(7);
+    click(container.querySelector('input[type="checkbox"]')!);
+    expect(visibleRows()).toHaveLength(2);
+    expect(visibleRows()[0].textContent).toContain('sequence-diagram');
+    expect(visibleRows()[1].id).toBe('suite-sequence-diagram-5-normal');
+    expect(container.querySelector('[id="suite-sequence-diagram-3-normal"]')!.hasAttribute('hidden')).toBe(true);
+    expect(container.querySelector('[id="suite-timeline-2-normal"]')).toBeNull();
+    expect(container.querySelector('[id="suite-venn-4-normal"]')).toBeNull();
+    click(container.querySelector('input[type="checkbox"]')!);
+    expect(visibleRows()).toHaveLength(7);
+  });
   it('expands scenes, opens the exact result, filters failures and copies', () => {
     const scene = buildScene('flowchart-complex', 1), blocks = expectedBlocks(scene, new Map());
     const good: SuiteResult = { kind: scene.kind, seed: 1, messiness: 'normal', title: scene.title, diagrams: diagramMetrics(scene.figures, blocks), relations: relationMetrics(scene.figures, blocks), seconds: 1 };

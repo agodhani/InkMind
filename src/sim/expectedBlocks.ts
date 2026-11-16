@@ -1,5 +1,6 @@
 import type { DigitalBlock, FigureKind } from '../model/page';
-import { strokesBounds } from '../transcribe/regions';
+import { buildStrokeGroups, strokesBounds } from '../transcribe/regions';
+import { figureFromGeometry } from '../ink/shapeHints';
 import { expectedNodeShapes, expectedTableCells, type Scene } from './scenes';
 
 export function expectedBlocks(scene: Scene, idMap: Map<string, string>): DigitalBlock[] {
@@ -11,13 +12,26 @@ export function expectedBlocks(scene: Scene, idMap: Map<string, string>): Digita
       : f.type === 'table' ? 'table' : f.type === 'graph-crossing' ? 'graph' : f.type.includes('graph') || f.type.includes('plot') || f.type.startsWith('bar-') ? 'plot'
       : f.type.includes('cube') || f.type === 'box-3d' ? 'cube' : 'shape';
     const shapes = expectedNodeShapes(f);
+    const strokes = scene.strokes.filter(s => f.strokeIds.includes(s.id));
+    const groups = buildStrokeGroups(strokes);
+    const geometry = [...new Set(groups.flatMap(g => g.figure ? [g.figure] : []))].flatMap(fig => figureFromGeometry(fig, () => undefined, groups).nodes ?? []);
+    const nodeIds = (label: string) => {
+      if (f.nodeStrokeIds?.[label]?.length) return mapped(f.nodeStrokeIds[label]);
+      const textIds = f.labelStrokeIds?.[label] ?? [];
+      const node = geometry.map(node => ({ node, overlap: node.strokeIds?.filter(id => textIds.includes(id)).length ?? 0 }))
+        .filter(hit => hit.overlap > 0).sort((a, b) => b.overlap - a.overlap)[0]?.node;
+      return mapped([...new Set([...(node?.strokeIds ?? []), ...textIds])]);
+    };
     return {
       id: `expected-${mapped(f.strokeIds)[0] ?? f.id}`, kind: 'diagram', text: `${f.description}. ${f.labels.join(', ')}`,
       bbox: { ...f.bbox }, strokeIds: mapped(f.strokeIds), confidence: 1,
       figure: {
         kind, shapes: shapes.size ? [...new Set(shapes.values())] : [f.type === 'table' ? 'rectangle' : f.type], labels: [...f.labels],
-        nodes: f.nodes?.map(label => ({ id: label, label, shape: shapes.get(label), parent: f.contains?.find(c => c.inner === label)?.outer })),
-        edges: (f.edges ?? []).map(e => ({ ...e, kind: e.from === e.to ? 'self-loop' : f.directed === false ? 'line' : 'arrow' })),
+        nodes: (f.type === 'venn' ? [...new Set([...(f.nodes ?? []), ...(f.contains ?? []).map(c => c.inner)])] : f.nodes)?.map(label => {
+          const parents = [...new Set(f.contains?.filter(c => c.inner === label).map(c => c.outer))];
+          return { id: label, label, strokeIds: nodeIds(label), shape: shapes.get(label), parent: parents[0], ...(parents.length ? { parents } : {}) };
+        }),
+        edges: (f.edges ?? []).map(e => ({ ...e, ...(e.strokeIds ? { strokeIds: mapped(e.strokeIds) } : {}), kind: e.from === e.to ? 'self-loop' : f.directed === false ? 'line' : 'arrow' })),
         sequence: f.type !== 'table' && f.sequence ? [...f.sequence] : undefined,
         cells: f.type === 'table' ? expectedTableCells(f.labels) : undefined,
       },

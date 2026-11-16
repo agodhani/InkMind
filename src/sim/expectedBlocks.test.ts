@@ -3,6 +3,8 @@ import { expectedBlocks } from './expectedBlocks';
 import { buildScene, expectedNodeShapes, expectedTableCells } from './scenes';
 import { diagramMetrics, relationMetrics } from './metrics';
 import { aggregateSuite, suiteFailed, suiteMarkdown, type SuiteResult } from './suite';
+import { stepNode } from '../views/figureView';
+import { nodeInkStrokes } from '../views/figureInk';
 
 function result(kind: SuiteResult['kind'] = 'flowchart-complex', seed = 1): SuiteResult {
   const scene = buildScene(kind, seed);
@@ -11,6 +13,54 @@ function result(kind: SuiteResult['kind'] = 'flowchart-complex', seed = 1): Suit
 }
 
 describe('expected simulator blocks', () => {
+  it('represents Venn seed 2 sets, members and both overlap memberships with remapped ink', () => {
+    const scene = buildScene('venn', 2, 'normal');
+    const blocks = expectedBlocks(scene, new Map(scene.strokes.map(s => [s.id, `page-${s.id}`])));
+    const nodes = blocks[0].figure!.nodes!;
+    expect(nodes.filter(n => n.shape === 'circle').map(n => n.label)).toEqual(['cats', 'dogs']);
+    expect(nodes.find(n => n.label === 'fur')).toMatchObject({ shape: 'text', parent: 'cats', parents: ['cats'] });
+    expect(nodes.find(n => n.label === 'bark')).toMatchObject({ shape: 'text', parent: 'dogs', parents: ['dogs'] });
+    expect(nodes.find(n => n.label === 'pets')).toMatchObject({ shape: 'text', parent: 'cats', parents: ['cats', 'dogs'] });
+    const figures = scene.figures.map(f => ({ ...f, strokeIds: f.strokeIds.map(id => `page-${id}`) }));
+    expect(relationMetrics(figures, blocks)).toMatchObject({ contains: 4, containsFound: 4, containsStructured: true });
+    for (const node of nodes) {
+      expect(node.strokeIds!.length).toBeGreaterThan(0);
+      expect(node.strokeIds!.every(id => id.startsWith('page-'))).toBe(true);
+      expect(node.strokeIds!.length).toBeLessThan(blocks[0].strokeIds.length);
+    }
+    expect(nodes.filter(n => n.shape === 'circle').every(n => !n.parent && !n.parents?.length)).toBe(true);
+  });
+  it('anchors sequence seed 2 actors and individual numbered message arrows with their labels', () => {
+    const scene = buildScene('sequence-diagram', 2, 'normal');
+    const map = new Map(scene.strokes.map(s => [s.id, `page-${s.id}`]));
+    const block = expectedBlocks(scene, map)[0];
+    const figure = block.figure!;
+    const open = nodeInkStrokes(block, stepNode(figure, 'open page'), []);
+    const json = nodeInkStrokes(block, stepNode(figure, 'json'), []);
+    expect(open).toEqual(scene.figures[0].edges![0].strokeIds!.map(id => map.get(id)));
+    expect(json).toEqual(scene.figures[0].edges![4].strokeIds!.map(id => map.get(id)));
+    expect(open.length).toBeGreaterThan(3);
+    expect(json.length).toBeGreaterThan(3);
+    expect(open.some(id => json.includes(id))).toBe(false);
+    for (const node of figure.nodes!) {
+      expect(node.strokeIds!.length).toBeGreaterThan(0);
+      expect(node.strokeIds!.length).toBeLessThan(block.strokeIds.length);
+      expect(node.strokeIds!.every(id => id.startsWith('page-'))).toBe(true);
+      expect(node.strokeIds!.some(id => open.includes(id) || json.includes(id))).toBe(false);
+    }
+  });
+  it.each(['flowchart', 'flowchart-complex'] as const)('anchors each %s node shape and text without its neighbours', kind => {
+    const scene = buildScene(kind, 2, 'normal');
+    const block = expectedBlocks(scene, new Map())[0];
+    const nodes = block.figure!.nodes!;
+    for (const node of nodes) {
+      const ids = nodeInkStrokes(block, node, []);
+      expect(ids.length).toBeGreaterThan(scene.figures[0].labelStrokeIds![node.label].length);
+      expect(ids.length).toBeLessThan(block.strokeIds.length);
+      expect(ids).toEqual(expect.arrayContaining(scene.figures[0].labelStrokeIds![node.label]));
+      for (const other of nodes.filter(n => n !== node)) expect(ids.some(id => other.strokeIds!.includes(id))).toBe(false);
+    }
+  });
   it.each(['flowchart-complex', 'nested-boxes', 'table', 'mind-map'] as const)('reproduces %s figures and relations with remapped ink', kind => {
     for (const seed of [1, 2, 5, 73]) {
       const scene = buildScene(kind, seed);

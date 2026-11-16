@@ -29,9 +29,10 @@ describe('geometry pipeline regressions', () => {
     const groups = buildStrokeGroups(scene.strokes), hint = figuresOf(groups)[0];
     const figure = reconcileFigureBlocks([], groups, scene.strokes)[0].figure!;
     for (const node of hint.nodes) {
-      const expected = [...new Set(groups.filter((g) => g.index === node.groupIndex || g.index === node.labelGroup).flatMap((g) => g.strokeIds))];
+      const expected = [...new Set([...(node.shapeStrokeIds ?? []), ...(node.strokeIds ?? [])])];
       expect(figure.nodes!.find((n) => n.id === node.id)!.strokeIds).toEqual(expected);
       expect(expected.length).toBeGreaterThan(0);
+      expect(expected.length).toBeLessThan(scene.strokes.length);
     }
     expect(JSON.parse(JSON.stringify(figure)).nodes).toEqual(figure.nodes);
   });

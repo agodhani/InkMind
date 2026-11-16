@@ -1,7 +1,7 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
-import { figureEdgeText, figureToMermaid, mindMapLayout, uncoveredFigureLabels, type MindMapBranch } from '../views/figureView';
+import { figureEdgeText, figureToMermaid, mindMapLayout, uncoveredFigureLabels, vennLayout, type MindMapBranch } from '../views/figureView';
 
 /**
  * Obsidian-compatible Markdown. Diagrams become image embeds pointing at
@@ -61,7 +61,11 @@ export function figureLines(b: DigitalBlock): string[] {
     const [head, ...rows] = fig.cells;
     lines.push('', `| ${head.map(cell).join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`), '');
   }
-  if (fig.nodes?.length && fig.kind !== 'mindmap') lines.push(...nodeTree(fig.nodes).map(({ node, depth }) => `${'  '.repeat(depth)}- ${node.label}${node.shape ? ` (${node.shape})` : ''}`));
+  const venn = vennLayout(fig.nodes ?? []);
+  if (venn) {
+    for (const { node, members } of venn.sets) lines.push(`- ${node.label} (${node.shape})`, ...members.map(member => `  - ${member.label}`));
+    lines.push(...venn.overlaps.map(region => `- ${region.label}: ${region.members.map(node => node.label).join(', ')}`), ...venn.other.map(node => `- ${node.label}`));
+  } else if (fig.nodes?.length && fig.kind !== 'mindmap') lines.push(...nodeTree(fig.nodes).map(({ node, depth }) => `${'  '.repeat(depth)}- ${node.label}${node.shape ? ` (${node.shape})` : ''}`));
   if (fig.sequence?.length) lines.push(...fig.sequence.map((step, i) => `${i + 1}. ${step}`), '');
   const map = fig.kind === 'mindmap' ? mindMapLayout(fig) : null;
   if (map) {

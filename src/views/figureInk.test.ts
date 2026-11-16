@@ -3,6 +3,7 @@ import type { DigitalBlock, InkStroke } from '../model/page';
 import { InkToolType, StockBrush } from '../types';
 import { buildStrokeGroups } from '../transcribe/regions';
 import { nodeInkStrokes } from './figureInk';
+import { stepNode } from './figureView';
 
 vi.mock('../transcribe/regions', async importOriginal => ({ ...await importOriginal<typeof import('../transcribe/regions')>(), buildStrokeGroups: vi.fn() }));
 const stroke = (id: string, x = 0): InkStroke => ({ id, brush: { size: 2, color: 0, stockBrush: StockBrush.BALLPOINT }, inputs: { tool: InkToolType.STYLUS, inputs: [{ x, y: 0, timeMillis: 0 }, { x: x + 10, y: 10, timeMillis: 10 }] } });
@@ -10,6 +11,19 @@ const block: DigitalBlock = { id: 'b', kind: 'diagram', text: '', bbox: { left: 
 const group = (strokeIds: string[]) => ({ index: 0, strokeIds, bbox: block.bbox, writtenOrder: 0 });
 
 describe('node ink lookup', () => {
+  it('resolves repeated message occurrences and unknown/empty figures without guessing', () => {
+    const figure = { kind: 'sequence' as const, shapes: [], labels: [], sequence: ['ok', 'ok'], edges: [{ from: 'A', to: 'B', label: 'ok', strokeIds: ['a'] }, { from: 'B', to: 'A', label: 'ok', strokeIds: ['b'] }] };
+    expect(nodeInkStrokes(block, stepNode(figure, 'ok', 0), [])).toEqual(['a']);
+    expect(nodeInkStrokes(block, stepNode(figure, 'ok', 1), [])).toEqual(['b']);
+    expect(stepNode({ ...figure, sequence: [], edges: [] }, 'ok')).toBeUndefined();
+    expect(stepNode(figure, 'missing')).toBeUndefined();
+  });
+  it('prefers persisted anchors without regrouping and discards stale external IDs', () => {
+    vi.mocked(buildStrokeGroups).mockClear();
+    expect(nodeInkStrokes(block, { id: 'n', label: 'N', strokeIds: ['b', 'external'], group: 0 }, [])).toEqual(['b']);
+    expect(buildStrokeGroups).not.toHaveBeenCalled();
+    for (const strokeIds of [[], ['external']]) expect(nodeInkStrokes(block, { id: 'n', label: 'N', strokeIds }, [])).toEqual(block.strokeIds);
+  });
   it('accepts a nonempty proper subset from the region grouping', () => {
     vi.mocked(buildStrokeGroups).mockReturnValue([group(['a', 'b'])]);
     expect(nodeInkStrokes(block, { id: 'n', label: 'N', group: 0 }, [stroke('a'), stroke('b'), stroke('c')])).toEqual(['a', 'b']);

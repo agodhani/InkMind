@@ -56,10 +56,7 @@ export class StrokeBuilder {
 
   // Finish the stroke and return the result
   finish(): Stroke | null {
-    if (this.inputs.length < 2) {
-      // Need at least 2 points for a stroke
-      return null;
-    }
+    if (this.inputs.length === 0) return null;
 
     return {
       inputs: {

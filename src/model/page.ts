@@ -33,8 +33,10 @@ export type FigureEdgeKind = 'arrow' | 'line' | 'self-loop';
 export interface FigureEdge {
   from: string;
   to: string;
-  /** Ink belonging to this connector, independent of its label. */
+  /** Ink belonging to this connector and its written label. */
   strokeIds?: string[];
+  /** Geometry-confirmed shaft/arrowhead ink, excluding the written label. */
+  connectorStrokeIds?: string[];
   label?: string;
   /** Arrow (directed, the default), plain connecting line, or an arrow that returns to its own node. */
   kind?: FigureEdgeKind;

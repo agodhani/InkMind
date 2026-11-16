@@ -172,6 +172,7 @@ export interface FigureNodeHint {
   /** Short id used in the hints and relations ("n1", "n2", …), numbered in reading order. */
   id: string;
   strokeIds?: string[];
+  shapeStrokeIds?: string[];
   /** Group holding the drawn shape (or the text itself for a text node). */
   groupIndex: number;
   shape: FigureNodeShape;
@@ -1579,6 +1580,13 @@ export function analyseInk(strokes: InkStroke[], groups: GroupLike[]): InkAnalys
       const box = n.labelBounds ?? n.bbox;
       n.strokeIds = ink.filter((s) => contains(box, center(s.bbox))).map((s) => s.strokeId);
     }
+    for (const n of nodes) {
+      const shapes = closedHere.filter(c => nodeOfShape.get(closed.indexOf(c)) === n).flatMap(c => c.strokeIds);
+      const labelInk = ink.filter(s => contains(n.labelBounds ?? n.bbox, center(s.bbox))).map(s => s.strokeId);
+      const lifelineInk = n.shape === 'lifeline' ? gs.flatMap(g => g.shapes).filter(s => s.kind === 'line' && width(s.bbox) < 12 && height(s.bbox) > 8 && contains(n.bbox, center(s.bbox))).map(s => s.strokeId) : [];
+      n.strokeIds = [...new Set([...(n.strokeIds ?? []), ...labelInk])];
+      n.shapeStrokeIds = [...new Set([...shapes, ...lifelineInk])];
+    }
 
     // ---- relations
     const relations: FigureRelationHint[] = [];
@@ -1903,14 +1911,13 @@ export function figureFromGeometry(fig: FigureHint, labelFor: (groupIndex: numbe
     if (n.parent !== undefined) node.parent = n.parent;
     if (n.parents?.length) node.parents = n.parents;
     if (n.labelGroup !== undefined) node.group = n.labelGroup;
-    if (groups) node.strokeIds = [...new Set(groups.filter((g) => g.index === n.groupIndex || g.index === n.labelGroup).flatMap((g) => g.strokeIds))];
+    node.strokeIds = n.shapeStrokeIds !== undefined ? [...new Set([...n.shapeStrokeIds, ...(n.strokeIds ?? [])])] : groups ? [...new Set(groups.filter(g => g.index === n.groupIndex || g.index === n.labelGroup).flatMap(g => g.strokeIds))] : n.strokeIds;
     node.bbox = n.labelBounds ?? n.bbox;
-    if (fig.kind === 'mindmap') node.strokeIds = n.strokeIds ?? node.strokeIds;
     return node;
   });
   const edges: FigureEdge[] = fig.relations.map((r) => {
     const e: FigureEdge = { from: names.get(r.from)!, to: names.get(r.to)!, kind: r.kind };
-    if ((fig.kind === 'sequence' || fig.kind === 'mindmap') && r.strokeIds?.length) e.strokeIds = [...r.strokeIds];
+    if ((fig.kind === 'sequence' || fig.kind === 'mindmap') && r.strokeIds?.length) e.strokeIds = [...new Set([...r.strokeIds, ...(groups?.find(g => g.index === r.labelGroup)?.strokeIds ?? [])])];
     const label = r.labelGroup !== undefined ? labelFor(r.labelGroup) : undefined;
     if (label) e.label = label;
     return e;

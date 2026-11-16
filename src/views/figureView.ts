@@ -1,4 +1,5 @@
 import type { FigureEdge, FigureInfo, FigureNode } from '../model/page';
+import { sequenceEdgeIndices } from '../transcribe/figure';
 
 const key = (value: string) => value.trim().toLowerCase();
 
@@ -73,6 +74,23 @@ export function shapeGlyph(shape?: string): string {
   }
 }
 
+export function vennLayout(nodes: FigureNode[]) {
+  const circles = nodes.filter(node => ['circle', 'ellipse', 'oval'].includes(key(node.shape ?? '')));
+  const parents = (node: FigureNode) => circles.filter(set => set !== node && [...(node.parents ?? []), node.parent].some(ref => ref === set.id || ref === set.label));
+  if (circles.length < 2 || circles.some(node => parents(node).length) || !nodes.some(node => parents(node).length)) return null;
+  const sets = circles.map(node => ({ node, members: nodes.filter(member => !circles.includes(member) && parents(member).includes(node)) }));
+  const overlaps = new Map<string, { label: string; members: FigureNode[] }>();
+  for (const node of nodes.filter(node => !circles.includes(node))) {
+    const hosts = parents(node);
+    if (hosts.length < 2) continue;
+    const id = hosts.map(set => set.id).join('\0');
+    const region = overlaps.get(id) ?? { label: hosts.map(set => set.label).join(' ∩ '), members: [] };
+    region.members.push(node);
+    overlaps.set(id, region);
+  }
+  return { sets, overlaps: [...overlaps.values()], other: nodes.filter(node => !circles.includes(node) && !parents(node).length) };
+}
+
 function resolver(fig: FigureInfo) {
   const nodes = fig.nodes ?? [];
   const nodeKey = (node: FigureNode) => `node:${nodes.indexOf(node)}`;
@@ -99,8 +117,12 @@ export function figureEdgeText(fig: FigureInfo, edge: FigureEdge): string {
   return `${from} ${edge.kind === 'line' ? '—' : '→'} ${to}${label}`;
 }
 
-export function stepNode(fig: FigureInfo, step: string): FigureNode | undefined {
-  return fig.nodes?.find(node => key(node.label) === key(step));
+export function stepNode(fig: FigureInfo, step: string, index = fig.sequence?.indexOf(step) ?? -1): FigureNode | undefined {
+  const node = fig.nodes?.find(node => key(node.label) === key(step));
+  if (node && fig.kind !== 'sequence') return node;
+  const edgeIndex = index >= 0 ? sequenceEdgeIndices(fig)[index] : null;
+  const edge = edgeIndex !== null && edgeIndex !== undefined ? fig.edges[edgeIndex] : undefined;
+  return edge ? { id: `edge-${edgeIndex}`, label: step, strokeIds: edge.strokeIds } : node;
 }
 
 export function edgeMarks(fig: FigureInfo): ('self-loop' | 'back' | null)[] {

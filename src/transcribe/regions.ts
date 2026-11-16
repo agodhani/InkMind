@@ -233,7 +233,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
     const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, (node) => {
       const ids = new Set(node.strokeIds ?? []);
-      const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
+      const hit = textMembers.filter((b) => (!fig.plotLabelBounds || isPlotLabel(fig, b.bbox)) && b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
     }), strokes.map((s) => s.id));
@@ -335,11 +335,18 @@ export function mergeFigures(a: FigureInfo, b: FigureInfo): FigureInfo {
   return out;
 }
 
+function isVenn(nodes: Pick<FigureNode, 'shape' | 'parents'>[]): boolean {
+  return nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse').length >= 2 && nodes.some(n => (n.parents?.length ?? 0) > 1);
+}
+
 /**
  * Geometry nodes whose word was not read as a text block ("rectangle 2") take the label the model
  * gave the node with the same hint id ("n2"), so geometry edges/sequence speak in the model's words.
  */
 function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureNode[], hint?: FigureNodeHint): FigureNode | undefined {
+  if (isVenn(geoNodes)) modelNodes = modelNodes.filter(m =>
+    ((g.shape === 'circle' || g.shape === 'ellipse') && sameText(m.id, hint?.id ?? g.id)) ||
+    m.bbox || geoNodes.filter(n => n.strokeIds?.some(id => m.strokeIds?.includes(id))).length === 1);
   if (g.bbox) {
     const positioned = modelNodes.map((n) => {
       const overlap = n.strokeIds?.filter((id) => (hint?.strokeIds ?? g.strokeIds)?.includes(id)).length ?? 0;
@@ -400,6 +407,7 @@ function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInf
 }
 
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[], strokeOrder: string[]): ReturnType<typeof figureFromGeometry> {
+  const venn = isVenn(fig.nodes);
   const rename = fig.kind === 'mindmap' ? graphNames(geo, prior, strokeOrder) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
     if (rename.has(g.label)) continue;
@@ -413,13 +421,13 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
   const pending = (geo.nodes ?? []).filter((n) => geo.unnamed.includes(n.label) && !rename.has(n.label));
   const attached = new Set([
     ...(geo.nodes ?? []).filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label),
-    ...(prior?.nodes?.map((n) => n.label) ?? []), ...rename.values(),
+    ...(!venn ? prior?.nodes?.map((n) => n.label) ?? [] : []), ...rename.values(),
     ...[...geo.edges, ...(prior?.edges ?? [])].flatMap((e) => e.label ? [e.label] : []),
     ...(geo.cells?.flat() ?? []), ...(prior?.cells?.flat() ?? []),
     ...(geo.sequence ?? []), ...(prior?.sequence ?? []),
   ].map((s) => s.trim().toLowerCase()));
   const unused = [...new Map(labels.flatMap(stringList).filter((s) => s.trim() && !attached.has(s.toLowerCase()) && !geo.unnamed.includes(s) && !isGroupRef(s)).map((s) => [s.toLowerCase(), s])).values()];
-  if (pending.length && unused.length === pending.length) {
+  if (!venn && pending.length && unused.length === pending.length) {
     const spatialOrder = ['left→right', 'top→bottom'].includes(fig.orderBasis) ? fig.order : [];
     const order = dedupe([...spatialOrder, ...fig.nodes.map((n) => n.id), ...pending.map((n) => n.id)]);
     pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
@@ -455,17 +463,21 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
   const kind = fig.kind;
   const geo = nameGeometryNodes(geoIn, prior, fig, labels, strokeOrder);
   const geometryNesting = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline').length >= 2;
+  const venn = isVenn(fig.nodes);
   const nodes = (geo.nodes ?? []).map((n) => ({ ...n }));
   const matched = new Set<FigureNode>();
   const aliases = new Map<string, string>();
+  const modelIds = new Map<string, string>();
+  const modelMemberships: FigureNode[] = [];
   for (const g of nodes) {
     const m = modelNodeFor(g, nodes, prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
-    if (m) { matched.add(m); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
+    if (m) { matched.add(m); modelIds.set(m.id, g.id); aliases.set(m.label.toLowerCase(), g.label); aliases.set(m.id.toLowerCase(), g.label); }
   }
-  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox))) {
+  for (const m of prior?.nodes ?? []) if (fig.kind !== 'mindmap' && !matched.has(m) && !nodes.some((n) => sameText(n.label, m.label)) && (!nodes.some((n) => sameText(n.id, m.id)) || (geometryNesting && m.bbox) || venn)) {
     const extra = { ...m };
     while (nodes.some((n) => sameText(n.id, extra.id))) extra.id = `model-${extra.id}`;
-    if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
+    if (venn && !m.bbox) modelMemberships.push(extra);
+    else if (geometryNesting || geo.nodes?.some((n) => n.parent !== undefined)) { delete extra.parent; delete extra.parents; }
     if (geometryNesting && extra.bbox) {
       const enclosing = fig.nodes.filter((n) => n.shape !== 'text' && n.shape !== 'lifeline' && fullyContains(n, { bbox: extra.bbox!, shape: extra.shape ?? 'text' }));
       const nearest = enclosing.filter((n) => !enclosing.some((other) => other !== n && fullyContains(n, other)));
@@ -475,6 +487,11 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
       }
     }
     nodes.push(extra);
+    modelIds.set(m.id, extra.id);
+  }
+  for (const node of modelMemberships) {
+    if (node.parent) node.parent = modelIds.get(node.parent);
+    if (node.parents) node.parents = dedupe(node.parents.flatMap(ref => modelIds.get(ref) ?? []));
   }
   const resolve = (s: string) => aliases.get(s.toLowerCase()) ?? resolveNodeRefs(s, nodes);
   const knownNode = (s: string) => nodes.find((n) => sameText(n.label, resolve(s)) || sameText(n.id, s));
@@ -501,7 +518,9 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const index = pairs.get(i);
     const match = index === undefined ? undefined : modelEdges[index];
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
-    return { ...e, ...(match && !sameEdge(e, match) ? { from: e.to, to: e.from } : {}), ...(label ? { label } : {}), inferred: true };
+    const connector = fig.relations[i]?.strokeIds;
+    return { ...e, ...(e.strokeIds?.length && connector?.length ? { connectorStrokeIds: [...connector] } : {}),
+      ...(match && !sameEdge(e, match) ? { from: e.to, to: e.from } : {}), ...(label ? { label } : {}), inferred: true };
   });
   if (fig.kind !== 'mindmap') for (const [i, e] of modelEdges.entries()) {
     if (consumed.has(i)) continue;
@@ -588,6 +607,8 @@ export function rawToDigitalBlock(
 }
 
 function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] {
+  if (!fresh.length) return edited.map(row => [...row]);
+  const sameGrid = edited.length === fresh.length && edited.every((row, r) => row.length === fresh[r].length);
   const uniqueIndex = (values: string[], value: string) => {
     if (!value.trim()) return undefined;
     const indices = values.flatMap((word, i) => sameText(word, value) ? [i] : []);
@@ -595,46 +616,69 @@ function preserveEditedCells(edited: string[][], fresh: string[][]): string[][] 
   };
   const headers = fresh[0] ?? [];
   const columns = headers.map((word) => uniqueIndex(headers, word) === undefined ? undefined : uniqueIndex(edited[0] ?? [], word));
+  const positional = sameGrid && new Set(headers).size === headers.length && new Set(edited[0]).size === edited[0].length;
   const keyColumn = columns.indexOf(0);
   const oldKeys = edited.slice(1).map((row) => row[0] ?? '');
   const newKeys = fresh.slice(1).map((row) => row[keyColumn] ?? '');
-  return fresh.map((row, r) => {
+  const rows = fresh.map((row, r) => {
     const key = row[keyColumn] ?? '';
     const match = keyColumn >= 0 && uniqueIndex(newKeys, key) !== undefined ? uniqueIndex(oldKeys, key) : undefined;
-    const oldRow = r === 0 ? 0 : match === undefined ? undefined : match + 1;
+    return r === 0 ? 0 : match === undefined ? undefined : match + 1;
+  });
+  const withUnclaimedPositions = (matches: (number | undefined)[]) => {
+    const claimed = new Set(matches);
+    return matches.map((match, i) => match ?? (positional && !claimed.has(i) ? i : undefined));
+  };
+  const oldRows = withUnclaimedPositions(rows), oldColumns = withUnclaimedPositions(columns);
+  return fresh.map((row, r) => {
+    const oldRow = oldRows[r];
     return row.map((cell, c) => {
-      const oldColumn = columns[c];
+      const oldColumn = oldColumns[c];
       return oldRow === undefined || oldColumn === undefined ? cell : edited[oldRow]?.[oldColumn] ?? cell;
     });
   });
 }
 
-function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo {
+function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retainedIds: Set<string>): FigureInfo {
+  const fresh = { ...incoming, nodes: incoming.nodes?.map((node) => ({ ...node })), edges: incoming.edges.map((edge) => ({ ...edge })) };
   const oldNodes = edited.nodes ?? [], newNodes = fresh.nodes ?? [];
   const matches = new Map<string, FigureNode>();
   const used = new Set<FigureNode>();
-  for (const basis of ['stroke', 'group', 'label', 'id'] as const) for (const node of newNodes) {
+  const retainedNodes: FigureNode[] = [];
+  const inkMatches = matchPairs(newNodes.map(node => oldNodes.map(old => {
+    const shared = (node.strokeIds ?? []).filter(id => old.strokeIds?.includes(id)).length;
+    if (!shared) return -1;
+    const overlap = shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
+    return overlap + (sameText(node.id, old.id) ? 0.000001 : 0);
+  })));
+  for (const [i, j] of inkMatches) { matches.set(newNodes[i].id, oldNodes[j]); used.add(oldNodes[j]); }
+  for (const basis of ['group', 'label', 'id'] as const) for (const node of newNodes) {
     if (matches.has(node.id)) continue;
-    const overlap = (old: FigureNode) => {
-      const shared = (node.strokeIds ?? []).filter((id) => old.strokeIds?.includes(id)).length;
-      return shared / Math.max(1, (node.strokeIds?.length ?? 0) + (old.strokeIds?.length ?? 0) - shared);
-    };
-    const best = Math.max(0, ...oldNodes.filter((old) => !used.has(old)).map(overlap));
-    let candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'stroke' ? best > 0 && overlap(old) === best
-      : basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
+    const candidates = oldNodes.filter((old) => !used.has(old) && (basis === 'id' ? !(old.strokeIds?.length && node.strokeIds?.length) && sameText(old.id, node.id)
       : basis === 'label' ? sameText(old.label, node.label)
       : node.group !== undefined && old.group === node.group && newNodes.filter((n) => n.group === node.group).length === 1));
-    if (basis === 'stroke' && candidates.length > 1 && best === 1) {
-      const unchanged = candidates.filter((old) => sameText(old.id, node.id));
-      if (unchanged.length === 1) candidates = unchanged;
-    }
     if (candidates.length === 1) { matches.set(node.id, candidates[0]); used.add(candidates[0]); }
   }
+  for (const old of oldNodes) {
+    if (used.has(old) || !old.strokeIds?.some(id => retainedIds.has(id))) continue;
+    let id = old.id;
+    while (newNodes.some(node => node.id === id)) id += '-edited';
+    const node = { ...old, id, strokeIds: old.strokeIds.filter(id => retainedIds.has(id)) };
+    newNodes.push(node);
+    retainedNodes.push(node);
+    matches.set(id, old);
+    used.add(old);
+  }
+  if (newNodes.length) fresh.nodes = newNodes;
   const nodeFor = (nodes: FigureNode[], ref: string) => nodes.find((n) => sameText(n.id, ref)) ?? nodes.find((n) => sameText(n.label, ref));
   const newNodeForOld = (ref: string) => {
     const old = nodeFor(oldNodes, ref);
     return old && newNodes.find((n) => matches.get(n.id) === old);
   };
+  for (const node of retainedNodes) {
+    if (node.parent) node.parent = newNodeForOld(node.parent)?.id;
+    if (node.parents) node.parents = dedupe(node.parents.flatMap(ref => newNodeForOld(ref)?.id ?? []));
+  }
   const renamed = (ref: string) => {
     const node = nodeFor(newNodes, ref);
     return node ? matches.get(node.id)?.label ?? node.label : ref;
@@ -656,8 +700,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
       if (usedEdges.has(j)) return [];
       const forward = sameEndpoint(old.from, edge.from) && sameEndpoint(old.to, edge.to);
       const compatible = forward || (edited.kind !== 'sequence' && sameEndpoint(old.from, edge.to) && sameEndpoint(old.to, edge.from));
-      if (!compatible) return [];
-      return (basis === 'stroke' ? overlap(old) > 0 : !old.strokeIds?.length || !edge.strokeIds?.length) ? [j] : [];
+      return (basis === 'stroke' ? overlap(old) > 0 : compatible && (!old.strokeIds?.length || !edge.strokeIds?.length)) ? [j] : [];
     });
     if (basis === 'stroke') {
       const best = Math.max(0, ...candidates.map((j) => overlap(edited.edges[j])));
@@ -666,10 +709,24 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     }
     if (candidates.length) { edgeMatches.set(i, candidates[0]); usedEdges.add(candidates[0]); }
   });
+  edited.edges.forEach((edge, i) => {
+    if (usedEdges.has(i) || !edge.strokeIds?.some(id => retainedIds.has(id))) return;
+    edgeMatches.set(fresh.edges.length, i);
+    fresh.edges.push({ ...edge, strokeIds: edge.strokeIds.filter(id => retainedIds.has(id)) });
+    usedEdges.add(i);
+  });
+  const oldEndpoint = (ref: string) => {
+    const old = nodeFor(oldNodes, ref), node = newNodeForOld(ref);
+    return old && node && sameText(ref, old.id) && !sameText(old.id, old.label) ? node.id : ref;
+  };
   const edges = fresh.edges.map((edge, i) => {
     const index = edgeMatches.get(i);
     const match = index === undefined ? undefined : edited.edges[index];
-    return { ...edge, from: renamed(edge.from), to: renamed(edge.to), ...(match?.label !== undefined ? { label: match.label } : {}) };
+    const anchored = match?.strokeIds?.some(id => edge.strokeIds?.includes(id));
+    const unchangedInk = anchored && (edge.connectorStrokeIds ?? edge.strokeIds!).every(id => match!.strokeIds!.includes(id));
+    return { ...edge, from: unchangedInk ? oldEndpoint(match!.from) : renamed(edge.from), to: unchangedInk ? oldEndpoint(match!.to) : renamed(edge.to),
+      ...(match ? { label: match.label } : {}),
+      ...(anchored ? { strokeIds: dedupe([...(match!.strokeIds ?? []).filter(id => retainedIds.has(id)), ...(edge.strokeIds ?? [])]) } : {}) };
   });
   const sequenceWords = new Map<string, string>();
   for (const word of edited.sequence ?? []) {
@@ -743,7 +800,9 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
     ...(edited.cells ? { cells: fresh.cells ? preserveEditedCells(edited.cells, fresh.cells) : edited.cells.map((row) => [...row]) } : {}),
     ...(fresh.nodes ? { nodes: fresh.nodes.map((n) => {
       const old = matches.get(n.id);
-      return { ...n, label: old?.label ?? n.label, ...(n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
+      const retained = old?.strokeIds?.filter(id => retainedIds.has(id)) ?? [];
+      return { ...n, label: old?.label ?? n.label, ...(retained.length ? { strokeIds: dedupe([...retained, ...(n.strokeIds ?? [])]) }
+        : n.strokeIds === undefined && old?.strokeIds ? { strokeIds: [...old.strokeIds] } : {}) };
     }) } : {}),
     ...(sequence ? { sequence } : {}),
     ...(edited.sequence && (edited.sequenceBaseline || newMessages.length || edited.sequenceEdges || fresh.sequenceEdges) ? {
@@ -755,7 +814,7 @@ function preserveEditedFigure(edited: FigureInfo, fresh: FigureInfo): FigureInfo
 function preserveEditedBlock(edited: DigitalBlock, fresh: DigitalBlock): DigitalBlock {
   return {
     ...fresh, id: edited.id, text: edited.text, userEdited: true,
-    ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure) : edited.figure } : {}),
+    ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure, new Set(fresh.strokeIds)) : edited.figure } : {}),
   };
 }
 
