@@ -508,7 +508,9 @@ export function mergeWithGeometry(prior: FigureInfo | undefined, fig: FigureHint
     const index = pairs.get(i);
     const match = index === undefined ? undefined : modelEdges[index];
     const label = e.label ?? match?.label ?? (fig.messageGroups?.length === prior?.sequence?.length ? prior?.sequence?.[i] : undefined);
-    return { ...e, ...(match && !sameEdge(e, match) ? { from: e.to, to: e.from } : {}), ...(label ? { label } : {}), inferred: true };
+    const connector = fig.relations[i]?.strokeIds;
+    return { ...e, ...(e.strokeIds?.length && connector?.length ? { connectorStrokeIds: [...connector] } : {}),
+      ...(match && !sameEdge(e, match) ? { from: e.to, to: e.from } : {}), ...(label ? { label } : {}), inferred: true };
   });
   if (fig.kind !== 'mindmap') for (const [i, e] of modelEdges.entries()) {
     if (consumed.has(i)) continue;
@@ -711,7 +713,7 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
     const index = edgeMatches.get(i);
     const match = index === undefined ? undefined : edited.edges[index];
     const anchored = match?.strokeIds?.some(id => edge.strokeIds?.includes(id));
-    const unchangedInk = anchored && edge.strokeIds!.every(id => match!.strokeIds!.includes(id));
+    const unchangedInk = anchored && (edge.connectorStrokeIds ?? edge.strokeIds!).every(id => match!.strokeIds!.includes(id));
     return { ...edge, from: unchangedInk ? oldEndpoint(match!.from) : renamed(edge.from), to: unchangedInk ? oldEndpoint(match!.to) : renamed(edge.to),
       ...(match ? { label: match.label } : {}),
       ...(anchored ? { strokeIds: dedupe([...(match!.strokeIds ?? []).filter(id => retainedIds.has(id)), ...(edge.strokeIds ?? [])]) } : {}) };

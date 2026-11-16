@@ -7,7 +7,7 @@ import { figureEndpointLabel, renameFigureNodes, stepNode } from '../views/figur
 import { nodeInkStrokes } from '../views/figureInk';
 import { sequenceEdgeIndices } from './figure';
 import { MockTranscriber } from './mock';
-import { attachUnclaimedStrokes, buildStrokeGroups, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
+import { attachUnclaimedStrokes, buildStrokeGroups, mergeBlocks, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks, strokesBounds } from './regions';
 import type { TranscribeRequest } from './types';
 
 function fixture() {
@@ -50,6 +50,27 @@ function assertCorrections(result: DigitalBlock, old: DigitalBlock, added: InkSt
 }
 
 describe('structured corrections through retranscription', () => {
+  it('keeps an edited arrow direction when only its label gains ink', () => {
+    const { block, req, added } = fixture();
+    const connector = req.groups.find(g => g.figure)?.figure!.relations.flatMap(r => r.strokeIds ?? [])!;
+    const labelIds = block.figure!.edges[0].strokeIds!.filter(id => !connector.includes(id));
+    const bounds = strokesBounds(req.strokes.filter(s => labelIds.includes(s.id)))!;
+    const labelMark = fromPoints([{ x: bounds.left + 4, y: bounds.top + 3 }, { x: bounds.left + 6, y: bounds.top + 6 }], 100000, added.id);
+    const strokes = [...req.strokes.filter(s => s.id !== added.id), labelMark];
+    const groups = buildStrokeGroups(strokes);
+    const incoming = reconcileFigureBlocks([], groups, strokes);
+    const fresh = incoming.find(b => b.kind === 'diagram')!;
+    const edge = block.figure!.edges[0];
+    const freshEdge = fresh.figure!.edges.find(e => e.strokeIds?.includes(labelIds[0]))!;
+    freshEdge.strokeIds = [...freshEdge.strokeIds!, labelMark.id];
+    [edge.from, edge.to] = [edge.to, edge.from];
+    const result = finish(block, incoming, strokes, [labelMark.id]);
+    const kept = result.figure!.edges[0];
+    expect([figureEndpointLabel(result.figure!, kept.from), figureEndpointLabel(result.figure!, kept.to)]).toEqual(['app', 'reader']);
+    expect(kept.label).toBe('open dashboard');
+    expect(kept.strokeIds).toContain(labelMark.id);
+  });
+
   it('keeps sequence node/step corrections, order and arrow anchors through the real Mock pipeline, twice', async () => {
     const { block, req, added } = fixture();
     const saved = structuredClone(block);
