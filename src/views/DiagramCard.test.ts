@@ -32,6 +32,24 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('renders circle sets with shared members under both sets and an explicit overlap', () => {
+    const scene = buildScene('venn', 2, 'normal');
+    const b = expectedBlocks(scene, new Map())[0];
+    render(b);
+    const roots = [...container.querySelectorAll('.card-nodes > ul > li')];
+    expect(roots).toHaveLength(2);
+    expect(roots[0].textContent).toContain('cats');
+    expect(roots[0].textContent).toContain('fur');
+    expect(roots[0].textContent).toContain('pets');
+    expect(roots[1].textContent).toContain('dogs');
+    expect(roots[1].textContent).toContain('bark');
+    expect(roots[1].textContent).toContain('pets');
+    expect(roots[0].querySelector('.node-glyph')!.textContent).toBe('◯');
+    expect(container.querySelector('[aria-label="Overlaps"]')!.textContent).toContain('cats ∩ dogs: pets');
+    expect(container.querySelector('[aria-label="Labels"]')).toBeNull();
+    click(roots[1].querySelectorAll('button')[2]);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.nodes!.find(n => n.label === 'pets')!.strokeIds);
+  });
   it('highlights only open page, json, or user ink after injecting sequence seed 2', () => {
     const scene = buildScene('sequence-diagram', 2, 'normal');
     const b = expectedBlocks(scene, new Map())[0];

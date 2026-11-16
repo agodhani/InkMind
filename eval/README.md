@@ -36,9 +36,10 @@ repeated requests should not be treated as cold performance.
 Nesting records direct container/member relationships. For Venn diagrams, each set is a circle
 node and each member is a text node contained by its set. An overlap member lists every set it
 lies in through `parents` (with one also in `parent`); overlapping circles never contain one
-another. Set-name recovery requires per-word spatial anchors from the model (word positions or
-word-specific stroke groups). A shared diagram-wide group or an unpositioned label list does not
-identify which word names a set, so reconciliation must not invent that assignment from captions.
+another. Set-name recovery prefers per-word spatial anchors from the model (word positions or
+word-specific stroke groups). Without those anchors, a complete label list in spatial reading order
+can align words with the geometry's text clusters. Shared diagram-wide groups alone are not word
+positions; incomplete lists or arbitrary caption order do not establish that correspondence.
 
 For an offline detector-only pass over all 14 datasets (58 pages), run
 `npm run eval:shapes -- --provider geometry --run geometry-baseline`.

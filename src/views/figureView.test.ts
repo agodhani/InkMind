@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { FigureInfo } from '../model/page';
-import { edgeMarks, figureCorrectionText, figureEdgeText, figureEndpointLabel, figureToMermaid, mindMapLayout, renameFigureLabel, renameFigureNodes, shapeGlyph, stepNode, uncoveredFigureLabels } from './figureView';
+import { edgeMarks, figureCorrectionText, figureEdgeText, figureEndpointLabel, figureToMermaid, mindMapLayout, renameFigureLabel, renameFigureNodes, shapeGlyph, stepNode, uncoveredFigureLabels, vennLayout } from './figureView';
 import { glossaryFromCorrections } from '../profile/handwritingProfile';
 
 const figure = (overrides: Partial<FigureInfo> = {}): FigureInfo => ({ kind: 'flowchart', shapes: [], labels: [], edges: [], ...overrides });
 
 describe('figure presentation', () => {
+  it('lists shared Venn members under each set and groups overlap regions', () => {
+    const nodes = [{ id: 'cats', label: 'cats', shape: 'circle' }, { id: 'dogs', label: 'dogs', shape: 'ellipse' },
+      { id: 'fur', label: 'fur', parent: 'cats' }, { id: 'pets', label: 'pets', parents: ['cats', 'dogs'] }];
+    const venn = vennLayout(nodes)!;
+    expect(venn.sets.map(set => [set.node.label, set.members.map(n => n.label)])).toEqual([['cats', ['fur', 'pets']], ['dogs', ['pets']]]);
+    expect(venn.overlaps.map(region => [region.label, region.members.map(n => n.label)])).toEqual([['cats ∩ dogs', ['pets']]]);
+    expect(shapeGlyph(nodes[0].shape)).toBe('◯');
+    expect(vennLayout([])).toBeNull();
+    expect(vennLayout([{ id: 'outer', label: 'outer', shape: 'circle' }, { id: 'inner', label: 'inner', shape: 'circle', parent: 'outer' }])).toBeNull();
+  });
   it('formats links id-first without inventing self-loops for equal labels or guessing unknown endpoints', () => {
     const fig = figure({ nodes: [{ id: 'A', label: 'Alpha' }, { id: 'B', label: 'A' }, { id: 'C', label: 'A' }] });
     expect(figureEdgeText(fig, { from: ' a ', to: 'b' })).toBe('Alpha → A');

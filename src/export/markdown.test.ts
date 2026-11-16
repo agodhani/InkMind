@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { figureLines, pageToMarkdown } from './markdown';
 import type { Page } from '../model/page';
+import { buildScene } from '../sim/scenes';
+import { expectedBlocks } from '../sim/expectedBlocks';
 
 describe('pageToMarkdown', () => {
+  it('exports Venn membership under every containing set and records the overlap', () => {
+    const block = expectedBlocks(buildScene('venn', 2, 'normal'), new Map())[0];
+    const lines = figureLines(block).join('\n');
+    expect(lines).toContain('- cats (circle)\n  - fur\n  - pets');
+    expect(lines).toContain('- dogs (circle)\n  - bark\n  - pets');
+    expect(lines).toContain('cats ∩ dogs: pets');
+  });
   it('exports current node labels for id endpoints, including non-loop links between repeated labels', () => {
     const block = { id: 'f', kind: 'diagram' as const, text: '', bbox: { left: 0, top: 0, right: 10, bottom: 10 }, strokeIds: [], confidence: 1 };
     const fig = { kind: 'flowchart' as const, shapes: [], labels: [], nodes: [{ id: 'A', label: 'Alpha' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] };

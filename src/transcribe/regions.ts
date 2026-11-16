@@ -400,12 +400,14 @@ function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInf
 }
 
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[], strokeOrder: string[]): ReturnType<typeof figureFromGeometry> {
+  const venn = fig.nodes.filter(n => n.shape === 'circle' || n.shape === 'ellipse').length >= 2 && fig.nodes.some(n => (n.parents?.length ?? 0) > 1);
   const rename = fig.kind === 'mindmap' ? graphNames(geo, prior, strokeOrder) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
     if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
-    const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
+    let m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));
+    if (venn && m && !m.bbox && !sameText(m.id, g.id) && (geo.nodes ?? []).filter(n => n.strokeIds?.some(id => m!.strokeIds?.includes(id))).length > 1) m = undefined;
     if (m && m.label && !geo.unnamed.includes(m.label) && !/^n\d+$/i.test(m.label)) {
       rename.set(g.label, m.label);
     }
@@ -413,7 +415,7 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
   const pending = (geo.nodes ?? []).filter((n) => geo.unnamed.includes(n.label) && !rename.has(n.label));
   const attached = new Set([
     ...(geo.nodes ?? []).filter((n) => !geo.unnamed.includes(n.label)).map((n) => n.label),
-    ...(prior?.nodes?.map((n) => n.label) ?? []), ...rename.values(),
+    ...(!venn ? prior?.nodes?.map((n) => n.label) ?? [] : []), ...rename.values(),
     ...[...geo.edges, ...(prior?.edges ?? [])].flatMap((e) => e.label ? [e.label] : []),
     ...(geo.cells?.flat() ?? []), ...(prior?.cells?.flat() ?? []),
     ...(geo.sequence ?? []), ...(prior?.sequence ?? []),
@@ -422,7 +424,12 @@ function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: Fi
   if (pending.length && unused.length === pending.length) {
     const spatialOrder = ['left→right', 'top→bottom'].includes(fig.orderBasis) ? fig.order : [];
     const order = dedupe([...spatialOrder, ...fig.nodes.map((n) => n.id), ...pending.map((n) => n.id)]);
-    pending.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    const rowTol = Math.max(12, ...pending.map(n => n.bbox ? (n.bbox.bottom - n.bbox.top) * 1.5 : 0));
+    pending.sort((a, b) => {
+      if (!venn || !a.bbox || !b.bbox) return order.indexOf(a.id) - order.indexOf(b.id);
+      const ay = (a.bbox.top + a.bbox.bottom) / 2, by = (b.bbox.top + b.bbox.bottom) / 2;
+      return Math.abs(ay - by) > rowTol ? ay - by : a.bbox.left - b.bbox.left;
+    });
     pending.forEach((n, i) => rename.set(n.label, unused[i]));
   }
   const used = new Set<string>();

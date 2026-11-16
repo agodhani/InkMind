@@ -449,12 +449,14 @@ export interface VennSpec {
 /** Two or three overlapping circles with set names outside and a label in the shared region. */
 export function drawVenn(pen: Pen, box: Box, spec: VennSpec, textSize = 14): Relations {
   const labels: string[] = [];
+  const nodeStrokeIds: Record<string, string[]> = {};
   const contains: Containment[] = [];
   const n = spec.sets.length;
   const r = n === 2 ? Math.min(box.h / 2.2, box.w / 3.1) : Math.min(box.h / 3.3, box.w / 3.1);
   const cx = box.x + box.w / 2, cy = box.y + box.h / 2 + (n === 3 ? r * 0.2 : 0);
   const centers: Offset[] = n === 2 ? [{ x: cx - r * 0.55, y: cy }, { x: cx + r * 0.55, y: cy }] : [{ x: cx - r * 0.6, y: cy + r * 0.3 }, { x: cx + r * 0.6, y: cy + r * 0.3 }, { x: cx, y: cy - r * 0.7 }];
   centers.forEach((c, i) => {
+    const start = pen.w.strokes.length;
     drawCircle(pen, c.x, c.y, r);
     const name = spec.sets[i];
     const outward = { x: c.x - cx, y: c.y - cy };
@@ -462,21 +464,26 @@ export function drawVenn(pen: Pen, box: Box, spec: VennSpec, textSize = 14): Rel
     const lx = c.x + (outward.x / ol) * r * 0.75 - textWidth(name, textSize) / 2;
     const ly = c.y + (outward.y / ol) * r * 0.75 + textSize * 0.4;
     writeText(pen, name, lx, ly, { size: textSize });
+    nodeStrokeIds[name] = pen.w.strokes.slice(start).map(s => s.id);
     labels.push(name);
     const items = spec.members?.[i] ?? [];
     items.forEach((it, k) => {
+      const start = pen.w.strokes.length;
       const size = textSize * 0.8;
       writeText(pen, it, c.x + (outward.x / ol) * r * 0.35 - textWidth(it, size) / 2, c.y + (outward.y / ol) * r * 0.35 + size * (k + 0.4) * 1.4 - size * 0.6, { size });
+      nodeStrokeIds[it] = pen.w.strokes.slice(start).map(s => s.id);
       labels.push(it);
       contains.push({ outer: name, inner: it });
     });
   });
   const ox = centers.reduce((s, c) => s + c.x, 0) / n, oy = centers.reduce((s, c) => s + c.y, 0) / n;
   const size = textSize * 0.85;
+  const start = pen.w.strokes.length;
   writeText(pen, spec.overlap, ox - textWidth(spec.overlap, size) / 2, oy + size * 0.4, { size });
+  nodeStrokeIds[spec.overlap] = pen.w.strokes.slice(start).map(s => s.id);
   labels.push(spec.overlap);
   for (const s of spec.sets) contains.push({ outer: s, inner: spec.overlap });
-  return { labels, nodes: spec.sets, contains };
+  return { labels, nodes: spec.sets, nodeStrokeIds, contains };
 }
 
 export interface MultiPlotSpec {

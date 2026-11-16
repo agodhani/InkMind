@@ -137,6 +137,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
     if (existing) {
       if (node.shape && !existing.shape) existing.shape = node.shape;
       if (node.parent && !existing.parent) existing.parent = node.parent;
+      if (node.parents?.length) existing.parents = [...new Set([...(existing.parents ?? []), ...node.parents])];
       return existing;
     }
     const n: FigureNode = { id, label };
@@ -219,6 +220,7 @@ export function nodeList(value: unknown, nesting?: unknown): FigureNode[] {
   // A node can't contain itself through a cycle or reference a missing parent.
   for (const n of out) {
     if (n.parents?.length) n.parents = [...new Set(n.parents.map(find).filter((p): p is FigureNode => !!p && p !== n).map((p) => p.id))];
+    if (n.parents?.length) n.parent ??= n.parents[0];
     if (n.parent !== undefined) {
       const p = find(n.parent);
       if (!p || p === n) delete n.parent;

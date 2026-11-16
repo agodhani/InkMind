@@ -13,6 +13,23 @@ function result(kind: SuiteResult['kind'] = 'flowchart-complex', seed = 1): Suit
 }
 
 describe('expected simulator blocks', () => {
+  it('represents Venn seed 2 sets, members and both overlap memberships with remapped ink', () => {
+    const scene = buildScene('venn', 2, 'normal');
+    const blocks = expectedBlocks(scene, new Map(scene.strokes.map(s => [s.id, `page-${s.id}`])));
+    const nodes = blocks[0].figure!.nodes!;
+    expect(nodes.filter(n => n.shape === 'circle').map(n => n.label)).toEqual(['cats', 'dogs']);
+    expect(nodes.find(n => n.label === 'fur')).toMatchObject({ shape: 'text', parent: 'cats', parents: ['cats'] });
+    expect(nodes.find(n => n.label === 'bark')).toMatchObject({ shape: 'text', parent: 'dogs', parents: ['dogs'] });
+    expect(nodes.find(n => n.label === 'pets')).toMatchObject({ shape: 'text', parent: 'cats', parents: ['cats', 'dogs'] });
+    const figures = scene.figures.map(f => ({ ...f, strokeIds: f.strokeIds.map(id => `page-${id}`) }));
+    expect(relationMetrics(figures, blocks)).toMatchObject({ contains: 4, containsFound: 4, containsStructured: true });
+    for (const node of nodes) {
+      expect(node.strokeIds!.length).toBeGreaterThan(0);
+      expect(node.strokeIds!.every(id => id.startsWith('page-'))).toBe(true);
+      expect(node.strokeIds!.length).toBeLessThan(blocks[0].strokeIds.length);
+    }
+    expect(nodes.filter(n => n.shape === 'circle').every(n => !n.parent && !n.parents?.length)).toBe(true);
+  });
   it('anchors sequence seed 2 actors and individual numbered message arrows with their labels', () => {
     const scene = buildScene('sequence-diagram', 2, 'normal');
     const map = new Map(scene.strokes.map(s => [s.id, `page-${s.id}`]));

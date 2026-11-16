@@ -27,7 +27,10 @@ export function expectedBlocks(scene: Scene, idMap: Map<string, string>): Digita
       bbox: { ...f.bbox }, strokeIds: mapped(f.strokeIds), confidence: 1,
       figure: {
         kind, shapes: shapes.size ? [...new Set(shapes.values())] : [f.type === 'table' ? 'rectangle' : f.type], labels: [...f.labels],
-        nodes: f.nodes?.map(label => ({ id: label, label, strokeIds: nodeIds(label), shape: shapes.get(label), parent: f.contains?.find(c => c.inner === label)?.outer })),
+        nodes: (f.type === 'venn' ? [...new Set([...(f.nodes ?? []), ...(f.contains ?? []).map(c => c.inner)])] : f.nodes)?.map(label => {
+          const parents = [...new Set(f.contains?.filter(c => c.inner === label).map(c => c.outer))];
+          return { id: label, label, strokeIds: nodeIds(label), shape: shapes.get(label), parent: parents[0], ...(parents.length ? { parents } : {}) };
+        }),
         edges: (f.edges ?? []).map(e => ({ ...e, ...(e.strokeIds ? { strokeIds: mapped(e.strokeIds) } : {}), kind: e.from === e.to ? 'self-loop' : f.directed === false ? 'line' : 'arrow' })),
         sequence: f.type !== 'table' && f.sequence ? [...f.sequence] : undefined,
         cells: f.type === 'table' ? expectedTableCells(f.labels) : undefined,

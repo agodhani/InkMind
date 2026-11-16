@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type { DigitalBlock, FigureNode, InkStroke } from '../model/page';
 import { nodeTree } from '../transcribe/figure';
 import { renderStrokesToPng } from '../transcribe/render';
-import { edgeMarks, figureEdgeText, mindMapLayout, shapeGlyph, stepNode, uncoveredFigureLabels, type MindMapBranch } from './figureView';
+import { edgeMarks, figureEdgeText, mindMapLayout, shapeGlyph, stepNode, uncoveredFigureLabels, vennLayout, type MindMapBranch } from './figureView';
 import { nodeInkStrokes } from './figureInk';
 import { FigureEditor, type FigureEdit } from './FigureEditor';
 
@@ -19,8 +19,10 @@ export interface DiagramCardProps {
 function NodeHierarchy({ nodes, active, onHighlight, onActivate }: { nodes: FigureNode[]; active: string | null; onHighlight: (key: string | null) => void; onActivate: (key: string) => void }) {
   interface Entry { node: FigureNode; children: Entry[] }
   const roots: Entry[] = [], stack: Entry[] = [];
+  const venn = vennLayout(nodes);
   const variedShapes = new Set(nodes.map(node => node.shape?.trim().toLowerCase()).filter(Boolean)).size > 1;
-  for (const { node, depth } of nodeTree(nodes)) {
+  if (venn) roots.push(...venn.sets.map(({ node, members }) => ({ node, children: members.map(node => ({ node, children: [] })) })), ...venn.other.map(node => ({ node, children: [] })));
+  else for (const { node, depth } of nodeTree(nodes)) {
     const entry: Entry = { node, children: [] };
     if (depth > 0 && stack[depth - 1]) stack[depth - 1].children.push(entry);
     else roots.push(entry);
@@ -30,7 +32,7 @@ function NodeHierarchy({ nodes, active, onHighlight, onActivate }: { nodes: Figu
     <div><button type="button" title={node.shape} aria-pressed={active === `node:${node.id}`} onClick={() => onActivate(`node:${node.id}`)} onPointerEnter={e => { if (e.pointerType === 'mouse') onHighlight(`node:${node.id}`); }} onPointerLeave={e => { if (e.pointerType === 'mouse') onHighlight(active); }}><span aria-hidden="true" className="node-glyph">{shapeGlyph(node.shape)}</span><span aria-label={node.shape ? `${node.label}, ${node.shape}` : undefined}>{node.label}</span>{variedShapes && node.shape && <small>{node.shape}</small>}</button></div>
     {!!children.length && list(children)}
   </li>)}</ul>;
-  return <div className="card-nodes">{list(roots)}</div>;
+  return <div className="card-nodes">{list(roots)}{!!venn?.overlaps.length && <div aria-label="Overlaps"><h4>Overlaps</h4>{venn.overlaps.map(region => <p key={region.label}>{region.label}: {region.members.map(node => node.label).join(', ')}</p>)}</div>}</div>;
 }
 
 function MindMapBranches({ branches }: { branches: MindMapBranch[] }) {
