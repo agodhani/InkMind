@@ -2,6 +2,7 @@
   "pages": 58,
   "figuresFound": 63,
   "figures": 63,
-  "textLeakPct": 0,
+  "leakedStrokes": 0,
+  "figureStrokes": 2949,
   "figureCountOk": 58
 }
