@@ -3,6 +3,24 @@ import { edgeList, figureCaption, normaliseFigure, normaliseFigureKind, preserve
 import { relationMetrics } from '../sim/metrics';
 
 describe('normaliseFigure', () => {
+  it('matches labelled boxes to node words before conflicting hint ids', () => {
+    const out = normaliseFigure({ names: { n1: 'start', n2: 'finish' }, nodeBoxes: { n1: { label: 'FINISH', bbox: [10, 20, 40, 50] } } })!;
+    expect(out.nodes).toEqual([{ id: 'n1', label: 'start' }, { id: 'n2', label: 'finish', bbox: { left: 10, top: 20, right: 40, bottom: 50 } }]);
+  });
+  it('keeps a conflicting positioned word separate when no existing label matches', () => {
+    const out = normaliseFigure({ names: { n1: 'start' }, nodeBoxes: { n1: { label: 'finish', bbox: [10, 20, 40, 50] } } })!;
+    expect(out.nodes).toHaveLength(2);
+    expect(out.nodes![0]).toEqual({ id: 'n1', label: 'start' });
+    expect(out.nodes![1]).toMatchObject({ label: 'finish', bbox: { left: 10, top: 20, right: 40, bottom: 50 } });
+    expect(new Set(out.nodes!.map((n) => n.id)).size).toBe(2);
+  });
+  it('uses the agreeing id among duplicate labels and generates collision-free ids for conflicting words', () => {
+    const out = normaliseFigure({ nodes: [{ id: 'n1', label: 'same' }, { id: 'n2', label: 'same' }, { id: 'n1-box1', label: 'other' }], nodeBoxes: [{ n2: { label: 'same', bbox: [10, 20, 40, 50] } }, { n1: { label: 'new word', bbox: [60, 20, 90, 50] } }] })!;
+    expect(out.nodes!.find((n) => n.id === 'n1')!.bbox).toBeUndefined();
+    expect(out.nodes!.find((n) => n.id === 'n2')!.bbox).toEqual({ left: 10, top: 20, right: 40, bottom: 50 });
+    expect(out.nodes!.find((n) => n.label === 'new word')!.bbox).toEqual({ left: 60, top: 20, right: 90, bottom: 50 });
+    expect(new Set(out.nodes!.map((n) => n.id)).size).toBe(4);
+  });
   it.each([{ names: { n1: 'start' } }, { nodes: [{ id: 'n1', label: 'start' }] }])('attaches separate node boxes to existing ids: %j', (source) => {
     const out = normaliseFigure({ ...source, nodeBoxes: [{ N1: { bbox: [10, 20, 40, 50], groupIndices: [3] } }] })!;
     expect(out.nodes).toEqual([{ id: 'n1', label: 'start', bbox: { left: 10, top: 20, right: 40, bottom: 50 }, groupIndices: [3] }]);

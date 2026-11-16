@@ -30,14 +30,19 @@ export function normaliseFigure(value: unknown, fallbackKind?: FigureKind): Figu
     if (!box || typeof box !== 'object' || Array.isArray(box)) continue;
     for (const [id, value] of Object.entries(box)) {
       if (!/^n\d+$/i.test(id) || !value || typeof value !== 'object') continue;
-      const existing = nodes.find((n) => n.id.toLowerCase() === id.toLowerCase());
+      const byId = nodes.find((n) => n.id.toLowerCase() === id.toLowerCase());
       const readLabel = stringList(firstDefined(value as Record<string, unknown>, ['label', 'text', 'name', 'labels']))[0];
-      const label = readLabel && !isGroupRef(readLabel) ? readLabel : existing?.label;
+      const word = readLabel && !isGroupRef(readLabel) ? readLabel : undefined;
+      const matching = word ? nodes.filter((n) => n.label.toLowerCase() === word.toLowerCase()) : [];
+      const existing = word ? matching.find((n) => n === byId) ?? matching[0] : byId;
+      const label = word ?? existing?.label;
       if (!label || isGroupRef(label)) continue;
       boxedWords.push({ id, label });
       if (/arrow|message/i.test(String((value as Record<string, unknown>).shape ?? ''))) messages.push(label);
       else {
-        const positioned = nodeList([{ ...value, id, label }])[0];
+        let positionedId = id;
+        if (!existing) for (let suffix = 1; nodes.some((n) => n.id.toLowerCase() === positionedId.toLowerCase()); suffix++) positionedId = `${id}-box${suffix}`;
+        const positioned = nodeList([{ ...value, id: positionedId, label }])[0];
         if (!positioned) continue;
         if (!existing) nodes.push(positioned);
         else {
