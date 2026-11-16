@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import { DATASETS, LEGACY_DATASETS } from '../src/sim/scenes';
 import { AGG_HEADER, METRIC_NOTES, addAgg, aggRow, emptyAgg, parseArgs, runEval, type Agg } from './eval';
 
+const CHECK_TOTAL_PREFIX = 'check-total ';
+
 async function main() {
   const args = parseArgs();
   const wanted = process.argv.includes('--dataset') ? args.dataset.split(',').map((d) => d.replace(/^eval\//, '')) : Object.keys(DATASETS);
@@ -58,6 +60,8 @@ async function main() {
   mkdirSync('eval/shapes-suite', { recursive: true });
   writeFileSync(join('eval/shapes-suite', `${run}.md`), md);
   console.log('\n' + md);
+  // Exact counts for scripts/check.ts (the table rounds percentages).
+  console.log(`${CHECK_TOTAL_PREFIX}${JSON.stringify({ pages: total.pages, figuresFound: total.detected, figures: total.figures, leakedStrokes: total.leaked, figureStrokes: total.figureStrokes, figureCountOk: total.countExact })}`);
 }
 
 void main();

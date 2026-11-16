@@ -43,7 +43,12 @@ npm run dev        # http://localhost:5173, also exposed on your LAN for a table
 npm test           # vitest, no network
 npm run lint
 npm run build
+npm run check      # the project's own gate: lint + tests + build + offline geometry eval
 ```
+
+There is no hosted CI. `npm run check` is the gate; `npm install` points git at `.githooks/`, so it also
+runs before every `git push` (`--no-verify` skips it once). The geometry eval is compared with
+`eval/check-baseline.json`; after an intended change run `npm run check -- --update-baseline`.
 
 ### Local model (Ollama)
 
