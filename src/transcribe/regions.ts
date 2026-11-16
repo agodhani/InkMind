@@ -356,9 +356,51 @@ function modelNodeFor(g: FigureNode, geoNodes: FigureNode[], modelNodes: FigureN
     modelNodes.find((n) => sameText(n.id, g.id) && (n.group === undefined || n.group === g.group || !geoNodes.some((o) => o.group === n.group)));
 }
 
+function graphNames(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined): Map<string, string> {
+  const geometry = geo.nodes ?? [], model = prior?.nodes ?? [];
+  const empty = new Map<string, string>();
+  if (!geometry.length || geometry.length > 12 || model.length !== geometry.length || !prior?.edges.length || geometry.some((n) => !geo.unnamed.includes(n.label))) return empty;
+  if (new Set(model.map((n) => n.label.toLowerCase())).size !== model.length) return empty;
+  const adjacency = (nodes: FigureNode[], edges: FigureEdge[]) => nodes.map((n) => new Set(edges.flatMap((e) => {
+    const from = nodes.findIndex((v) => sameText(v.label, e.from) || sameText(v.id, e.from));
+    const to = nodes.findIndex((v) => sameText(v.label, e.to) || sameText(v.id, e.to));
+    const i = nodes.indexOf(n);
+    return from < 0 || to < 0 || from === to ? [] : from === i ? [to] : to === i ? [from] : [];
+  })));
+  const ga = adjacency(geometry, geo.edges), ma = adjacency(model, prior.edges);
+  const candidates = geometry.map((g, i) => model.flatMap((m, j) => {
+    if (ga[i].size !== ma[j].size) return [];
+    if (!geo.unnamed.includes(g.label) && !sameText(g.label, m.label)) return [];
+    if (m.bbox && g.bbox && !boundsIntersect(expandBounds(g.bbox, 12), m.bbox)) return [];
+    if (m.strokeIds?.length && !m.strokeIds.some((id) => g.strokeIds?.includes(id))) return [];
+    return [j];
+  }));
+  const order = geometry.map((_, i) => i).sort((a, b) => candidates[a].length - candidates[b].length || ga[b].size - ga[a].size);
+  const strokeRank = (n: FigureNode) => Math.min(...(n.strokeIds ?? []).map((id) => Number(id.replace(/^\D+/, ''))).filter(Number.isFinite));
+  const written = geometry.map((_, i) => i).sort((a, b) => strokeRank(geometry[a]) - strokeRank(geometry[b]));
+  const assignment = new Map<number, number>(), used = new Set<number>();
+  let best: Map<number, number> | undefined, bestScore = -Infinity, visits = 0;
+  const search = (depth: number) => {
+    if (++visits > 50000) return;
+    if (depth === order.length) {
+      const score = [...assignment].reduce((sum, [i, j]) => sum - Math.abs(written.indexOf(i) - j), 0);
+      if (score > bestScore) { bestScore = score; best = new Map(assignment); }
+      return;
+    }
+    const i = order[depth];
+    for (const j of candidates[i]) {
+      if (used.has(j) || [...assignment].some(([a, b]) => ga[i].has(a) !== ma[j].has(b))) continue;
+      assignment.set(i, j); used.add(j); search(depth + 1); used.delete(j); assignment.delete(i);
+    }
+  };
+  search(0);
+  return best ? new Map([...best].map(([i, j]) => [geometry[i].label, model[j].label])) : empty;
+}
+
 function nameGeometryNodes(geo: ReturnType<typeof figureFromGeometry>, prior: FigureInfo | undefined, fig: FigureHint, labels: string[]): ReturnType<typeof figureFromGeometry> {
-  const rename = new Map<string, string>();
+  const rename = fig.kind === 'mindmap' ? graphNames(geo, prior) : new Map<string, string>();
   for (const g of geo.nodes ?? []) {
+    if (rename.has(g.label)) continue;
     if (!geo.unnamed.includes(g.label)) continue;
     // The label group number is the most reliable link (small models echo numbers faithfully); hint id second.
     const m = modelNodeFor(g, geo.nodes ?? [], prior?.nodes ?? [], fig.nodes.find((n) => n.id === g.id));

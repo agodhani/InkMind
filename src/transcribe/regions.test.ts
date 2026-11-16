@@ -6,9 +6,28 @@ import { arrowTwoStrokes, line, rect, rectLines, resetSynthetic, textLine } from
 import { attachUnclaimedStrokes, buildStrokeGroups, computeDirtyRegions, mergeBlocks, mergeFigures, mergeWithGeometry, protectEditedBlocks, rawToDigitalBlock, reconcileFigureBlocks } from './regions';
 import type { StrokeGroupMeta } from './types';
 import { normaliseFigure } from './figure';
-import type { FigureHint } from '../ink/shapeHints';
+import { figureFromGeometry, type FigureHint } from '../ink/shapeHints';
 import { buildScene, DATASETS } from '../sim/scenes';
 import { getStrokeBoundingBox } from '../types/brush';
+
+describe('graph-based word assignment', () => {
+  it.each(DATASETS['tables-mindmaps'].filter((s) => s.kind === 'mind-map'))('names the radial graph despite conflicting model groups: $seed', ({ kind, seed, messiness }) => {
+    const scene = buildScene(kind, seed, messiness);
+    const groups = buildStrokeGroups(scene.strokes);
+    const hint = groups.find((g) => g.figure)!.figure!;
+    const expected = scene.figures[0];
+    const prior: FigureInfo = { kind: 'mindmap', shapes: [], labels: expected.labels, edges: expected.edges!, nodes: expected.labels.map((label, i) => ({ id: `wrong-${i}`, label, group: 999 })) };
+    const geometry = figureFromGeometry(hint, () => undefined, groups);
+    const out = mergeWithGeometry(prior, hint, prior.labels, geometry);
+    expect(new Set(out.nodes!.map((n) => n.label))).toEqual(new Set(expected.labels));
+    expect(out.edges.map((e) => [e.from, e.to].sort().join('|')).sort()).toEqual(expected.edges!.map((e) => [e.from, e.to].sort().join('|')).sort());
+    const positioned = { ...prior, nodes: out.nodes!.map((n) => ({ ...n, group: 999 })) };
+    expect(mergeWithGeometry(positioned, hint, prior.labels, geometry).edges).toEqual(out.edges);
+    expect(mergeWithGeometry(undefined, hint, [], geometry).nodes!.map((n) => n.label)).toEqual(geometry.nodes!.map((n) => n.label));
+    const invalid = { ...prior, nodes: prior.nodes!.map((n) => ({ ...n, bbox: { left: 10000, right: 10010, top: 10000, bottom: 10010 } })) };
+    expect(mergeWithGeometry(invalid, hint, prior.labels, geometry).nodes!.map((n) => n.label)).toEqual(geometry.nodes!.map((n) => n.label));
+  });
+});
 
 describe.each([false, true])('unclaimed prose with an unpositioned model paragraph: %s', (withParagraph) => {
   it.each([...DATASETS['notes-complex'], ...DATASETS['mixed-notes']])('preserves geometry ownership on $kind seed $seed', ({ kind, seed, messiness }) => {
