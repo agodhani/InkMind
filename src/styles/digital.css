@@ -110,7 +110,8 @@
 .step-number { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-weight: 700; }
 .block .card-nodes ul { list-style: none; padding: 0 0 0 20px; margin: 0; }
 .block .card-nodes > ul { padding: 0; }
-.card-nodes li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-height: 32px; }
+.card-nodes li > div > button { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-height: 32px; background: none; border: 1px solid transparent; color: inherit; text-align: left; }
+.card-nodes li > div > button[aria-pressed="true"] { border-color: var(--accent); }
 .node-glyph { color: var(--accent); width: 20px; text-align: center; }
 .card-nodes small { color: var(--fg-3); font-size: var(--fs-sm); }
 .block .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }

@@ -92,6 +92,7 @@ function label(pen: Pen, text: string, c: Offset, size: number): void {
  * (loops) routed around the nodes with right angles.
  */
 export function drawFlowchartComplex(pen: Pen, box: Box, spec: FlowSpec, textSize = 16): Relations {
+  const nodeStrokeIds: Record<string, string[]> = {};
   const cols = Math.max(...spec.nodes.map((n) => n.col)) + 1;
   const rows = Math.max(...spec.nodes.map((n) => n.row)) + 1;
   const cellW = box.w / cols, cellH = box.h / rows;
@@ -100,6 +101,7 @@ export function drawFlowchartComplex(pen: Pen, box: Box, spec: FlowSpec, textSiz
   const nodeH = Math.min(cellH * 0.45, textSize * 2.8);
   const placed = new Map<string, Placed>();
   for (const n of spec.nodes) {
+    const start = pen.w.strokes.length;
     const shape = n.shape ?? 'box';
     const c = { x: box.x + cellW * (n.col + 0.5) + pen.rng.gauss() * 3, y: box.y + cellH * (n.row + 0.5) + pen.rng.gauss() * 3 };
     const p: Placed = { c, shape, label: n.label ?? n.id, ex: shape === 'diamond' ? nodeW * 0.6 : nodeW / 2, ey: shape === 'diamond' ? nodeH * 0.95 : nodeH / 2 };
@@ -107,9 +109,11 @@ export function drawFlowchartComplex(pen: Pen, box: Box, spec: FlowSpec, textSiz
     drawNodeShape(pen, p);
     label(pen, p.label, c, textSize);
     labels.push(p.label);
+    nodeStrokeIds[p.label] = pen.w.strokes.slice(start).map(s => s.id);
   }
   const edges: FigureEdge[] = [];
   for (const e of spec.edges) {
+    const start = pen.w.strokes.length;
     const a = placed.get(e.from)!, b = placed.get(e.to)!;
     const upward = b.c.y < a.c.y - cellH * 0.5;
     const adjacentAbove = upward && Math.abs(b.c.x - a.c.x) < cellW * 0.5 && a.c.y - b.c.y < cellH * 1.5;
@@ -151,9 +155,9 @@ export function drawFlowchartComplex(pen: Pen, box: Box, spec: FlowSpec, textSiz
       }
     }
     if (e.label) labels.push(e.label);
-    edges.push({ from: a.label, to: b.label, ...(e.label ? { label: e.label } : {}) });
+    edges.push({ from: a.label, to: b.label, strokeIds: pen.w.strokes.slice(start).map(s => s.id), ...(e.label ? { label: e.label } : {}) });
   }
-  return { labels, nodes: spec.nodes.map((n) => n.label ?? n.id), edges };
+  return { labels, nodes: spec.nodes.map((n) => n.label ?? n.id), nodeStrokeIds, edges };
 }
 
 export interface StateSpec {
@@ -224,24 +228,28 @@ export interface SequenceSpec {
 
 /** UML-style sequence diagram: named lifeline boxes, dashed vertical lifelines, numbered horizontal arrows. */
 export function drawSequenceDiagram(pen: Pen, box: Box, spec: SequenceSpec, textSize = 14): Relations {
+  const nodeStrokeIds: Record<string, string[]> = {};
   const labels: string[] = [];
   const n = spec.actors.length;
   const xs = spec.actors.map((_, i) => box.x + (box.w * (i + 0.5)) / n);
   const headH = textSize * 2.4;
   const headW = Math.min(box.w / n - 16, Math.max(70, ...spec.actors.map((a) => textWidth(a, textSize) + 24)));
   spec.actors.forEach((a, i) => {
+    const start = pen.w.strokes.length;
     drawRect(pen, { x: xs[i] - headW / 2, y: box.y, w: headW, h: headH });
     label(pen, a, { x: xs[i], y: box.y + headH / 2 }, textSize);
     labels.push(a);
     // Dashed lifeline.
     const bottom = box.y + box.h;
     for (let y = box.y + headH + 6; y < bottom - 10; y += 22) pen.w.stroke([{ x: xs[i], y }, { x: xs[i], y: Math.min(bottom, y + 12) }], { pauseMs: 90 });
+    nodeStrokeIds[a] = pen.w.strokes.slice(start).map(s => s.id);
   });
   const edges: FigureEdge[] = [];
   const sequence: string[] = [];
   const top = box.y + headH + 30;
   const gap = (box.h - headH - 50) / Math.max(1, spec.messages.length);
   spec.messages.forEach((m, k) => {
+    const start = pen.w.strokes.length;
     const ia = spec.actors.indexOf(m.from), ib = spec.actors.indexOf(m.to);
     const y = top + gap * (k + 0.5);
     const from = { x: xs[ia] + (ib > ia ? 6 : -6), y }, to = { x: xs[ib] - (ib > ia ? 6 : -6), y };
@@ -251,9 +259,9 @@ export function drawSequenceDiagram(pen: Pen, box: Box, spec: SequenceSpec, text
     writeText(pen, text, (from.x + to.x) / 2 - textWidth(text, size) / 2, y - 7, { size });
     labels.push(m.label);
     sequence.push(m.label);
-    edges.push({ from: m.from, to: m.to, label: m.label });
+    edges.push({ from: m.from, to: m.to, label: m.label, strokeIds: pen.w.strokes.slice(start).map(s => s.id) });
   });
-  return { labels, nodes: spec.actors, edges, sequence };
+  return { labels, nodes: spec.actors, nodeStrokeIds, edges, sequence };
 }
 
 export interface TimelineSpec {

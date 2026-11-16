@@ -233,7 +233,7 @@ export function reconcileFigureBlocks(incoming: DigitalBlock[], groups: StrokeGr
     const labels = dedupe([...(prior?.labels ?? []), ...labelTexts]);
     const figure = mergeWithGeometry(prior, fig, labels, figureFromGeometry(fig, labelFor, groups, (node) => {
       const ids = new Set(node.strokeIds ?? []);
-      const hit = textMembers.filter((b) => b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
+      const hit = textMembers.filter((b) => (!fig.plotLabelBounds || isPlotLabel(fig, b.bbox)) && b.strokeIds.length && b.strokeIds.filter((id) => ids.has(id)).length > b.strokeIds.length / 2)
         .sort((a, b) => a.strokeIds.length - b.strokeIds.length)[0];
       return hit ? cleanLabel(hit.text) : undefined;
     }), strokes.map((s) => s.id));

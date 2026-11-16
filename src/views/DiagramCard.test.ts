@@ -6,6 +6,8 @@ import type { DigitalBlock, FigureInfo } from '../model/page';
 import { DiagramCard } from './DiagramCard';
 import { DigitalView } from './DigitalView';
 import { figureToMermaid, renameFigureNodes } from './figureView';
+import { buildScene } from '../sim/scenes';
+import { expectedBlocks } from '../sim/expectedBlocks';
 
 vi.mock('../transcribe/render', () => ({ renderStrokesToPng: () => null }));
 
@@ -30,6 +32,22 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
 describe('DiagramCard', () => {
+  it('highlights only open page, json, or user ink after injecting sequence seed 2', () => {
+    const scene = buildScene('sequence-diagram', 2, 'normal');
+    const b = expectedBlocks(scene, new Map())[0];
+    render(b);
+    const steps = [...container.querySelectorAll('.card-steps button')];
+    click(steps.find(e => e.textContent!.includes('open page'))!);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.edges[0].strokeIds);
+    click(steps.find(e => e.textContent!.includes('json'))!);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.edges[4].strokeIds);
+    const user = [...container.querySelectorAll('.card-nodes button')].find(e => e.textContent!.includes('user'))!;
+    click(user);
+    expect(highlight).toHaveBeenLastCalledWith(b.figure!.nodes![0].strokeIds);
+    expect(user.getAttribute('aria-pressed')).toBe('true');
+    click(user);
+    expect(highlight).toHaveBeenLastCalledWith(null);
+  });
   it('shows current labels on saved links whose endpoints retain original node ids', () => {
     const original = block({ nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ from: 'A', to: 'B' }] });
     render({ ...original, figure: renameFigureNodes(original.figure!, new Map([['A', 'Alpha']])) });

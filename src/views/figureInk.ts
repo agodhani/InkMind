@@ -3,6 +3,8 @@ import { boundsIntersect, expandBounds } from '../model/page';
 import { buildStrokeGroups, strokeBounds } from '../transcribe/regions';
 
 export function nodeInkStrokes(block: DigitalBlock, node: FigureNode | undefined, pageStrokes: InkStroke[]): string[] {
+  const anchored = node?.strokeIds?.filter(id => block.strokeIds.includes(id));
+  if (anchored?.length) return anchored;
   if (node?.group === undefined || !Number.isInteger(node.group) || node.group < 0) return block.strokeIds;
   const ids = new Set(block.strokeIds);
   const nearby = pageStrokes.filter(stroke => boundsIntersect(strokeBounds(stroke), expandBounds(block.bbox, 18)));

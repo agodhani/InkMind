@@ -1,4 +1,5 @@
 import type { FigureEdge, FigureInfo, FigureNode } from '../model/page';
+import { sequenceEdgeIndices } from '../transcribe/figure';
 
 const key = (value: string) => value.trim().toLowerCase();
 
@@ -99,8 +100,12 @@ export function figureEdgeText(fig: FigureInfo, edge: FigureEdge): string {
   return `${from} ${edge.kind === 'line' ? '—' : '→'} ${to}${label}`;
 }
 
-export function stepNode(fig: FigureInfo, step: string): FigureNode | undefined {
-  return fig.nodes?.find(node => key(node.label) === key(step));
+export function stepNode(fig: FigureInfo, step: string, index = fig.sequence?.indexOf(step) ?? -1): FigureNode | undefined {
+  const node = fig.nodes?.find(node => key(node.label) === key(step));
+  if (node && fig.kind !== 'sequence') return node;
+  const edgeIndex = index >= 0 ? sequenceEdgeIndices(fig)[index] : null;
+  const edge = edgeIndex !== null && edgeIndex !== undefined ? fig.edges[edgeIndex] : undefined;
+  return edge ? { id: `edge-${edgeIndex}`, label: step, strokeIds: edge.strokeIds } : node;
 }
 
 export function edgeMarks(fig: FigureInfo): ('self-loop' | 'back' | null)[] {

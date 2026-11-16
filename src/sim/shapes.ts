@@ -41,6 +41,7 @@ export interface FigureEdge {
   from: string;
   to: string;
   label?: string;
+  strokeIds?: string[];
 }
 
 export interface Containment {
@@ -60,6 +61,8 @@ export interface Figure {
   description: string;
   /** Node labels (boxes, states, lifelines, …) when the figure has relations. */
   nodes?: string[];
+  nodeStrokeIds?: Record<string, string[]>;
+  labelStrokeIds?: Record<string, string[]>;
   /** Drawn connections, tail → head, with the text written on the arrow when any. */
   edges?: FigureEdge[];
   /** False for plain lines without arrowheads (match either direction). */
@@ -74,6 +77,7 @@ export interface Figure {
 export interface Relations {
   labels: string[];
   nodes?: string[];
+  nodeStrokeIds?: Record<string, string[]>;
   edges?: FigureEdge[];
   directed?: boolean;
   sequence?: string[];
@@ -92,6 +96,7 @@ export interface Pen {
   rng: Rng;
   /** Hand steadiness; defaults to the `normal` profile. */
   mess?: MessProfile;
+  labelStrokeIds?: Record<string, string[]>;
 }
 
 export function messOf(pen: Pen): MessProfile {
@@ -103,10 +108,14 @@ const DEG = Math.PI / 180;
 /** Run `draw` (which may return the labels it wrote), then wrap the strokes it produced into a Figure. */
 export function figure(pen: Pen, id: string, type: FigureType, description: string, draw: () => string[] | Relations | void): Figure {
   const start = pen.w.strokes.length;
+  const previousLabels = pen.labelStrokeIds;
+  pen.labelStrokeIds = {};
   pen.w.pause(600);
   const out = draw();
   const rel: Relations = Array.isArray(out) ? { labels: out } : (out ?? { labels: [] });
   const strokes = pen.w.strokes.slice(start);
+  const labelStrokeIds = pen.labelStrokeIds;
+  pen.labelStrokeIds = previousLabels;
   return {
     id,
     type,
@@ -115,6 +124,8 @@ export function figure(pen: Pen, id: string, type: FigureType, description: stri
     bbox: strokesBounds(strokes) ?? { left: 0, top: 0, right: 0, bottom: 0 },
     description,
     ...(rel.nodes ? { nodes: rel.nodes } : {}),
+    ...(rel.nodeStrokeIds ? { nodeStrokeIds: rel.nodeStrokeIds } : {}),
+    labelStrokeIds,
     ...(rel.edges ? { edges: rel.edges } : {}),
     ...(rel.directed === false ? { directed: false } : {}),
     ...(rel.sequence ? { sequence: rel.sequence } : {}),
@@ -156,6 +167,7 @@ export function writeText(pen: Pen, text: string, x: number, baseline: number, o
     }
     w.pause(60);
   }
+  if (pen.labelStrokeIds) pen.labelStrokeIds[text] = [...(pen.labelStrokeIds[text] ?? []), ...out.map(s => s.id)];
   return out;
 }
 

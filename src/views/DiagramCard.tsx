@@ -16,7 +16,7 @@ export interface DiagramCardProps {
   onCancelEdit?: () => void;
 }
 
-function NodeHierarchy({ nodes }: { nodes: FigureNode[] }) {
+function NodeHierarchy({ nodes, active, onHighlight, onActivate }: { nodes: FigureNode[]; active: string | null; onHighlight: (key: string | null) => void; onActivate: (key: string) => void }) {
   interface Entry { node: FigureNode; children: Entry[] }
   const roots: Entry[] = [], stack: Entry[] = [];
   const variedShapes = new Set(nodes.map(node => node.shape?.trim().toLowerCase()).filter(Boolean)).size > 1;
@@ -27,7 +27,7 @@ function NodeHierarchy({ nodes }: { nodes: FigureNode[] }) {
     stack[depth] = entry;
   }
   const list = (entries: Entry[]): ReactNode => <ul>{entries.map(({ node, children }) => <li key={node.id}>
-    <div title={node.shape}><span aria-hidden="true" className="node-glyph">{shapeGlyph(node.shape)}</span><span aria-label={node.shape ? `${node.label}, ${node.shape}` : undefined}>{node.label}</span>{variedShapes && node.shape && <small>{node.shape}</small>}</div>
+    <div><button type="button" title={node.shape} aria-pressed={active === `node:${node.id}`} onClick={() => onActivate(`node:${node.id}`)} onPointerEnter={e => { if (e.pointerType === 'mouse') onHighlight(`node:${node.id}`); }} onPointerLeave={e => { if (e.pointerType === 'mouse') onHighlight(active); }}><span aria-hidden="true" className="node-glyph">{shapeGlyph(node.shape)}</span><span aria-label={node.shape ? `${node.label}, ${node.shape}` : undefined}>{node.label}</span>{variedShapes && node.shape && <small>{node.shape}</small>}</button></div>
     {!!children.length && list(children)}
   </li>)}</ul>;
   return <div className="card-nodes">{list(roots)}</div>;
@@ -48,10 +48,17 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
   const mindMap = fig?.kind === 'mindmap' ? mindMapLayout(fig) : null;
   const linkIndices = mindMap?.remainingEdges ?? fig?.edges.map((_, i) => i) ?? [];
   const annotations = fig ? uncoveredFigureLabels(fig) : [];
-  const stepInk = useMemo(() => new Map((fig?.sequence ?? []).map(step => [step, nodeInkStrokes(block, stepNode(fig!, step), [...strokeById.values()])])), [block, fig, strokeById]);
+  const stepInk = useMemo(() => new Map<string, string[]>([
+    ...(fig?.sequence ?? []).map((step, i) => [`step:${i}`, nodeInkStrokes(block, stepNode(fig!, step, i), [...strokeById.values()])] as const),
+    ...(fig?.nodes ?? []).map(node => [`node:${node.id}`, nodeInkStrokes(block, node, [...strokeById.values()])] as const),
+  ]), [block, fig, strokeById]);
   useEffect(() => () => onHighlightStrokes?.(null), [onHighlightStrokes]);
   const highlight = (step: string | null) => {
     onHighlightStrokes?.(step === null ? null : stepInk.get(step) ?? block.strokeIds);
+  };
+  const activate = (key: string) => {
+    const next = active === key ? null : key;
+    setActive(next); highlight(next);
   };
   const summary = fig ? [fig.kind === 'table' ? (fig.cells?.length ? `${fig.cells.length}×${Math.max(...fig.cells.map(row => row.length))} table` : 'table') : fig.sequence?.length ? `${fig.sequence.length} steps` : '', fig.nodes?.length ? `${fig.nodes.length} nodes` : '', fig.edges.length ? `${fig.edges.length} links` : ''].filter(Boolean).join(' · ') : '';
   if (editing) return <div className="diagram-card">
@@ -77,16 +84,15 @@ export function DiagramCard({ block, strokeById, onHighlightStrokes, caption, ed
           {fig.kind !== 'table' && !!fig.sequence?.length && <section aria-label="Steps">
             <h4>Steps</h4>
             <ol className="card-steps">
-              {fig.sequence.map((step, i) => <li key={`${step}-${i}`}><button type="button" aria-pressed={active === step} title={stepNode(fig, step)?.shape} onClick={() => {
-                const next = active === step ? null : step;
-                setActive(next); highlight(next);
-              }} onPointerEnter={e => { if (e.pointerType === 'mouse') highlight(step); }} onPointerLeave={e => { if (e.pointerType === 'mouse') highlight(active); }}>
+              {fig.sequence.map((step, i) => <li key={`${step}-${i}`}><button type="button" aria-pressed={active === `step:${i}`} title={stepNode(fig, step, i)?.shape} onClick={() => {
+                activate(`step:${i}`);
+              }} onPointerEnter={e => { if (e.pointerType === 'mouse') highlight(`step:${i}`); }} onPointerLeave={e => { if (e.pointerType === 'mouse') highlight(active); }}>
                 <span className="step-number" aria-hidden="true">{i + 1}</span><span>{step}</span>
               </button></li>)}
             </ol>
           </section>}
           {!mindMap && !!fig.nodes?.length && <section aria-label="Nodes"><h4>Nodes</h4>
-            <NodeHierarchy nodes={fig.nodes} />
+            <NodeHierarchy nodes={fig.nodes} active={active} onHighlight={highlight} onActivate={activate} />
           </section>}
           {mindMap && <section aria-label="Mind map"><h4>Mind map</h4><div className="mindmap-hub">{mindMap.hub}</div>
             <ul className="mindmap-branches"><MindMapBranches branches={mindMap.spokes} /></ul>
