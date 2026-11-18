@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mlMap, validateMap } from './model';
+import { mlMap, resolveConcept, validateMap } from './model';
 import type { SubjectMap } from './model';
 import { matchNotes } from './match';
 import { planPath } from './plan';
@@ -12,6 +12,15 @@ const tiny = (): SubjectMap => ({ id: 'tiny', subject: 'Tiny', version: 1, prove
 ] });
 const empty = { graph: { concepts: [], edges: [] }, extractions: [] };
 describe('subject maps', () => {
+  it.each(['label', 'alias'])('resolves exact ids before another concept %s', form => {
+    const m = tiny();
+    if (form === 'label') m.concepts[0].label = 'b';
+    else m.concepts[0].aliases.push('b');
+    expect(validateMap(m)).toEqual([]);
+    expect(resolveConcept(m, 'b')).toBe(m.concepts[1]);
+    expect(resolveConcept(m, ' B ')).toBe(m.concepts[0]);
+    expect(resolveConcept(m, 'PG')).toBe(m.concepts[1]);
+  });
   it('validates the curated ML map', () => expect(validateMap(mlMap)).toEqual([]));
   it.each([
     ['Duplicate id', (m: SubjectMap) => { m.concepts.push({ ...m.concepts[0] }); }],

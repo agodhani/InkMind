@@ -13,7 +13,7 @@ export interface SubjectMap {
 export const mlMap = mlData as SubjectMap;
 export const forms = (c: SubjectConcept) => [c.label, ...c.aliases].map(termKey);
 export function resolveConcept(map: SubjectMap, input: string): SubjectConcept {
-  const c = map.concepts.find(c => c.id === input || forms(c).includes(termKey(input)));
+  const c = map.concepts.find(c => c.id === input) ?? map.concepts.find(c => forms(c).includes(termKey(input)));
   if (!c) throw new Error(`Unknown concept: ${input}`);
   return c;
 }
