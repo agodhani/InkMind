@@ -112,7 +112,7 @@ const OVERLAP_CHARS = 240;
 
 function* splitBlock(text: string): Generator<string> {
   if (text.length <= MAX_BATCH_CHARS) { yield text; return; }
-  const nonSpace = /\S/g, space = /\s/g;
+  const nonSpace = /\S/g;
   const advance = (index: number) => {
     nonSpace.lastIndex = index;
     return nonSpace.exec(text)?.index ?? text.length;
@@ -124,14 +124,8 @@ function* splitBlock(text: string): Generator<string> {
     const sentence = [...window.matchAll(/[.!?]["')\]]?(?=\s)/g)].at(-1);
     const word = [...window.matchAll(/(?<=\S)\s+/g)].at(-1);
     const end = sentence && sentence.index >= MAX_BATCH_CHARS * 0.75
-      ? start + sentence.index + sentence[0].length : word && start + word.index;
-    if (end === undefined) {
-      space.lastIndex = limit;
-      const nextSpace = space.exec(text);
-      if (!nextSpace) return;
-      start = advance(nextSpace.index);
-      continue;
-    }
+      ? start + sentence.index + sentence[0].length
+      : word ? start + word.index : limit - Number(window.codePointAt(MAX_BATCH_CHARS - 1)! > 0xffff);
     yield text.slice(start, end);
     const tail = Math.max(start + 1, end - OVERLAP_CHARS);
     const boundary = /\s+(?=\S)/.exec(text.slice(tail, end));

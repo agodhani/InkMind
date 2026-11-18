@@ -124,6 +124,17 @@ describe('model KB extractor', () => {
     ]);
   });
 
+  it('sends all of a long unspaced block without breaking a Unicode code point', async () => {
+    const chunks: string[] = [];
+    const extractor = modelExtractor(mockKbModel(async (_system, user) => {
+      chunks.push(...JSON.parse(user).blocks.map((b: DigitalBlock) => b.text));
+      return output();
+    }));
+    const text = '學'.repeat(3499) + '𠀀' + '習'.repeat(700);
+    await extractor.extract(page('p', block('b', text)), { glossary: [] });
+    expect(chunks).toEqual(['學'.repeat(3499), '𠀀' + '習'.repeat(700)]);
+  });
+
   it('requests Ollama native text chat and shares the loop guard', async () => {
     const payload = output();
     const fetch = vi.fn(async (_url: string, _req: RequestInit) => new Response([
