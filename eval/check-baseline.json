@@ -22,5 +22,25 @@
     "provenanceOk": 111,
     "provenanceTotal": 112,
     "idempotent": 6
+  },
+  "path": {
+    "cases": 9,
+    "expectedSteps": 162,
+    "predictedSteps": 162,
+    "stepHits": 162,
+    "knownExpected": 21,
+    "knownHits": 21,
+    "partialExpected": 5,
+    "partialHits": 5,
+    "mustSkip": 46,
+    "mustSkipViolations": 0,
+    "orderingViolations": 0,
+    "deterministic": 9,
+    "replans": 3,
+    "replanStable": 3,
+    "doneExpected": 25,
+    "doneHits": 25,
+    "reasonsOk": 230,
+    "reasonsTotal": 230
   }
 }

@@ -1,0 +1,61 @@
+{
+ "name": "most-of-rl-to-rlhf",
+ "description": "Notes already cover RL through PPO and GAE (rl-basics + ppo notebooks). Goal RLHF needs only the deep-learning, language-model and preference/RL-fine-tuning steps. The PPO notebook mentions 'KL penalty' in plain text, so it is partly known.",
+ "notebooks": [
+  "rl-basics",
+  "ppo"
+ ],
+ "declared": [],
+ "goals": [
+  "RLHF"
+ ],
+ "expected": {
+  "steps": [
+   "sft",
+   "fine-tuning",
+   "llm",
+   "language-model",
+   "tokenization",
+   "transformer",
+   "attention",
+   "embeddings",
+   "neural-network",
+   "logistic-regression",
+   "linear-regression",
+   "activation-functions",
+   "softmax",
+   "residual",
+   "normalization",
+   "backpropagation",
+   "chain-rule",
+   "computational-graph",
+   "sgd",
+   "reward-model",
+   "bradley-terry",
+   "human-preferences",
+   "rl-finetuning",
+   "reward-hacking",
+   "kl-penalty",
+   "rlhf"
+  ],
+  "known": [
+   "ppo",
+   "gae",
+   "actor-critic",
+   "policy-gradient",
+   "value-function",
+   "advantage-function",
+   "kl-divergence"
+  ],
+  "partial": [
+   "kl-penalty"
+  ],
+  "mustSkip": [
+   "mdp",
+   "td-learning",
+   "importance-sampling",
+   "entropy",
+   "gradient-descent"
+  ]
+ }
+}

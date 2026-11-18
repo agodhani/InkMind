@@ -1,0 +1,64 @@
+{
+ "name": "alias-short-forms",
+ "description": "Notes headed with short forms only: 'Backprop' and 'GAE'. Both must match the map's concepts by alias.",
+ "notebooks": [],
+ "glossary": [],
+ "pages": [
+  {
+   "id": "short",
+   "title": "Short forms",
+   "blocks": [
+    {
+     "id": "short-b0",
+     "kind": "heading",
+     "text": "Backprop",
+     "level": 1
+    },
+    {
+     "id": "short-b1",
+     "kind": "paragraph",
+     "text": "Run the graph backwards, multiplying local derivatives."
+    },
+    {
+     "id": "short-b2",
+     "kind": "heading",
+     "text": "GAE",
+     "level": 1
+    },
+    {
+     "id": "short-b3",
+     "kind": "paragraph",
+     "text": "An exponentially weighted average of TD errors with parameter lambda."
+    }
+   ]
+  }
+ ],
+ "declared": [],
+ "goals": [
+  "PPO"
+ ],
+ "expected": {
+  "steps": [
+   "log-likelihood",
+   "importance-sampling",
+   "kl-divergence",
+   "policy-gradient",
+   "reinforce",
+   "baseline",
+   "actor-critic",
+   "ppo"
+  ],
+  "known": [
+   "backpropagation",
+   "gae"
+  ],
+  "partial": [],
+  "mustSkip": [
+   "advantage-function",
+   "value-function",
+   "td-learning",
+   "gradient-descent",
+   "entropy"
+  ]
+ }
+}

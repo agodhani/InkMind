@@ -1,0 +1,1125 @@
+{
+ "id": "ml",
+ "subject": "Machine learning: from backpropagation and minimax to RLHF and RLVR",
+ "version": 1,
+ "provenance": {
+  "status": "verified",
+  "source": "hand-built for InkMind Phase 3"
+ },
+ "areas": [
+  {
+   "id": "math",
+   "label": "Math foundations"
+  },
+  {
+   "id": "ml",
+   "label": "Machine learning basics"
+  },
+  {
+   "id": "dl",
+   "label": "Deep learning"
+  },
+  {
+   "id": "search",
+   "label": "Search and games"
+  },
+  {
+   "id": "rl",
+   "label": "Reinforcement learning"
+  },
+  {
+   "id": "lm",
+   "label": "Language models"
+  },
+  {
+   "id": "alignment",
+   "label": "RLHF and RLVR"
+  }
+ ],
+ "concepts": [
+  {
+   "id": "linear-algebra",
+   "label": "Linear algebra basics",
+   "aliases": [
+    "vectors and matrices",
+    "matrix multiplication",
+    "linear algebra"
+   ],
+   "area": "math",
+   "description": "Vectors, matrices, dot products and matrix multiplication.",
+   "prerequisites": []
+  },
+  {
+   "id": "calculus",
+   "label": "Derivatives",
+   "aliases": [
+    "differentiation",
+    "calculus",
+    "derivative"
+   ],
+   "area": "math",
+   "description": "How a function's output changes as its input changes.",
+   "prerequisites": []
+  },
+  {
+   "id": "partial-derivatives",
+   "label": "Partial derivatives and gradients",
+   "aliases": [
+    "partial derivative",
+    "gradient",
+    "gradients"
+   ],
+   "area": "math",
+   "description": "Derivatives of multivariable functions; the gradient points uphill.",
+   "prerequisites": [
+    "calculus",
+    "linear-algebra"
+   ]
+  },
+  {
+   "id": "chain-rule",
+   "label": "Chain rule",
+   "aliases": [],
+   "area": "math",
+   "description": "Differentiating a composition by multiplying the derivatives of its parts.",
+   "prerequisites": [
+    "calculus"
+   ]
+  },
+  {
+   "id": "probability",
+   "label": "Probability basics",
+   "aliases": [
+    "probability",
+    "random variable",
+    "random variables",
+    "probability distribution"
+   ],
+   "area": "math",
+   "description": "Random variables, distributions and their rules.",
+   "prerequisites": []
+  },
+  {
+   "id": "expectation",
+   "label": "Expectation and variance",
+   "aliases": [
+    "expected value",
+    "expectation",
+    "variance"
+   ],
+   "area": "math",
+   "description": "Average value of a random variable and its spread.",
+   "prerequisites": [
+    "probability"
+   ]
+  },
+  {
+   "id": "conditional-probability",
+   "label": "Conditional probability",
+   "aliases": [
+    "Bayes rule",
+    "Bayes' rule",
+    "Bayes theorem"
+   ],
+   "area": "math",
+   "description": "Probability of an event given another; Bayes' rule.",
+   "prerequisites": [
+    "probability"
+   ]
+  },
+  {
+   "id": "log-likelihood",
+   "label": "Maximum likelihood estimation",
+   "aliases": [
+    "MLE",
+    "maximum likelihood",
+    "log likelihood",
+    "log-likelihood"
+   ],
+   "area": "math",
+   "description": "Fitting parameters by maximising the (log) probability of observed data.",
+   "prerequisites": [
+    "probability"
+   ]
+  },
+  {
+   "id": "entropy",
+   "label": "Entropy and cross-entropy",
+   "aliases": [
+    "entropy",
+    "cross-entropy",
+    "cross entropy loss"
+   ],
+   "area": "math",
+   "description": "Expected surprise of a distribution; cross-entropy compares two distributions.",
+   "prerequisites": [
+    "probability",
+    "expectation"
+   ]
+  },
+  {
+   "id": "kl-divergence",
+   "label": "KL divergence",
+   "aliases": [
+    "Kullback-Leibler divergence",
+    "relative entropy"
+   ],
+   "area": "math",
+   "description": "How far one probability distribution is from another (not symmetric).",
+   "prerequisites": [
+    "entropy"
+   ]
+  },
+  {
+   "id": "softmax",
+   "label": "Softmax",
+   "aliases": [
+    "softmax function"
+   ],
+   "area": "math",
+   "description": "Turns a vector of scores into a probability distribution.",
+   "prerequisites": [
+    "probability"
+   ]
+  },
+  {
+   "id": "sampling",
+   "label": "Monte Carlo estimation",
+   "aliases": [
+    "Monte Carlo",
+    "Monte Carlo sampling",
+    "sampling"
+   ],
+   "area": "math",
+   "description": "Estimating an expectation by averaging random samples.",
+   "prerequisites": [
+    "expectation"
+   ]
+  },
+  {
+   "id": "importance-sampling",
+   "label": "Importance sampling",
+   "aliases": [
+    "importance weights",
+    "importance ratio"
+   ],
+   "area": "math",
+   "description": "Estimating an expectation under one distribution with samples from another, reweighted by their ratio.",
+   "prerequisites": [
+    "sampling"
+   ]
+  },
+  {
+   "id": "ml-basics",
+   "label": "Supervised learning",
+   "aliases": [
+    "machine learning",
+    "training data",
+    "test set"
+   ],
+   "area": "ml",
+   "description": "Learning a function from labelled input-output examples.",
+   "prerequisites": []
+  },
+  {
+   "id": "loss-function",
+   "label": "Loss functions",
+   "aliases": [
+    "loss function",
+    "loss",
+    "objective function",
+    "cost function"
+   ],
+   "area": "ml",
+   "description": "A number that measures how wrong a model's predictions are.",
+   "prerequisites": [
+    "ml-basics"
+   ]
+  },
+  {
+   "id": "gradient-descent",
+   "label": "Gradient descent",
+   "aliases": [],
+   "area": "ml",
+   "description": "Minimising a loss by repeatedly stepping against its gradient.",
+   "prerequisites": [
+    "partial-derivatives",
+    "loss-function"
+   ]
+  },
+  {
+   "id": "learning-rate",
+   "label": "Learning rate",
+   "aliases": [
+    "step size"
+   ],
+   "area": "ml",
+   "description": "How big each gradient-descent step is.",
+   "prerequisites": [
+    "gradient-descent"
+   ]
+  },
+  {
+   "id": "sgd",
+   "label": "Stochastic gradient descent",
+   "aliases": [
+    "SGD",
+    "minibatch gradient descent",
+    "mini-batch SGD"
+   ],
+   "area": "ml",
+   "description": "Gradient descent using gradients estimated from small random batches.",
+   "prerequisites": [
+    "gradient-descent"
+   ]
+  },
+  {
+   "id": "optimizers",
+   "label": "Momentum and Adam",
+   "aliases": [
+    "Adam",
+    "Adam optimizer",
+    "momentum"
+   ],
+   "area": "ml",
+   "description": "Optimisers that smooth and rescale gradient steps.",
+   "prerequisites": [
+    "sgd"
+   ]
+  },
+  {
+   "id": "linear-regression",
+   "label": "Linear regression",
+   "aliases": [],
+   "area": "ml",
+   "description": "Fitting a linear function by minimising squared error.",
+   "prerequisites": [
+    "loss-function",
+    "linear-algebra"
+   ]
+  },
+  {
+   "id": "logistic-regression",
+   "label": "Logistic regression",
+   "aliases": [
+    "sigmoid classifier"
+   ],
+   "area": "ml",
+   "description": "Binary classification with a sigmoid of a linear score, trained with cross-entropy.",
+   "prerequisites": [
+    "linear-regression",
+    "entropy"
+   ]
+  },
+  {
+   "id": "overfitting",
+   "label": "Overfitting and regularization",
+   "aliases": [
+    "overfitting",
+    "regularization",
+    "generalization"
+   ],
+   "area": "ml",
+   "description": "Fitting training data too closely, and the penalties and checks that prevent it.",
+   "prerequisites": [
+    "ml-basics"
+   ]
+  },
+  {
+   "id": "activation-functions",
+   "label": "Activation functions",
+   "aliases": [
+    "activation function",
+    "nonlinearity"
+   ],
+   "area": "dl",
+   "description": "Nonlinear functions (ReLU, tanh, sigmoid) applied between layers.",
+   "prerequisites": []
+  },
+  {
+   "id": "neural-network",
+   "label": "Neural networks",
+   "aliases": [
+    "neural network",
+    "neural net",
+    "multilayer perceptron",
+    "MLP"
+   ],
+   "area": "dl",
+   "description": "Layers of linear maps and nonlinearities composed into one model.",
+   "prerequisites": [
+    "logistic-regression",
+    "activation-functions"
+   ]
+  },
+  {
+   "id": "computational-graph",
+   "label": "Computational graphs",
+   "aliases": [
+    "computational graph",
+    "computation graph"
+   ],
+   "area": "dl",
+   "description": "A computation written as a graph of simple operations.",
+   "prerequisites": [
+    "chain-rule"
+   ]
+  },
+  {
+   "id": "backpropagation",
+   "label": "Backpropagation",
+   "aliases": [
+    "backprop",
+    "reverse-mode autodiff",
+    "reverse mode differentiation"
+   ],
+   "area": "dl",
+   "description": "Computing all gradients of a loss by applying the chain rule backwards through the graph.",
+   "prerequisites": [
+    "chain-rule",
+    "computational-graph",
+    "neural-network",
+    "gradient-descent"
+   ]
+  },
+  {
+   "id": "cnn",
+   "label": "Convolutional neural networks",
+   "aliases": [
+    "CNN",
+    "CNNs",
+    "convnet",
+    "convolution"
+   ],
+   "area": "dl",
+   "description": "Networks that share weights across positions with convolutions.",
+   "prerequisites": [
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "rnn",
+   "label": "Recurrent neural networks",
+   "aliases": [
+    "RNN",
+    "RNNs",
+    "LSTM"
+   ],
+   "area": "dl",
+   "description": "Networks that process sequences step by step with a hidden state.",
+   "prerequisites": [
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "embeddings",
+   "label": "Embeddings",
+   "aliases": [
+    "embedding",
+    "word embeddings",
+    "embedding layer"
+   ],
+   "area": "dl",
+   "description": "Learned vectors that represent discrete items such as tokens.",
+   "prerequisites": [
+    "neural-network"
+   ]
+  },
+  {
+   "id": "residual",
+   "label": "Residual connections",
+   "aliases": [
+    "residual connection",
+    "skip connection",
+    "skip connections"
+   ],
+   "area": "dl",
+   "description": "Adding a layer's input to its output so deep networks train.",
+   "prerequisites": [
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "normalization",
+   "label": "Normalization layers",
+   "aliases": [
+    "layer normalization",
+    "layer norm",
+    "batch normalization",
+    "batch norm"
+   ],
+   "area": "dl",
+   "description": "Rescaling activations inside a network to stabilise training.",
+   "prerequisites": [
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "search",
+   "label": "Search algorithms",
+   "aliases": [
+    "graph search",
+    "state space search",
+    "BFS",
+    "DFS",
+    "breadth-first search",
+    "depth-first search"
+   ],
+   "area": "search",
+   "description": "Systematically exploring states to reach a goal.",
+   "prerequisites": []
+  },
+  {
+   "id": "game-trees",
+   "label": "Adversarial search",
+   "aliases": [
+    "game tree",
+    "game trees",
+    "game tree search"
+   ],
+   "area": "search",
+   "description": "Search over the moves of two players with opposing goals.",
+   "prerequisites": [
+    "search"
+   ]
+  },
+  {
+   "id": "minimax",
+   "label": "Minimax",
+   "aliases": [
+    "minimax search"
+   ],
+   "area": "search",
+   "description": "Choose the move that maximises your worst-case outcome against an optimal opponent.",
+   "prerequisites": [
+    "game-trees"
+   ]
+  },
+  {
+   "id": "alpha-beta",
+   "label": "Alpha-beta pruning",
+   "aliases": [
+    "alpha beta"
+   ],
+   "area": "search",
+   "description": "Skipping minimax branches that cannot change the decision.",
+   "prerequisites": [
+    "minimax"
+   ]
+  },
+  {
+   "id": "expectimax",
+   "label": "Expectimax",
+   "aliases": [],
+   "area": "search",
+   "description": "Minimax with chance nodes that average over random outcomes.",
+   "prerequisites": [
+    "minimax",
+    "expectation"
+   ]
+  },
+  {
+   "id": "rl",
+   "label": "Reinforcement learning",
+   "aliases": [
+    "RL"
+   ],
+   "area": "rl",
+   "description": "Learning to act from rewards by trial and error.",
+   "prerequisites": [
+    "probability",
+    "expectation"
+   ]
+  },
+  {
+   "id": "bandits",
+   "label": "Multi-armed bandits",
+   "aliases": [
+    "bandit",
+    "bandits",
+    "exploration vs exploitation",
+    "epsilon-greedy"
+   ],
+   "area": "rl",
+   "description": "Choosing between actions with unknown rewards; the explore/exploit trade-off.",
+   "prerequisites": [
+    "rl"
+   ]
+  },
+  {
+   "id": "mdp",
+   "label": "Markov decision processes",
+   "aliases": [
+    "MDP",
+    "MDPs",
+    "Markov decision process"
+   ],
+   "area": "rl",
+   "description": "States, actions, transition probabilities and rewards: the formal RL problem.",
+   "prerequisites": [
+    "rl",
+    "conditional-probability"
+   ]
+  },
+  {
+   "id": "policy",
+   "label": "Policy",
+   "aliases": [
+    "policies",
+    "stochastic policy"
+   ],
+   "area": "rl",
+   "description": "The agent's rule for choosing actions in each state.",
+   "prerequisites": [
+    "mdp"
+   ]
+  },
+  {
+   "id": "return",
+   "label": "Return and discounting",
+   "aliases": [
+    "return",
+    "discounted return",
+    "discount factor"
+   ],
+   "area": "rl",
+   "description": "The (discounted) sum of future rewards an agent tries to maximise.",
+   "prerequisites": [
+    "mdp"
+   ]
+  },
+  {
+   "id": "value-function",
+   "label": "Value functions",
+   "aliases": [
+    "value function",
+    "state value function",
+    "state-value function"
+   ],
+   "area": "rl",
+   "description": "Expected return from a state when following a policy.",
+   "prerequisites": [
+    "policy",
+    "return",
+    "expectation"
+   ]
+  },
+  {
+   "id": "q-function",
+   "label": "Action-value function",
+   "aliases": [
+    "Q-function",
+    "Q function",
+    "Q-value",
+    "Q-values",
+    "action value"
+   ],
+   "area": "rl",
+   "description": "Expected return after taking an action in a state, then following the policy.",
+   "prerequisites": [
+    "value-function"
+   ]
+  },
+  {
+   "id": "bellman",
+   "label": "Bellman equations",
+   "aliases": [
+    "Bellman equation",
+    "Bellman backup"
+   ],
+   "area": "rl",
+   "description": "Recursive equations linking a state's value to its successors' values.",
+   "prerequisites": [
+    "value-function",
+    "q-function"
+   ]
+  },
+  {
+   "id": "dynamic-programming",
+   "label": "Value iteration and policy iteration",
+   "aliases": [
+    "value iteration",
+    "policy iteration",
+    "dynamic programming"
+   ],
+   "area": "rl",
+   "description": "Solving a known MDP by repeated Bellman backups.",
+   "prerequisites": [
+    "bellman"
+   ]
+  },
+  {
+   "id": "td-learning",
+   "label": "Temporal-difference learning",
+   "aliases": [
+    "TD learning",
+    "TD error",
+    "temporal difference"
+   ],
+   "area": "rl",
+   "description": "Updating value estimates from sampled one-step transitions and bootstrapped targets.",
+   "prerequisites": [
+    "bellman",
+    "sampling"
+   ]
+  },
+  {
+   "id": "q-learning",
+   "label": "Q-learning",
+   "aliases": [],
+   "area": "rl",
+   "description": "Learning action values off-policy with TD updates.",
+   "prerequisites": [
+    "td-learning",
+    "q-function",
+    "bandits"
+   ]
+  },
+  {
+   "id": "dqn",
+   "label": "Deep Q-networks",
+   "aliases": [
+    "DQN",
+    "deep Q-learning",
+    "experience replay"
+   ],
+   "area": "rl",
+   "description": "Q-learning with a neural network, replay buffer and target network.",
+   "prerequisites": [
+    "q-learning",
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "policy-gradient",
+   "label": "Policy gradient",
+   "aliases": [
+    "policy gradients",
+    "policy gradient theorem",
+    "score function estimator"
+   ],
+   "area": "rl",
+   "description": "Improving a parameterised policy by gradient ascent on expected return, using the log-probability trick.",
+   "prerequisites": [
+    "policy",
+    "return",
+    "log-likelihood",
+    "gradient-descent",
+    "sampling"
+   ]
+  },
+  {
+   "id": "reinforce",
+   "label": "REINFORCE",
+   "aliases": [
+    "Monte Carlo policy gradient"
+   ],
+   "area": "rl",
+   "description": "The basic policy-gradient algorithm: weight each action's log-probability by its return.",
+   "prerequisites": [
+    "policy-gradient"
+   ]
+  },
+  {
+   "id": "baseline",
+   "label": "Baselines and variance reduction",
+   "aliases": [
+    "baseline",
+    "variance reduction"
+   ],
+   "area": "rl",
+   "description": "Subtracting a state-dependent baseline from returns to reduce policy-gradient variance.",
+   "prerequisites": [
+    "reinforce",
+    "value-function"
+   ]
+  },
+  {
+   "id": "advantage-function",
+   "label": "Advantage function",
+   "aliases": [
+    "advantage",
+    "advantages"
+   ],
+   "area": "rl",
+   "description": "How much better an action is than the policy's average in that state: A = Q - V.",
+   "prerequisites": [
+    "value-function",
+    "q-function"
+   ]
+  },
+  {
+   "id": "gae",
+   "label": "Generalized advantage estimation",
+   "aliases": [
+    "GAE",
+    "advantage estimation"
+   ],
+   "area": "rl",
+   "description": "Estimating advantages from TD errors with an exponentially weighted (lambda) average.",
+   "prerequisites": [
+    "advantage-function",
+    "td-learning"
+   ]
+  },
+  {
+   "id": "actor-critic",
+   "label": "Actor-critic",
+   "aliases": [
+    "actor critic",
+    "A2C",
+    "advantage actor-critic"
+   ],
+   "area": "rl",
+   "description": "A policy (actor) trained with advantages from a learned value function (critic).",
+   "prerequisites": [
+    "policy-gradient",
+    "baseline",
+    "value-function",
+    "advantage-function",
+    "td-learning"
+   ]
+  },
+  {
+   "id": "trpo",
+   "label": "Trust region policy optimization",
+   "aliases": [
+    "TRPO",
+    "trust region"
+   ],
+   "area": "rl",
+   "description": "Policy updates constrained to a KL trust region around the old policy.",
+   "prerequisites": [
+    "actor-critic",
+    "kl-divergence",
+    "importance-sampling"
+   ]
+  },
+  {
+   "id": "ppo",
+   "label": "Proximal policy optimization",
+   "aliases": [
+    "PPO",
+    "clipped surrogate objective"
+   ],
+   "area": "rl",
+   "description": "Actor-critic updates that clip the new/old policy probability ratio to keep steps small.",
+   "prerequisites": [
+    "actor-critic",
+    "gae",
+    "importance-sampling",
+    "kl-divergence"
+   ]
+  },
+  {
+   "id": "tokenization",
+   "label": "Tokenization",
+   "aliases": [
+    "tokenizer",
+    "tokens",
+    "byte pair encoding",
+    "BPE"
+   ],
+   "area": "lm",
+   "description": "Splitting text into the discrete units a language model reads.",
+   "prerequisites": []
+  },
+  {
+   "id": "language-model",
+   "label": "Language modeling",
+   "aliases": [
+    "language model",
+    "language models",
+    "next-token prediction",
+    "autoregressive language model"
+   ],
+   "area": "lm",
+   "description": "Predicting the next token's probability given previous tokens; trained by maximum likelihood.",
+   "prerequisites": [
+    "conditional-probability",
+    "log-likelihood",
+    "tokenization"
+   ]
+  },
+  {
+   "id": "attention",
+   "label": "Attention",
+   "aliases": [
+    "attention mechanism",
+    "self-attention",
+    "scaled dot-product attention"
+   ],
+   "area": "lm",
+   "description": "Mixing token representations with softmax weights from query-key similarity.",
+   "prerequisites": [
+    "embeddings",
+    "softmax",
+    "linear-algebra"
+   ]
+  },
+  {
+   "id": "transformer",
+   "label": "Transformers",
+   "aliases": [
+    "transformer",
+    "transformer architecture",
+    "decoder-only transformer"
+   ],
+   "area": "lm",
+   "description": "Stacks of attention and MLP blocks with residuals and normalisation.",
+   "prerequisites": [
+    "attention",
+    "residual",
+    "normalization",
+    "embeddings",
+    "backpropagation",
+    "sgd"
+   ]
+  },
+  {
+   "id": "llm",
+   "label": "Large language models",
+   "aliases": [
+    "LLM",
+    "LLMs",
+    "pretrained LM",
+    "pretrained language model",
+    "pretraining"
+   ],
+   "area": "lm",
+   "description": "Transformer language models pretrained on large text corpora.",
+   "prerequisites": [
+    "language-model",
+    "transformer"
+   ]
+  },
+  {
+   "id": "decoding",
+   "label": "Decoding and sampling",
+   "aliases": [
+    "temperature",
+    "top-k sampling",
+    "nucleus sampling",
+    "greedy decoding"
+   ],
+   "area": "lm",
+   "description": "Generating text from a language model's next-token distribution.",
+   "prerequisites": [
+    "language-model",
+    "softmax"
+   ]
+  },
+  {
+   "id": "fine-tuning",
+   "label": "Fine-tuning",
+   "aliases": [
+    "fine tuning",
+    "transfer learning"
+   ],
+   "area": "lm",
+   "description": "Continuing to train a pretrained model on task-specific data.",
+   "prerequisites": [
+    "llm"
+   ]
+  },
+  {
+   "id": "sft",
+   "label": "Supervised fine-tuning",
+   "aliases": [
+    "SFT",
+    "instruction tuning"
+   ],
+   "area": "lm",
+   "description": "Fine-tuning a language model on demonstration responses with the next-token loss.",
+   "prerequisites": [
+    "fine-tuning",
+    "language-model"
+   ]
+  },
+  {
+   "id": "peft",
+   "label": "Parameter-efficient fine-tuning",
+   "aliases": [
+    "LoRA",
+    "PEFT",
+    "low-rank adaptation"
+   ],
+   "area": "lm",
+   "description": "Fine-tuning a small set of added parameters instead of the whole model.",
+   "prerequisites": [
+    "fine-tuning"
+   ]
+  },
+  {
+   "id": "human-preferences",
+   "label": "Preference data",
+   "aliases": [
+    "human preferences",
+    "preference pairs",
+    "pairwise comparisons",
+    "human feedback"
+   ],
+   "area": "alignment",
+   "description": "People choosing which of two model responses is better.",
+   "prerequisites": []
+  },
+  {
+   "id": "bradley-terry",
+   "label": "Bradley-Terry model",
+   "aliases": [
+    "Bradley Terry",
+    "pairwise preference model"
+   ],
+   "area": "alignment",
+   "description": "Models P(A preferred to B) as a sigmoid of the score difference.",
+   "prerequisites": [
+    "human-preferences",
+    "logistic-regression",
+    "log-likelihood"
+   ]
+  },
+  {
+   "id": "reward-model",
+   "label": "Reward models",
+   "aliases": [
+    "reward model",
+    "preference model",
+    "RM"
+   ],
+   "area": "alignment",
+   "description": "A language model fine-tuned to score responses, trained on preference pairs.",
+   "prerequisites": [
+    "bradley-terry",
+    "llm",
+    "fine-tuning"
+   ]
+  },
+  {
+   "id": "rl-finetuning",
+   "label": "RL fine-tuning of language models",
+   "aliases": [
+    "RL fine-tuning",
+    "LM as a policy",
+    "language model as policy"
+   ],
+   "area": "alignment",
+   "description": "Treating a language model as a policy whose actions are tokens and optimising a reward with policy gradients.",
+   "prerequisites": [
+    "llm",
+    "mdp",
+    "policy-gradient"
+   ]
+  },
+  {
+   "id": "reward-hacking",
+   "label": "Reward hacking",
+   "aliases": [
+    "reward overoptimization",
+    "reward over-optimization",
+    "specification gaming",
+    "Goodhart's law"
+   ],
+   "area": "alignment",
+   "description": "The policy exploiting flaws in the reward signal instead of doing the intended task.",
+   "prerequisites": [
+    "rl-finetuning"
+   ]
+  },
+  {
+   "id": "kl-penalty",
+   "label": "KL penalty to a reference model",
+   "aliases": [
+    "KL penalty",
+    "KL regularization",
+    "reference model",
+    "KL control"
+   ],
+   "area": "alignment",
+   "description": "Penalising divergence from the starting model to limit reward hacking and drift.",
+   "prerequisites": [
+    "kl-divergence",
+    "rl-finetuning",
+    "reward-hacking"
+   ]
+  },
+  {
+   "id": "rlhf",
+   "label": "Reinforcement learning from human feedback",
+   "aliases": [
+    "RLHF"
+   ],
+   "area": "alignment",
+   "description": "SFT, then a reward model from human preferences, then PPO fine-tuning against it with a KL penalty.",
+   "prerequisites": [
+    "sft",
+    "reward-model",
+    "ppo",
+    "kl-penalty",
+    "rl-finetuning"
+   ]
+  },
+  {
+   "id": "dpo",
+   "label": "Direct preference optimization",
+   "aliases": [
+    "DPO"
+   ],
+   "area": "alignment",
+   "description": "Optimising the policy directly on preference pairs without a separate reward model or RL loop.",
+   "prerequisites": [
+    "bradley-terry",
+    "kl-penalty",
+    "sft"
+   ]
+  },
+  {
+   "id": "verifiable-rewards",
+   "label": "Verifiable rewards",
+   "aliases": [
+    "verifier",
+    "verifiers",
+    "rule-based reward",
+    "programmatic reward"
+   ],
+   "area": "alignment",
+   "description": "Rewards computed by a program that checks the answer, e.g. a math checker or unit tests.",
+   "prerequisites": [
+    "rl-finetuning"
+   ]
+  },
+  {
+   "id": "grpo",
+   "label": "Group relative policy optimization",
+   "aliases": [
+    "GRPO"
+   ],
+   "area": "alignment",
+   "description": "PPO-style updates whose baseline is the mean reward of a group of samples for the same prompt, with no critic.",
+   "prerequisites": [
+    "ppo",
+    "baseline",
+    "rl-finetuning"
+   ]
+  },
+  {
+   "id": "rlvr",
+   "label": "Reinforcement learning with verifiable rewards",
+   "aliases": [
+    "RLVR"
+   ],
+   "area": "alignment",
+   "description": "RL fine-tuning of a language model against automatically checkable rewards instead of a learned reward model.",
+   "prerequisites": [
+    "verifiable-rewards",
+    "rl-finetuning",
+    "grpo",
+    "reward-hacking"
+   ]
+  }
+ ]
+}

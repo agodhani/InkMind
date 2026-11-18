@@ -1,0 +1,64 @@
+{
+ "name": "model-proposals",
+ "description": "Backprop notes plus two model concepts: an accepted 'Value function' (counts as known) and an unreviewed 'Q-function' proposal (must not count as known; at most partly known).",
+ "notebooks": [
+  "backprop"
+ ],
+ "declared": [],
+ "goals": [
+  "advantage function"
+ ],
+ "graphPatch": {
+  "concepts": [
+   {
+    "id": "m_value-function",
+    "label": "Value function",
+    "aliases": [],
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1",
+      "strokeIds": [],
+      "extractor": "model",
+      "surface": "value function"
+     }
+    ],
+    "origin": "model",
+    "status": "accepted"
+   },
+   {
+    "id": "m_q-function",
+    "label": "Q-function",
+    "aliases": [],
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1",
+      "strokeIds": [],
+      "extractor": "model",
+      "surface": "Q-function"
+     }
+    ],
+    "origin": "model",
+    "status": "proposed"
+   }
+  ]
+ },
+ "expected": {
+  "steps": [
+   "q-function",
+   "advantage-function"
+  ],
+  "known": [
+   "value-function"
+  ],
+  "partial": [
+   "q-function"
+  ],
+  "mustSkip": [
+   "policy",
+   "return",
+   "mdp"
+  ]
+ }
+}
