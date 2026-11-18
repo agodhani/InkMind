@@ -1,8 +1,11 @@
 import { expect, it } from 'vitest';
-import { largeDemoPages, loadKbDemo, replayNotebook, type DemoNotebook } from './kbDemo';
+import { largeDemoPages, loadKbDemo, loadLearningPathDemo, replayNotebook, type DemoNotebook } from './kbDemo';
 import { extractPage } from '../kb/extract';
 import { buildGraph } from '../kb/graph';
 import { termKey } from '../kb/normalize';
+import { mlMap } from '../path/model';
+import { matchNotes } from '../path/match';
+import { planPath } from '../path/plan';
 
 it('replays each notebook to final pages with defining concepts preserved', () => {
   const fixtures = import.meta.glob<DemoNotebook>('../../eval/kb/notebooks/*.json', { eager: true, import: 'default' });
@@ -24,4 +27,19 @@ it('replays each notebook to final pages with defining concepts preserved', () =
   expect(buildGraph(large.map(p => extractPage(p, { glossary: [] }))).concepts).toHaveLength(120);
   expect(replayNotebook({ name: 'empty', glossary: [], steps: [] })).toEqual([]);
   expect(largeDemoPages(0)).toEqual([]);
+});
+
+it('loads only the prior-knowledge demo notebooks and creates a substantial offline RLHF/RLVR path', () => {
+  const { pages, goals } = loadLearningPathDemo();
+  expect(goals).toEqual(['rlhf', 'rlvr']);
+  expect(pages.every(p => /^path-(backprop|minimax)-/.test(p.id))).toBe(true);
+  const extractions = pages.map(page => extractPage(page, { glossary: [] }));
+  const matches = matchNotes(mlMap, { extractions, graph: buildGraph(extractions) });
+  for (const label of ['Backpropagation', 'Minimax']) {
+    const concept = mlMap.concepts.find(c => c.label === label);
+    expect(matches.find(m => m.conceptId === concept?.id)?.basis).toBe('notes');
+  }
+  const plan = planPath(mlMap, goals, matches);
+  expect(plan.steps.filter(s => s.status !== 'done').length).toBeGreaterThanOrEqual(40);
+  expect(plan.next.length).toBeGreaterThan(0);
 });

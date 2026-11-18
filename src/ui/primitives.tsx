@@ -44,6 +44,7 @@ export interface SegmentOption<T extends string> {
   shortcut?: string;
   /** Hide the text and show only the icon (label still used for aria/tooltip). */
   iconOnly?: boolean;
+  className?: string;
 }
 
 export function Segmented<T extends string>({ value, options, onChange, label, size = 'md' }: { value: T; options: SegmentOption<T>[]; onChange: (v: T) => void; label: string; size?: 'sm' | 'md' }) {
@@ -57,7 +58,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, s
           aria-checked={o.value === value}
           aria-label={o.iconOnly ? o.label : undefined}
           data-tip={o.iconOnly || o.shortcut ? `${o.label}${o.shortcut ? ` · ${o.shortcut}` : ''}` : undefined}
-          className={o.value === value ? 'is-active' : ''}
+          className={[o.value === value ? 'is-active' : '', o.className].filter(Boolean).join(' ')}
           onClick={() => onChange(o.value)}
         >
           {o.icon && <Icon name={o.icon} />}

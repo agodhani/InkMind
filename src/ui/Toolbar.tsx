@@ -8,7 +8,7 @@ import { formatShortcut, SHORTCUTS } from './shortcuts';
 import { StatusPill } from './StatusPill';
 import type { ResolvedTheme } from './theme';
 
-export type ViewMode = 'ink' | 'digital' | 'split' | 'map';
+export type ViewMode = 'ink' | 'digital' | 'split' | 'map' | 'path';
 
 export interface ToolbarProps {
   title: string;
@@ -36,6 +36,7 @@ export interface ToolbarProps {
   conceptCount: number;
   onOpenPages: () => void;
   onOpenSettings: () => void;
+  onWhatNext: () => void;
   onShowTips: () => void;
   theme: ResolvedTheme;
   onToggleTheme: () => void;
@@ -58,6 +59,7 @@ export function Toolbar(p: ToolbarProps) {
         { value: 'split', label: 'Split', icon: 'split', shortcut: sc('viewSplit'), iconOnly: p.compact },
         { value: 'digital', label: 'Digital', icon: 'digital', shortcut: sc('viewDigital'), iconOnly: p.compact },
         { value: 'map', label: 'Map', icon: 'map', iconOnly: p.compact },
+        { value: 'path', label: 'Path', icon: 'path', className: 'path-tab' },
       ]}
     />
   );
@@ -112,13 +114,16 @@ export function Toolbar(p: ToolbarProps) {
         {!p.compact && (
           <div className="tools-inline">
             <div className="toolgroup">{viewSeg}</div>
-            {tools}
+            {p.view !== 'path' && tools}
           </div>
         )}
         <span className="spacer" />
-        <StatusPill status={p.status} live={p.live} providerLabel={p.providerLabel} onRetry={p.onTranscribeNow} />
-        <button className="btn ghost kb-toolbar-concepts" aria-label={`Concepts on this page (${p.conceptCount})`} onClick={p.onOpenConcepts}><Icon name="map" /><span className="badge">{p.conceptCount}</span></button>
-        {!p.compact && transcribeBtn}
+        <IconButton icon="path" label="What next?" showLabel onClick={p.onWhatNext} className="path-quick" />
+        {p.view !== 'path' && <>
+          <StatusPill status={p.status} live={p.live} providerLabel={p.providerLabel} onRetry={p.onTranscribeNow} />
+          <button className="btn ghost kb-toolbar-concepts" aria-label={`Concepts on this page (${p.conceptCount})`} onClick={p.onOpenConcepts}><Icon name="map" /><span className="badge">{p.conceptCount}</span></button>
+          {!p.compact && transcribeBtn}
+        </>}
         <IconButton icon={p.theme === 'dark' ? 'sun' : 'moon'} label={p.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} shortcut={sc('toggleTheme')} onClick={p.onToggleTheme} className="ghost" />
         <IconButton icon="settings" label="Settings" shortcut={sc('settings')} onClick={p.onOpenSettings} className="ghost" tipAlign={p.compact ? 'end' : 'center'} />
         {!p.compact && more}
@@ -126,9 +131,9 @@ export function Toolbar(p: ToolbarProps) {
       {p.compact && (
         <nav className="toolstrip" aria-label="Tools">
           {viewSeg}
-          {tools}
+          {p.view !== 'path' && tools}
           <span className="spacer" />
-          {transcribeBtn}
+          {p.view !== 'path' && transcribeBtn}
           {more}
         </nav>
       )}

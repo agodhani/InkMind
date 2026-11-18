@@ -10,8 +10,10 @@ import { configuredKbExtractor } from './modelSettings';
 import { KbSyncer } from './sync';
 
 export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSettings, busy: boolean) {
-  const [graph, setGraph] = useState<KbGraph>({ concepts: [], edges: [] });
+  const [{ graph, extractions }, setSnapshot] = useState<{ graph: KbGraph; extractions: PageExtraction[] }>({ graph: { concepts: [], edges: [] }, extractions: [] });
   const [decisions, setDecisions] = useState(emptyDecisions);
+  const [decisionsLoaded, setDecisionsLoaded] = useState(false);
+  const [indexed, setIndexed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = useRef({ pages, settings, busy }); current.current = { pages, settings, busy };
   const decisionRef = useRef(decisions);
@@ -19,7 +21,7 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
   const decisionsStore = useMemo(() => new IndexedDbDecisionsStore(), []);
   const report = useCallback((e: unknown) => setError(e instanceof Error ? e.message : String(e)), []);
   const syncer = useMemo(() => new KbSyncer(new IndexedDbKnowledgeStore(), () => current.current.settings.glossary, {
-    onGraph: setGraph, onError: report, busy: () => current.current.busy,
+    onGraph: (graph, extractions) => setSnapshot({ graph, extractions }), onError: report, busy: () => current.current.busy,
     modelExtractor: () => { try { return configuredKbExtractor(current.current.settings); } catch (e) { report(e); return undefined; } },
   }), [report]);
   useEffect(() => {
@@ -29,17 +31,15 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
       tx.onabort = () => { connection.close(); reject(tx.error); };
     })).catch(report);
     void syncer.load().catch(report);
-    void decisionsStore.load().then(d => { decisionRef.current = d; setDecisions(d); }).catch(report);
+    void decisionsStore.load().then(d => { decisionRef.current = d; setDecisions(d); setDecisionsLoaded(true); }).catch(report);
     return () => syncer.abortModel();
   }, [decisionsStore, report, syncer]);
   useEffect(() => {
+    let active = true;
     syncer.abortModel();
-    if (loaded) void syncer.indexAll(current.current.pages).catch(report);
-  }, [loaded, settings.glossary, settings.modelConceptExtraction, settings.provider, settings.ollamaUrl, settings.openRouterApiKey, syncer, report]);
-  useEffect(() => {
-    if (busy) syncer.abortModel();
-    else if (loaded) void syncer.indexAll(current.current.pages).catch(report);
-  }, [busy, loaded, syncer, report]);
+    if (loaded && !busy) void syncer.indexAll(current.current.pages).then(() => { if (active) setIndexed(true); }).catch(report);
+    return () => { active = false; };
+  }, [busy, loaded, settings.glossary, settings.modelConceptExtraction, settings.provider, settings.ollamaUrl, settings.openRouterApiKey, syncer, report]);
   const decide = useCallback((fn: (d: KbDecisions) => KbDecisions) => {
     const next = fn(decisionRef.current); decisionRef.current = next; setDecisions(next);
     saves.current = saves.current.then(() => decisionsStore.save(next)).catch(report);
@@ -55,5 +55,6 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
   const pageEdited = useCallback((id: string) => syncer.abortModel(id), [syncer]);
   const pageDeleted = useCallback((id: string) => { void syncer.pageDeleted(id).catch(report); }, [syncer, report]);
   const displayed = useMemo(() => applyDecisions(graph, decisions), [graph, decisions]);
-  return { graph: displayed, rawGraph: graph, decisions, decide, review, seedExtractions, pageChanged, pageEdited, pageDeleted, error };
+  return { graph: displayed, rawGraph: graph, extractions, ready: indexed && decisionsLoaded, decisions, decide, review, seedExtractions,
+    seedPages: (pages: Page[]) => syncer.seedPages(pages), pageChanged, pageEdited, pageDeleted, error };
 }
