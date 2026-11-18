@@ -57,10 +57,13 @@ export function applyDecisions(graph: KbGraph, decisions: KbDecisions): KbGraph 
 export function renameConcept(d: KbDecisions, key: string, label: string): KbDecisions {
   key = termKey(key);
   const old = d.renames.find(r => r.key === key || termKey(r.label) === key);
-  return { ...d, renames: [...d.renames.filter(r => r !== old && r.key !== key), { key: old?.key ?? key, label }] };
+  const stable = (endpoint: string) => old && endpoint === termKey(old.label) ? old.key : endpoint;
+  return { ...d, renames: [...d.renames.filter(r => r !== old && r.key !== key), { key: old?.key ?? key, label }], merges: d.merges.map(m => ({ from: stable(m.from), into: stable(m.into) })) };
 }
 export function mergeConcept(d: KbDecisions, from: string, into: string): KbDecisions {
   from = termKey(from); into = termKey(into);
+  from = d.renames.find(r => termKey(r.label) === from)?.key ?? from;
+  into = d.renames.find(r => termKey(r.label) === into)?.key ?? into;
   return from === into ? d : { ...d, merges: [...d.merges.filter(m => m.from !== from), { from, into }] };
 }
 export function deleteConcept(d: KbDecisions, key: string): KbDecisions {
