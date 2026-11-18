@@ -85,8 +85,12 @@ export function pathRegressions(now: PathCounts, base: PathCounts): string[] {
   ];
   for (const [label, n, d] of rates) if (ratio(now[n], now[d]) < ratio(base[n], base[d])) worse.push(`${label} ${base[n]}/${base[d]} → ${now[n]}/${now[d]}`);
   if (now.orderingViolations > 0) worse.push(`orderingViolations ${now.orderingViolations}`);
-  if (now.mustSkipViolations > base.mustSkipViolations) worse.push(`mustSkipViolations ${base.mustSkipViolations} → ${now.mustSkipViolations}`);
-  for (const key of ['cases', 'deterministic', 'replanStable'] as const) if (now[key] < base[key]) worse.push(`${key} ${base[key]} → ${now[key]}`);
+  if (now.mustSkipViolations > 0) worse.push(`mustSkipViolations ${now.mustSkipViolations}`);
+  if (now.cases < base.cases) worse.push(`cases ${base.cases} → ${now.cases}`);
+  for (const [success, expected] of [['deterministic', 'cases'], ['replanStable', 'replans'], ['doneHits', 'doneExpected']] as const) {
+    if (now[success] < now[expected]) worse.push(`${success} ${now[success]}/${now[expected]} must be complete`);
+    else if (success !== 'doneHits' && now[success] < base[success]) worse.push(`${success} ${base[success]} → ${now[success]}`);
+  }
   return worse;
 }
 
