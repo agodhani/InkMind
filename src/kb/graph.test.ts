@@ -8,6 +8,16 @@ const page = (id: string, blocks: Partial<DigitalBlock>[]): Page => ({ id, title
 const extract = (p: Page) => extractPage(p, { glossary: [] });
 
 describe('graph merge', () => {
+  it('scans two-letter concepts on token boundaries, not inside world', () => {
+    const definitions = extract(page('a', [{ text: '[[AI]] [[RL]]' }]));
+    const scanned = extract(page('b', [{ kind: 'heading', text: 'Methods' }, { text: 'AI and RL work.' }, { text: 'world' }]));
+    const graph = buildGraph([definitions, scanned]);
+    for (const label of ['AI', 'RL']) {
+      const concept = graph.concepts.find(c => c.label === label)!;
+      expect(concept.provenance.filter(p => p.extractor === 'det:mention').map(p => p.blockId)).toEqual(['b1']);
+      expect(graph.edges.some(e => e.from === 'c_method' && e.to === concept.id && e.kind === 'mentions')).toBe(true);
+    }
+  });
   it.each([['Reward loop', true], ['Training loop', false]] as const)('emits a section relation only when caption %s names its figure concept', (caption, named) => {
     const extraction = extract(page('a', [{ kind: 'heading', text: 'Learning' }, { kind: 'diagram', text: caption, figure: { kind: 'graph', shapes: [], labels: [], edges: [], nodes: [{ id: 'reward', label: 'Reward', strokeIds: ['reward-ink'] }] } }]));
     const graph = buildGraph([extraction]);

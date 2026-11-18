@@ -57,7 +57,7 @@ export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): K
     concepts.push(c); cluster.keys.forEach(k => byKey.set(k, c));
   }
   const relations: RelationMention[] = pages.flatMap(p => p.relations);
-  const matches = [...byKey].filter(([key]) => key.length >= 3).map(([key, value]) => ({ key, value }));
+  const matches = [...byKey].filter(([key]) => key.length >= 2).map(([key, value]) => ({ key, value }));
   for (const page of pages) for (const span of page.texts) {
     const heading = page.terms.find(t => t.prov.blockId === span.blockId && t.prov.extractor === 'det:heading');
     const headingKeys = heading ? new Set([heading.term, ...(heading.aliases ?? [])].map(termKey)) : undefined;
