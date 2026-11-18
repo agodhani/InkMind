@@ -16,4 +16,12 @@ describe('wikilinks in the digital view', () => {
     expect(conceptForLink(graph, 'Proximal Policy Optimization (PPO)')).toBe('c1');
     expect(conceptForLink(graph, 'TRPO')).toBeNull();
   });
+
+  it('prefers a concept matching the full target over the stripped term', () => {
+    const graph = { concepts: [
+      { id: 'c1', label: 'Policy', aliases: [], provenance: [] },
+      { id: 'c2', label: 'Policy (reinforcement learning)', aliases: [], provenance: [] },
+    ], edges: [] } as unknown as KbGraph;
+    expect(conceptForLink(graph, 'Policy (reinforcement learning)')).toBe('c2');
+  });
 });

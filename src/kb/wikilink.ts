@@ -13,5 +13,5 @@ export function parseWikilink(link: string): { target: string; shown: string } {
 
 export function conceptForLink(graph: KbGraph, target: string): string | null {
   const { term } = splitParenAlias(target);
-  return graph.concepts.find(c => conceptMatches(c, target) || conceptMatches(c, term))?.id ?? null;
+  return (graph.concepts.find(c => conceptMatches(c, target)) ?? graph.concepts.find(c => conceptMatches(c, term)))?.id ?? null;
 }
