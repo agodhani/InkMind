@@ -13,7 +13,20 @@ function provenance(items: Provenance[]): Provenance[] {
 }
 
 export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): KbGraph {
-  const pages = [...extractions].sort((a, b) => compare(a.pageId, b.pageId));
+  const known = extractions.flatMap(p => p.terms.filter(t => t.defines).flatMap(t => [t.term, ...(t.aliases ?? [])]))
+    .map(termKey).filter(key => key.length >= 2).map(key => ({ key, value: key }));
+  const pages = [...extractions].sort((a, b) => compare(a.pageId, b.pageId)).map(page => {
+    const matched = new Map(page.texts.map(span => {
+      const heading = page.terms.find(t => t.prov.blockId === span.blockId && t.prov.extractor === 'det:heading');
+      const headingKeys = heading ? new Set([heading.term, ...(heading.aliases ?? [])].map(termKey)) : undefined;
+      return [span.blockId, new Set(scanTerms(span.text, known, headingKeys).map(m => m.value))] as const;
+    }));
+    const terms = page.terms.filter(t => t.prov.extractor !== 'det:glossary' || !matched.has(t.prov.blockId)
+      || [t.term, ...(t.aliases ?? [])].some(s => matched.get(t.prov.blockId)!.has(termKey(s))));
+    const relations = page.relations.filter(r => r.prov.extractor !== 'det:glossary'
+      || terms.some(t => t.prov.extractor === 'det:glossary' && t.prov.blockId === r.prov.blockId && termKey(t.term) === termKey(r.to)));
+    return { ...page, terms, relations };
+  });
   const terms = pages.flatMap(p => p.terms), parents = new Map<string, string>();
   const root = (key: string): string => {
     const parent = parents.get(key);

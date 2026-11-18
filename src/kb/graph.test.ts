@@ -8,6 +8,24 @@ const page = (id: string, blocks: Partial<DigitalBlock>[]): Page => ({ id, title
 const extract = (p: Page) => extractPage(p, { glossary: [] });
 
 describe('graph merge', () => {
+  it.each([['Policy gradient works.', false], ['Policy gradient works with a policy.', true]] as const)('suppresses glossary matches shadowed by cross-page concepts in %s', (text, standalone) => {
+    const definitions = extract(page('a', [{ kind: 'heading', text: 'Policy gradient' }]));
+    const scanned = extractPage(page('b', [{ kind: 'heading', text: 'Methods' }, { text }]), { glossary: ['policy'] });
+    const inputs = [definitions, scanned], original = structuredClone(inputs);
+    const graph = buildGraph(inputs);
+    expect(graph.concepts.some(c => c.label === 'policy')).toBe(standalone);
+    expect(graph.edges.some(e => e.from === 'c_method' && e.to === 'c_policy' && e.kind === 'mentions')).toBe(standalone);
+    expect(graph.edges.some(e => e.from === 'c_method' && e.to === 'c_policy-gradient' && e.kind === 'mentions')).toBe(true);
+    expect(inputs).toEqual(original);
+    expect(buildGraph([scanned, definitions], graph)).toEqual(graph);
+  });
+  it('removes shadowed glossary provenance without deleting another page definition', () => {
+    const definitions = extract(page('a', [{ kind: 'heading', text: 'Policy' }, { kind: 'heading', text: 'Policy gradient' }]));
+    const scanned = extractPage(page('b', [{ kind: 'heading', text: 'Methods' }, { text: 'Policy gradient works.' }]), { glossary: ['policy'] });
+    const graph = buildGraph([definitions, scanned]);
+    expect(graph.concepts.find(c => c.label === 'Policy')?.provenance.map(p => p.pageId)).toEqual(['a']);
+    expect(graph.edges.some(e => e.from === 'c_method' && e.to === 'c_policy')).toBe(false);
+  });
   it('scans two-letter concepts on token boundaries, not inside world', () => {
     const definitions = extract(page('a', [{ text: '[[AI]] [[RL]]' }]));
     const scanned = extract(page('b', [{ kind: 'heading', text: 'Methods' }, { text: 'AI and RL work.' }, { text: 'world' }]));

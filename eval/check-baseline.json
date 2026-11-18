@@ -13,14 +13,14 @@
     "predictedConcepts": 52,
     "conceptHits": 52,
     "conceptCorrect": 52,
-    "expectedEdges": 61,
-    "predictedEdges": 58,
-    "edgeHits": 58,
-    "edgeCorrect": 58,
+    "expectedEdges": 63,
+    "predictedEdges": 60,
+    "edgeHits": 60,
+    "edgeCorrect": 60,
     "duplicates": 0,
     "falseMerges": 0,
-    "provenanceOk": 109,
-    "provenanceTotal": 110,
+    "provenanceOk": 111,
+    "provenanceTotal": 112,
     "idempotent": 6
   }
 }
