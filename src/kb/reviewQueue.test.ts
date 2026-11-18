@@ -107,3 +107,22 @@ it('persists a known review even when the current commit temporarily removes its
   await syncer.extractWith(page, extractor);
   expect((await store.loadGraph()).concepts).toEqual([]);
 });
+
+it('prioritizes a review between indexAll cleanup commits', async () => {
+  const store = new MemoryKnowledgeStore(), syncer = new KbSyncer(store, () => []);
+  for (const id of ['p', 'q1', 'q2']) await syncer.extractWith({ ...page, id }, extractor);
+  const id = (await store.loadGraph()).proposals!.find(p => p.provenance.some(prov => prov.pageId === page.id))!.id;
+  const commit = store.commit.bind(store), entered = deferred(), gate = deferred(), order: (string | null)[] = [];
+  store.commit = async (pageId, extraction, graph) => {
+    order.push(pageId);
+    if (pageId === 'q1') { entered.resolve(); await gate.promise; }
+    await commit(pageId, extraction, graph);
+  };
+  const indexing = syncer.indexAll([page]);
+  await entered.promise;
+  const review = syncer.review(id, 'accepted');
+  gate.resolve(); await review; await indexing;
+  expect(order.slice(0, 3)).toEqual(['q1', null, 'q2']);
+  expect((await store.loadGraph()).proposalDecisions?.[id]).toBe('accepted');
+  expect((await store.listExtractions()).map(e => e.pageId)).toEqual(['p']);
+});

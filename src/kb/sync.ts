@@ -124,7 +124,7 @@ export class KbSyncer {
     }, true);
   }
   extractWith(page: Page, extractor: Extractor): Promise<void> {
-    const snapshot = structuredClone(page), generation = this.generations.get(page.id);
+    const snapshot = structuredClone(page), generation = this.generations.get(page.id) ?? this.advance(page.id);
     return this.enqueueExtraction(() => this.extract(snapshot, extractor, undefined, () => this.generations.get(page.id) === generation));
   }
   pageChanged(page: Page): Promise<void> {
@@ -155,12 +155,18 @@ export class KbSyncer {
     const indexing = ++this.indexing;
     const snapshots = structuredClone(pages);
     const generations = new Map(snapshots.map(p => [p.id, this.advance(p.id)]));
-    [...this.pending.keys()].forEach(id => this.cancel(id));
     const ids = new Set(snapshots.map(p => p.id));
-    const previous = await this.store.listExtractions();
+    const excluded = new Map<string, number>();
+    for (const id of new Set([...this.generations.keys(), ...this.pending.keys(), ...this.models.keys()])) if (!ids.has(id)) {
+      excluded.set(id, this.advance(id)); this.abortModel(id); this.cancel(id);
+    }
+    [...this.pending.keys()].forEach(id => this.cancel(id));
+    let previous: PageExtraction[] = [];
+    await this.enqueue(async () => { if (this.indexing === indexing) previous = await this.store.listExtractions(); });
     if (this.indexing !== indexing) return;
     for (const e of previous) if (!ids.has(e.pageId)) {
-      const generation = this.advance(e.pageId); this.abortModel(e.pageId); this.cancel(e.pageId);
+      if (!excluded.has(e.pageId) && this.generations.has(e.pageId)) continue;
+      const generation = excluded.get(e.pageId) ?? this.advance(e.pageId);
       await this.enqueue(async () => { if (this.indexing === indexing && this.generations.get(e.pageId) === generation) await this.publish(await removePage(this.store, e.pageId)); });
     }
     for (const p of snapshots) {
