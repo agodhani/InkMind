@@ -67,4 +67,40 @@ describe('IndexedDB knowledge store', () => {
     await reopened.clear();
     expect(await reopened.loadGraph()).toEqual({ concepts: [], edges: [] });
   });
+
+  it('links a later short form to an accepted model concept only while its evidence survives', async () => {
+    const store = new IndexedDbKnowledgeStore();
+    const long = { ...page, blocks: [{ ...page.blocks[0], kind: 'paragraph' as const, text: 'Backpropagation computes gradients.' }] };
+    const short = { ...long, id: 'later', blocks: [{ ...long.blocks[0], text: 'Backprop computes gradients.' }] };
+    const extractor = modelExtractor(mockKbModel(async (_system, user) => {
+      const { blocks, known } = JSON.parse(user);
+      if (blocks[0].text === long.blocks[0].text) return JSON.stringify({ concepts: [{ block: 'b', term: 'Backpropagation' }] });
+      expect(known).toContainEqual(['Backpropagation']);
+      return JSON.stringify({ concepts: [{ block: 'b', term: 'Backprop', canonical: 'Backpropagation' }] });
+    }));
+    const pending = await syncPage(store, long, { glossary: [], extractor });
+    const proposal = pending.proposals![0];
+    await reviewProposal(store, proposal.id, 'accepted');
+
+    const reopened = new IndexedDbKnowledgeStore();
+    const linked = await syncPage(reopened, short, { glossary: [], extractor });
+    expect(linked.concepts).toEqual([expect.objectContaining({
+      id: proposal.conceptId, label: 'Backpropagation', aliases: ['Backprop'], origin: 'model', status: 'accepted',
+      provenance: [expect.objectContaining({ pageId: 'later' }), expect.objectContaining({ pageId: 'p' })],
+    })]);
+    expect(linked.proposals).toContainEqual(expect.objectContaining({ kind: 'alias', status: 'proposed', conceptId: proposal.conceptId }));
+
+    const headings = { ...page, id: 'headings', blocks: [
+      { ...page.blocks[0], text: 'Backpropagation' }, { ...page.blocks[0], id: 'short', text: 'Backprop' },
+    ] };
+    const separate = await syncPage(reopened, headings, { glossary: [] });
+    expect(separate.concepts.map(c => [c.label, c.aliases])).toEqual([['Backprop', []], ['Backpropagation', []]]);
+    await removePage(reopened, headings.id);
+
+    const removed = await removePage(reopened, long.id);
+    expect(removed.proposalDecisions?.[proposal.id]).toBe('accepted');
+    expect(removed.concepts).toEqual([expect.objectContaining({
+      label: 'Backprop', status: 'proposed', aliases: [], provenance: [expect.objectContaining({ pageId: 'later' })],
+    })]);
+  });
 });

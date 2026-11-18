@@ -37,6 +37,13 @@ export function mergeModelProposals(base: KbGraph, pages: PageExtraction[], deci
     base.concepts.push(c);
     return c;
   };
+  for (const page of pages) for (const s of page.model?.suggestions ?? []) {
+    if (s.kind !== 'concept') continue;
+    const key = termKey(s.term), id = proposalId('concept', key);
+    if (!trusted.has(key) && decisions?.[id] === 'accepted' && !rejectedShortForms.has(key)) {
+      trusted.set(key, addConcept(s.term, id));
+    }
+  }
   const byPage = pages.map(page => {
     const suggestions = page.model?.suggestions ?? [];
     const terms: Extract<ModelSuggestion, { kind: 'concept' }>[] = suggestions.filter(s => s.kind === 'concept');

@@ -71,27 +71,27 @@ const list = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
   ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)).slice(0, 80) : [];
 const edgeKinds: readonly string[] = ['follows', 'supports', 'contains', 'mentions'];
 
-function parseBatch(pageId: string, provider: string, blocks: SourceBlock[], response: string): ModelSuggestion[] {
+function parseBatch(pageId: string, provider: string, blocks: SourceBlock[], fullText: Map<string, string>, response: string): ModelSuggestion[] {
   const loop = detectLoop(response);
   const obj = extractJson(closeJsonPrefix(loop ? response.slice(0, loop.keepUntil) : response)) as Record<string, unknown> | null;
   if (!obj || !['concepts', 'propositions', 'edges'].some(key => Array.isArray(obj[key]))) throw new Error('Invalid KB model response');
-  const byId = new Map(blocks.map(b => [b.id, b]));
-  const prov = (block: SourceBlock, surface: string): Provenance => ({ pageId, blockId: block.id, extractor: `model:${provider}`, surface, strokeIds: [] });
+  const byId = new Map(blocks.map(b => [b.id, fullText.get(b.id)]));
+  const prov = (blockId: string, surface: string): Provenance => ({ pageId, blockId, extractor: `model:${provider}`, surface, strokeIds: [] });
   const suggestions: ModelSuggestion[] = [];
   for (const item of list(obj.concepts)) {
-    const block = byId.get(asText(item.block)), term = asText(item.term), canonical = asText(item.canonical);
-    if (block && isConceptLabel(term) && matches(block.text, term)) suggestions.push({ kind: 'concept', term, ...(isConceptLabel(canonical) ? { canonical } : {}), prov: prov(block, term) });
+    const id = asText(item.block), text = byId.get(id), term = asText(item.term), canonical = asText(item.canonical);
+    if (text && isConceptLabel(term) && matches(text, term)) suggestions.push({ kind: 'concept', term, ...(isConceptLabel(canonical) ? { canonical } : {}), prov: prov(id, term) });
   }
   for (const item of list(obj.propositions)) {
-    const block = byId.get(asText(item.block)), term = asText(item.claim), quote = asText(item.quote, 550), subject = asText(item.subject);
-    if (block && quote.length >= 10 && block.text.includes(quote) && termKey(term).split(' ').length >= 3) {
-      suggestions.push({ kind: 'proposition', term, ...(isConceptLabel(subject) && matches(quote, subject) ? { subject } : {}), prov: prov(block, quote) });
+    const id = asText(item.block), text = byId.get(id), term = asText(item.claim), quote = asText(item.quote, 550), subject = asText(item.subject);
+    if (text && quote.length >= 10 && text.includes(quote) && termKey(term).split(' ').length >= 3) {
+      suggestions.push({ kind: 'proposition', term, ...(isConceptLabel(subject) && matches(quote, subject) ? { subject } : {}), prov: prov(id, quote) });
     }
   }
   for (const item of list(obj.edges)) {
-    const block = byId.get(asText(item.block)), from = asText(item.from), to = asText(item.to), kind = asText(item.kind), quote = asText(item.quote, 550);
-    if (block && edgeKinds.includes(kind) && isConceptLabel(from) && isConceptLabel(to) && block.text.includes(quote) && matches(quote, from) && matches(quote, to)) {
-      suggestions.push({ kind: 'edge', relation: { from, to, kind: kind as ConceptEdgeKind, prov: prov(block, quote) } });
+    const id = asText(item.block), text = byId.get(id), from = asText(item.from), to = asText(item.to), kind = asText(item.kind), quote = asText(item.quote, 550);
+    if (text && edgeKinds.includes(kind) && isConceptLabel(from) && isConceptLabel(to) && text.includes(quote) && matches(quote, from) && matches(quote, to)) {
+      suggestions.push({ kind: 'edge', relation: { from, to, kind: kind as ConceptEdgeKind, prov: prov(id, quote) } });
     }
   }
   return suggestions;
@@ -101,12 +101,44 @@ export function parseModelExtraction(raw: string): PageExtraction {
   const { deterministic, provider, blocks, batches, retained } = JSON.parse(raw) as ModelRaw;
   if (typeof provider !== 'string' || !Array.isArray(blocks) || !Array.isArray(batches) || !Array.isArray(retained)) throw new Error('Invalid KB model extraction');
   const base = deterministicExtractor.parse(deterministic);
-  const suggestions = [...retained, ...batches.flatMap(batch => parseBatch(base.pageId, provider, batch.blocks, batch.response))];
+  const fullText = new Map(base.texts.map(span => [span.blockId, span.text]));
+  const suggestions = [...retained, ...batches.flatMap(batch => parseBatch(base.pageId, provider, batch.blocks, fullText, batch.response))];
   const unique = new Map(suggestions.map(s => [JSON.stringify(s), s]));
   return { ...base, extractor: 'deterministic+model', model: { provider, blocks, suggestions: [...unique.values()] } };
 }
 
 const MAX_BATCH_CHARS = 3500;
+const OVERLAP_CHARS = 240;
+
+function* splitBlock(text: string): Generator<string> {
+  if (text.length <= MAX_BATCH_CHARS) { yield text; return; }
+  const nonSpace = /\S/g, space = /\s/g;
+  const advance = (index: number) => {
+    nonSpace.lastIndex = index;
+    return nonSpace.exec(text)?.index ?? text.length;
+  };
+  let start = advance(0);
+  while (text.length - start > MAX_BATCH_CHARS) {
+    const limit = start + MAX_BATCH_CHARS;
+    const window = text.slice(start, limit + 1);
+    const sentence = [...window.matchAll(/[.!?]["')\]]?(?=\s)/g)].at(-1);
+    const word = [...window.matchAll(/(?<=\S)\s+/g)].at(-1);
+    const end = sentence && sentence.index >= MAX_BATCH_CHARS * 0.75
+      ? start + sentence.index + sentence[0].length : word && start + word.index;
+    if (end === undefined) {
+      space.lastIndex = limit;
+      const nextSpace = space.exec(text);
+      if (!nextSpace) return;
+      start = advance(nextSpace.index);
+      continue;
+    }
+    yield text.slice(start, end);
+    const tail = Math.max(start + 1, end - OVERLAP_CHARS);
+    const boundary = /\s+(?=\S)/.exec(text.slice(tail, end));
+    start = advance(boundary ? tail + boundary.index + boundary[0].length : end);
+  }
+  if (start < text.length) yield text.slice(start);
+}
 
 export function modelExtractor(model: TextModel): Extractor {
   return {
@@ -138,8 +170,8 @@ export function modelExtractor(model: TextModel): Extractor {
         batch = []; size = 0;
       };
       for (const block of changed) {
-        for (let start = 0; start < block.text.length; start += MAX_BATCH_CHARS) {
-          const part = { ...block, text: block.text.slice(start, start + MAX_BATCH_CHARS) };
+        for (const text of splitBlock(block.text)) {
+          const part = { ...block, text };
           if (size + part.text.length > MAX_BATCH_CHARS || batch.length >= 24) await send();
           batch.push(part); size += part.text.length;
         }

@@ -87,6 +87,43 @@ describe('model KB extractor', () => {
     ]);
   });
 
+  it('does not split a technical word or accept a word prefix as a concept', async () => {
+    const chunks: string[] = [];
+    const extractor = modelExtractor(mockKbModel(async (_system, user) => {
+      chunks.push(...JSON.parse(user).blocks.map((b: DigitalBlock) => b.text));
+      return output([{ block: 'b', term: 'gradient' }, { block: 'b', term: 'gradientless' }]);
+    }));
+    const input = page('p', block('b', 'x '.repeat(1746) + 'gradientless methods work.'));
+    const { raw } = await extractor.extract(input, { glossary: [] });
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).not.toContain('gradient');
+    expect(chunks[1]).toContain('gradientless');
+    expect(extractor.parse(raw).model?.suggestions).toEqual([
+      expect.objectContaining({ kind: 'concept', term: 'gradientless' }),
+    ]);
+  });
+
+  it('overlaps chunks across a multiword term and validates evidence against the full block', async () => {
+    const chunks: string[] = [];
+    const quote = 'contrastive learning improves retrieval';
+    const extractor = modelExtractor(mockKbModel(async (_system, user) => {
+      chunks.push(...JSON.parse(user).blocks.map((b: DigitalBlock) => b.text));
+      return chunks.length === 1 ? output([{ block: 'b', term: 'contrastive learning' }], [
+        { block: 'b', claim: 'Contrastive learning improves retrieval.', quote },
+      ]) : output();
+    }));
+    const input = page('p', block('b', 'x '.repeat(1744) + quote + '.'));
+    const { raw } = await extractor.extract(input, { glossary: [] });
+    expect(chunks).toHaveLength(2);
+    expect(chunks.every(chunk => chunk.length <= 3500)).toBe(true);
+    expect(chunks[0]).toMatch(/contrastive$/);
+    expect(chunks[1]).toContain(quote);
+    expect(extractor.parse(raw).model?.suggestions).toEqual([
+      expect.objectContaining({ kind: 'concept', term: 'contrastive learning' }),
+      expect.objectContaining({ kind: 'proposition', prov: expect.objectContaining({ blockId: 'b', surface: quote }) }),
+    ]);
+  });
+
   it('requests Ollama native text chat and shares the loop guard', async () => {
     const payload = output();
     const fetch = vi.fn(async (_url: string, _req: RequestInit) => new Response([

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import type { DigitalBlock, Page } from '../src/model/page';
 import { deterministicExtractor } from '../src/kb/extractor';
 import type { Extractor } from '../src/kb/extractor';
@@ -71,7 +71,7 @@ async function evaluate(root: string, output: string, files: string[], extractor
   const total = emptyCounts(), results: { name: string; counts: KbCounts; details: string[] }[] = [];
   for (const file of files) {
     const notebook = JSON.parse(await readFile(join(root, file), 'utf8')) as Notebook;
-    const name = safeName(file.split('/').at(-1)!.slice(0, -5)), store = new MemoryKnowledgeStore(), pages = new Map<string, Page>();
+    const name = safeName(basename(file, '.json')), store = new MemoryKnowledgeStore(), pages = new Map<string, Page>();
     const rawDir = join(output, rawPath, name);
     await mkdir(rawDir, { recursive: true });
     let step = 0;
