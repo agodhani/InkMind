@@ -528,6 +528,17 @@
     ]
    },
    {
+    "from": "RLVR",
+    "to": "RLHF",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
     "from": "RLHF",
     "to": "human preferences",
     "kind": "contains",

@@ -390,6 +390,17 @@
     ]
    },
    {
+    "from": "value function",
+    "to": "RL methods",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
     "from": "RL methods",
     "to": "value-based",
     "kind": "contains",
