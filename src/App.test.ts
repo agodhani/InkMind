@@ -27,6 +27,7 @@ vi.mock('./ui/Onboarding', () => ({ Onboarding: () => null }));
 vi.mock('./transcribe/useTranscription', () => ({ useTranscription: () => ({ status: { state: 'idle' } }) }));
 vi.mock('./kb/useKnowledgeBase', () => ({ useKnowledgeBase: () => ({
   graph: { concepts: [], edges: [] }, rawGraph: controls.rawGraph, decisions: controls.decisions,
+  extractions: [], ready: true,
   pageChanged: vi.fn(), pageEdited: vi.fn(), pageDeleted: vi.fn(),
 }) }));
 vi.mock('./store/db', () => ({

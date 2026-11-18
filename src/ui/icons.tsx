@@ -3,6 +3,7 @@ import type { SVGProps } from 'react';
 /** Inline 20px stroke icons (1.75px, round caps) so the UI has one consistent weight and no icon-font dependency. */
 export type IconName =
   | 'map'
+  | 'path'
   | 'menu'
   | 'pen'
   | 'eraser'
@@ -38,6 +39,7 @@ export type IconName =
 
 const PATHS: Record<IconName, React.ReactNode> = {
   map: <><circle cx="5" cy="5" r="2"/><circle cx="15" cy="7" r="2"/><circle cx="8" cy="16" r="2"/><path d="M7 5.5l6 1M5.5 7l2 7M13.7 8.5l-4.4 6"/></>,
+  path: <><circle cx="4" cy="15.5" r="1.5"/><path d="M6 15.5h7a2.5 2.5 0 0 0 0-5H8a2.5 2.5 0 0 1 0-5h8m-3-3 3 3-3 3"/></>,
   menu: <path d="M3 6h14M3 10h14M3 14h14" />,
   pen: <path d="M3 17l1-4L13.5 3.5a1.5 1.5 0 0 1 2.1 0l.9.9a1.5 1.5 0 0 1 0 2.1L7 16l-4 1zM11.5 5.5l3 3" />,
   eraser: <path d="M7.5 16.5L3.4 12.4a1.5 1.5 0 0 1 0-2.1l6.4-6.4a1.5 1.5 0 0 1 2.1 0l4.6 4.6a1.5 1.5 0 0 1 0 2.1L11 16.5zM17 16.5H7.5M6 10l5 5" />,

@@ -9,7 +9,7 @@ This is an offline, deterministic planner, not a model or a numeric understandin
 ordered `areas: [{id,label}]`, and `concepts`. Each concept has `id`, `label`,
 `aliases`, `description`, `prerequisites` (ids), and an `area` when areas exist.
 Verified means curated; model-generated or otherwise unchecked maps must be marked
-unverified. Plans carry this provenance so a future UI can disclose it.
+unverified. The learning path and What next panel mark unverified plans.
 
 `validateMap` rejects duplicate ids, shared normalized terms, missing descriptions
 or labels, unknown/self prerequisites, cycles, unknown areas, and prerequisites
@@ -35,4 +35,28 @@ topological order of the whole map, with ties broken by area rank then file inde
 Consecutive steps are grouped by area, or canonical-order bands without areas.
 Each step explains what needs it and what the notes show; `next` lists ready steps.
 Replanning retains previous steps in position, marks newly covered steps done, and
-preserves the remaining order. No resources, scheduling, UI or model calls yet.
+preserves the remaining order.
+
+## Learning path UI
+
+Path anchors to the full prerequisite set for the selected goals, so
+already-covered relevant steps are visible and positions stay stable as the
+KB changes. The dependency picture focuses on one concept at a time, with
+direct prerequisites and what they unlock. The picker covers the whole
+path without a large canvas or tiny controls.
+
+A map-scoped local TrackerStore saves goals, declarations, skips and the
+last acknowledged note-evidence checkpoint. Live step states are derived
+from the KB. Skipping suppresses a recommendation but never satisfies a
+prerequisite. An empty page started from What next is titled for the
+concept but is not evidence by itself; write the title as a heading in
+the notes to connect them.
+
+Resource and project rendering accepts an optional `PathMaterialsProvider`
+with `forStep(mapId, conceptId)` and `forStage(mapId, stageId)`. Both return an
+optional bundle of resource links and one project link. Until a catalog
+is wired in, the two slots show an explicit empty state.
+
+In `?sim=1`, **Load RLHF + RLVR demo** adds deterministic copies of the
+backpropagation and minimax notebooks, selects both goals and opens Path.
+Existing demo copies aren't overwritten. The path does not call a model.

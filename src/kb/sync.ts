@@ -6,7 +6,8 @@ import type { Extractor } from './extractor';
 import { removePage, reviewProposal, syncPage, type KnowledgeStore } from './store';
 
 export interface SyncTimers { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
-export interface KbSyncOptions { debounceMs?: number; modelDebounceMs?: number; timers?: SyncTimers; onGraph?: (graph: KbGraph) => void; modelExtractor?: () => Extractor | undefined; busy?: () => boolean; onError?: (e: unknown) => void }
+type GraphListener = (graph: KbGraph, extractions: PageExtraction[]) => void;
+export interface KbSyncOptions { debounceMs?: number; modelDebounceMs?: number; timers?: SyncTimers; onGraph?: GraphListener; modelExtractor?: () => Extractor | undefined; busy?: () => boolean; onError?: (e: unknown) => void }
 export class KbSyncer {
   private queue: { op: () => Promise<void>; priority: boolean; resolve: () => void; reject: (e: unknown) => void }[] = [];
   private writing = false;
@@ -15,7 +16,7 @@ export class KbSyncer {
   private snapshots: PageExtraction[] = [];
   private reviews = new Map<string, { decision: ProposalDecision }>();
   private pending = new Map<string, { handle: unknown; resolve: (() => void)[]; reject: ((e: unknown) => void)[] }>();
-  private listeners = new Set<(graph: KbGraph) => void>();
+  private listeners = new Set<GraphListener>();
   private models = new Map<string, { handle?: unknown; controller: AbortController }>();
   private generations = new Map<string, number>();
   private indexing = 0;
@@ -31,7 +32,7 @@ export class KbSyncer {
     this.timers = options.timers ?? { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: h => clearTimeout(h as ReturnType<typeof setTimeout>) };
     if (options.onGraph) this.listeners.add(options.onGraph);
   }
-  subscribe(fn: (graph: KbGraph) => void): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
+  subscribe(fn: GraphListener): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private enqueue(op: () => Promise<void>, priority = false): Promise<void> {
     return new Promise((resolve, reject) => {
       this.queue.push({ op, priority, resolve, reject });
@@ -56,7 +57,7 @@ export class KbSyncer {
     const graph = this.reviews.size ? buildGraph(this.snapshots, { ...this.graph, proposalDecisions: {
       ...this.graph.proposalDecisions, ...Object.fromEntries([...this.reviews].map(([id, review]) => [id, review.decision])),
     } }) : this.graph;
-    this.listeners.forEach(fn => fn(graph));
+    this.listeners.forEach(fn => fn(graph, this.snapshots));
   }
   private async publish(graph: KbGraph): Promise<void> {
     this.snapshots = await this.store.listExtractions(); this.graph = graph;
@@ -126,6 +127,12 @@ export class KbSyncer {
   extractWith(page: Page, extractor: Extractor): Promise<void> {
     const snapshot = structuredClone(page), generation = this.generations.get(page.id) ?? this.advance(page.id);
     return this.enqueueExtraction(() => this.extract(snapshot, extractor, undefined, () => this.generations.get(page.id) === generation));
+  }
+  seedPages(pages: Page[]): Promise<void> {
+    const snapshots = structuredClone(pages);
+    return this.enqueue(async () => {
+      for (const page of snapshots) await this.sync(page);
+    });
   }
   pageChanged(page: Page): Promise<void> {
     const generation = this.advance(page.id);

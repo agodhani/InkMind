@@ -9,6 +9,11 @@ export interface DemoNotebook { name: string; glossary: string[]; steps: ({ op: 
 const notebooks = import.meta.glob<DemoNotebook>('../../eval/kb/notebooks/*.json', { eager: true, import: 'default' });
 const savedResponses = import.meta.glob<string>('../../eval/kb/results/kb-ollama-qwen25-3b-v2/raw/*/*.json', { eager: true, query: '?raw', import: 'default' });
 export interface KbDemo { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }
+export function loadLearningPathDemo() {
+  const names = ['backprop', 'minimax'];
+  const pages = Object.values(notebooks).filter(n => names.includes(n.name)).flatMap(n => replayNotebook(n, `path-${n.name}`));
+  return { pages, goals: ['rlhf', 'rlvr'] };
+}
 export function replayNotebook(notebook: DemoNotebook, prefix = notebook.name): Page[] {
   const pages = new Map<string, Page>();
   for (const step of notebook.steps) {
