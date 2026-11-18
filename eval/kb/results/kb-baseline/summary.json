@@ -1,0 +1,163 @@
+{
+  "extractor": "deterministic",
+  "results": [
+    {
+      "name": "backprop",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 11,
+        "predictedConcepts": 11,
+        "conceptHits": 11,
+        "conceptCorrect": 11,
+        "expectedEdges": 13,
+        "predictedEdges": 12,
+        "edgeHits": 12,
+        "edgeCorrect": 12,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 22,
+        "provenanceTotal": 23,
+        "idempotent": 1
+      },
+      "details": [
+        "Provenance mismatch: concept Backpropagation; expected [\"p1/b1\",\"p1/b2\",\"p2/b2\"]; got [\"p1/b1\"]",
+        "Missing edge: gradient descent —mentions→ Backpropagation"
+      ]
+    },
+    {
+      "name": "edits",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 4,
+        "predictedConcepts": 4,
+        "conceptHits": 4,
+        "conceptCorrect": 4,
+        "expectedEdges": 2,
+        "predictedEdges": 2,
+        "edgeHits": 2,
+        "edgeCorrect": 2,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 6,
+        "provenanceTotal": 6,
+        "idempotent": 1
+      },
+      "details": []
+    },
+    {
+      "name": "minimax",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 6,
+        "predictedConcepts": 8,
+        "conceptHits": 6,
+        "conceptCorrect": 6,
+        "expectedEdges": 9,
+        "predictedEdges": 11,
+        "edgeHits": 9,
+        "edgeCorrect": 9,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 15,
+        "provenanceTotal": 15,
+        "idempotent": 1
+      },
+      "details": [
+        "Extra concept: guarantee (c_guarantee)",
+        "Extra concept: opponent (c_opponent)",
+        "Extra edge: Adversarial search —mentions→ opponent",
+        "Extra edge: Minimax —mentions→ Expectimax"
+      ]
+    },
+    {
+      "name": "ppo",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 11,
+        "predictedConcepts": 10,
+        "conceptHits": 9,
+        "conceptCorrect": 9,
+        "expectedEdges": 12,
+        "predictedEdges": 11,
+        "edgeHits": 9,
+        "edgeCorrect": 9,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 17,
+        "provenanceTotal": 18,
+        "idempotent": 1
+      },
+      "details": [
+        "Provenance mismatch: concept Proximal Policy Optimization; expected [\"p1/b1\",\"p1/b2\",\"p2/b4\"]; got [\"p1/b1\",\"p1/b2\",\"p1/b4\",\"p2/b4\"]",
+        "Missing concept: KL penalty",
+        "Missing concept: advantage",
+        "Extra concept: Advantages (c_advantage)",
+        "Missing edge: Proximal Policy Optimization —mentions→ KL penalty",
+        "Missing edge: Proximal Policy Optimization —mentions→ advantage",
+        "Missing edge: Advantage function —mentions→ advantage",
+        "Extra edge: Advantage function —mentions→ Advantages",
+        "Extra edge: PPO —mentions→ Advantages"
+      ]
+    },
+    {
+      "name": "rl-basics",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 10,
+        "predictedConcepts": 10,
+        "conceptHits": 10,
+        "conceptCorrect": 10,
+        "expectedEdges": 10,
+        "predictedEdges": 10,
+        "edgeHits": 10,
+        "edgeCorrect": 10,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 20,
+        "provenanceTotal": 20,
+        "idempotent": 1
+      },
+      "details": []
+    },
+    {
+      "name": "rlhf-rlvr",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 12,
+        "predictedConcepts": 11,
+        "conceptHits": 11,
+        "conceptCorrect": 11,
+        "expectedEdges": 14,
+        "predictedEdges": 13,
+        "edgeHits": 13,
+        "edgeCorrect": 13,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 23,
+        "provenanceTotal": 24,
+        "idempotent": 1
+      },
+      "details": [
+        "Provenance mismatch: concept Reinforcement Learning from Human Feedback; expected [\"p1/b1\",\"p2/b3\"]; got [\"p1/b1\",\"p1/b2\",\"p2/b3\"]",
+        "Missing concept: Reward hacking",
+        "Missing edge: RLHF —mentions→ Reward hacking"
+      ]
+    }
+  ],
+  "total": {
+    "notebooks": 6,
+    "expectedConcepts": 54,
+    "predictedConcepts": 54,
+    "conceptHits": 51,
+    "conceptCorrect": 51,
+    "expectedEdges": 60,
+    "predictedEdges": 59,
+    "edgeHits": 55,
+    "edgeCorrect": 55,
+    "duplicates": 0,
+    "falseMerges": 0,
+    "provenanceOk": 103,
+    "provenanceTotal": 106,
+    "idempotent": 6
+  }
+}

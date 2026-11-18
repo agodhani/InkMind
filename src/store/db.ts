@@ -2,11 +2,11 @@ import type { Page } from '../model/page';
 import type { Correction } from '../profile/handwritingProfile';
 
 const DB_NAME = 'inkmind';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 type StoreName = 'pages' | 'corrections' | 'kv';
 
-function openDb(): Promise<IDBDatabase> {
+export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
@@ -14,6 +14,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('corrections')) db.createObjectStore('corrections', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('kbExtractions')) db.createObjectStore('kbExtractions', { keyPath: 'pageId' });
+      if (!db.objectStoreNames.contains('kbConcepts')) db.createObjectStore('kbConcepts', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('kbEdges')) db.createObjectStore('kbEdges', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

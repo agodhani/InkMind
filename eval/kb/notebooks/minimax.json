@@ -1,0 +1,442 @@
+{
+ "name": "minimax",
+ "description": "Adversarial search: mind map hub merging with a heading, three spellings of alpha-beta pruning, a comparison table (column headers are concepts, row labels and cells are attributes), minimax vs maximin / expectimax near-misses.",
+ "glossary": [
+  "alpha-beta pruning",
+  "expectimax"
+ ],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "Game search",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Adversarial search",
+      "strokeIds": [
+       "s42",
+       "s43"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Two-player zero-sum games. [[Minimax]] assumes an optimal opponent; [[Alpha-Beta Pruning]] skips branches that cannot change the result.",
+      "strokeIds": [
+       "s44",
+       "s45"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "diagram",
+      "text": "adversarial search mind map",
+      "strokeIds": [
+       "s26",
+       "s27",
+       "s28",
+       "s29",
+       "s30",
+       "s31",
+       "s32",
+       "s33",
+       "s34",
+       "s35",
+       "s36",
+       "s37",
+       "s38",
+       "s39",
+       "s40"
+      ],
+      "figure": {
+       "kind": "mindmap",
+       "nodes": [
+        {
+         "id": "h",
+         "label": "Adversarial search",
+         "strokeIds": [
+          "s26",
+          "s27"
+         ],
+         "shape": "ellipse"
+        },
+        {
+         "id": "a",
+         "label": "Minimax",
+         "strokeIds": [
+          "s28",
+          "s29"
+         ]
+        },
+        {
+         "id": "b",
+         "label": "Alpha-beta pruning",
+         "strokeIds": [
+          "s30",
+          "s31"
+         ]
+        },
+        {
+         "id": "c",
+         "label": "Expectimax",
+         "strokeIds": [
+          "s32",
+          "s33"
+         ]
+        },
+        {
+         "id": "d",
+         "label": "Move ordering",
+         "strokeIds": [
+          "s34",
+          "s35"
+         ]
+        }
+       ],
+       "edges": [
+        {
+         "from": "h",
+         "to": "a",
+         "strokeIds": [
+          "s36"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "h",
+         "to": "b",
+         "strokeIds": [
+          "s37"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "h",
+         "to": "c",
+         "strokeIds": [
+          "s38"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "b",
+         "to": "d",
+         "strokeIds": [
+          "s39"
+         ],
+         "kind": "line"
+        }
+       ],
+       "shapes": [],
+       "labels": [
+        "Adversarial search",
+        "Minimax",
+        "Alpha-beta pruning",
+        "Expectimax",
+        "Move ordering"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "Minimax",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Minimax",
+      "strokeIds": [
+       "s46",
+       "s47"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "MAX picks the child with the highest value, MIN the lowest. Not the same as [[maximin]].",
+      "strokeIds": [
+       "s48",
+       "s49"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "diagram",
+      "text": "minimax vs expectimax",
+      "strokeIds": [
+       "s41"
+      ],
+      "figure": {
+       "kind": "table",
+       "shapes": [
+        "grid"
+       ],
+       "cells": [
+        [
+         "",
+         "Minimax",
+         "Expectimax"
+        ],
+        [
+         "opponent",
+         "adversarial",
+         "chance node"
+        ],
+        [
+         "guarantee",
+         "worst case",
+         "expected value"
+        ]
+       ],
+       "edges": [],
+       "labels": [
+        "Minimax",
+        "Expectimax",
+        "opponent",
+        "adversarial",
+        "chance node",
+        "guarantee",
+        "worst case",
+        "expected value"
+       ]
+      }
+     },
+     {
+      "id": "b4",
+      "kind": "heading",
+      "level": 2,
+      "text": "alpha beta pruning",
+      "strokeIds": [
+       "s50",
+       "s51"
+      ]
+     },
+     {
+      "id": "b5",
+      "kind": "paragraph",
+      "text": "Keeps alpha/beta bounds; good move ordering prunes the most.",
+      "strokeIds": [
+       "s52",
+       "s53"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Adversarial search",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "Minimax",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "Alpha-beta pruning",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ],
+    "aliases": [
+     "Alpha-Beta Pruning",
+     "alpha beta pruning"
+    ]
+   },
+   {
+    "label": "Expectimax",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "Move ordering",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b5"
+     }
+    ]
+   },
+   {
+    "label": "maximin",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "Adversarial search",
+    "to": "Minimax",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Adversarial search",
+    "to": "Alpha-beta pruning",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Adversarial search",
+    "to": "Expectimax",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Alpha-beta pruning",
+    "to": "Move ordering",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Adversarial search",
+    "to": "Minimax",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Adversarial search",
+    "to": "Alpha-beta pruning",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Minimax",
+    "to": "maximin",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Minimax",
+    "to": "Alpha-beta pruning",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "Alpha-beta pruning",
+    "to": "Move ordering",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b5"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": [
+   [
+    "Minimax",
+    "maximin"
+   ],
+   [
+    "Minimax",
+    "Expectimax"
+   ]
+  ]
+ }
+}

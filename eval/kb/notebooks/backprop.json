@@ -1,0 +1,498 @@
+{
+ "name": "backprop",
+ "description": "Backprop + gradient descent over two pages: link-to-heading merge across pages, plural + [[a|alias]] merge, glossary terms, a looping flowchart, gradient vs gradient descent near-miss, an informal abbreviation (Backprop) a human links but no deterministic rule can.",
+ "glossary": [
+  "learning rate",
+  "chain rule"
+ ],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "Backprop notes",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Backpropagation",
+      "strokeIds": [
+       "s14",
+       "s15"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Backprop applies the [[chain rule]] layer by layer to get the gradient of the loss, then [[gradient descent]] uses it.",
+      "strokeIds": [
+       "s16",
+       "s17"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "heading",
+      "level": 2,
+      "text": "Computational graph",
+      "strokeIds": [
+       "s18",
+       "s19"
+      ]
+     },
+     {
+      "id": "b4",
+      "kind": "diagram",
+      "text": "training loop",
+      "strokeIds": [
+       "s1",
+       "s2",
+       "s3",
+       "s4",
+       "s5",
+       "s6",
+       "s7",
+       "s8",
+       "s9",
+       "s10",
+       "s11",
+       "s12",
+       "s13"
+      ],
+      "figure": {
+       "kind": "flowchart",
+       "nodes": [
+        {
+         "id": "n1",
+         "label": "forward pass",
+         "strokeIds": [
+          "s1",
+          "s2"
+         ],
+         "shape": "rectangle"
+        },
+        {
+         "id": "n2",
+         "label": "compute loss",
+         "strokeIds": [
+          "s3",
+          "s4"
+         ],
+         "shape": "rectangle"
+        },
+        {
+         "id": "n3",
+         "label": "backward pass",
+         "strokeIds": [
+          "s5",
+          "s6"
+         ],
+         "shape": "rectangle"
+        },
+        {
+         "id": "n4",
+         "label": "update weights",
+         "strokeIds": [
+          "s7",
+          "s8"
+         ],
+         "shape": "rectangle"
+        }
+       ],
+       "edges": [
+        {
+         "from": "n1",
+         "to": "n2",
+         "strokeIds": [
+          "s9"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "n2",
+         "to": "n3",
+         "strokeIds": [
+          "s10"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "n3",
+         "to": "n4",
+         "strokeIds": [
+          "s11"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "n4",
+         "to": "n1",
+         "strokeIds": [
+          "s12"
+         ],
+         "kind": "arrow",
+         "label": "next batch"
+        }
+       ],
+       "sequence": [
+        "forward pass",
+        "compute loss",
+        "backward pass",
+        "update weights"
+       ],
+       "shapes": [],
+       "labels": [
+        "forward pass",
+        "compute loss",
+        "backward pass",
+        "update weights"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "Optimisers",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Gradient Descent",
+      "strokeIds": [
+       "s20",
+       "s21"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Step against the [[gradient]] scaled by the learning rate. Gradients come from backprop on the [[Computational Graphs|graph]].",
+      "strokeIds": [
+       "s22",
+       "s23"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "list",
+      "text": "- too large a learning rate diverges\n- [[SGD|stochastic gradient descent]] uses minibatches",
+      "strokeIds": [
+       "s24",
+       "s25"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Backpropagation",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ],
+    "aliases": [
+     "Backprop"
+    ]
+   },
+   {
+    "label": "chain rule",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "gradient descent",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     }
+    ]
+   },
+   {
+    "label": "Computational graph",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ],
+    "aliases": [
+     "Computational Graphs",
+     "graph"
+    ]
+   },
+   {
+    "label": "forward pass",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "compute loss",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "backward pass",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "update weights",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "gradient",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "learning rate",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "SGD",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ],
+    "aliases": [
+     "stochastic gradient descent"
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "Backpropagation",
+    "to": "Computational graph",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Backpropagation",
+    "to": "chain rule",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Backpropagation",
+    "to": "gradient descent",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Backpropagation",
+    "to": "gradient",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "forward pass",
+    "to": "compute loss",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "compute loss",
+    "to": "backward pass",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "backward pass",
+    "to": "update weights",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "update weights",
+    "to": "forward pass",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ],
+    "label": "next batch"
+   },
+   {
+    "from": "gradient descent",
+    "to": "gradient",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "gradient descent",
+    "to": "learning rate",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "gradient descent",
+    "to": "Computational graph",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "gradient descent",
+    "to": "SGD",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "gradient descent",
+    "to": "Backpropagation",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": [
+   [
+    "gradient",
+    "gradient descent"
+   ],
+   [
+    "gradient descent",
+    "SGD"
+   ],
+   [
+    "backward pass",
+    "Backpropagation"
+   ]
+  ]
+ },
+ "notes": [
+  "'Backprop' is an informal abbreviation of Backpropagation that no rule declares (no [[|]] alias, no parenthesis)."
+ ]
+}

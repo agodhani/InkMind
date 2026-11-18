@@ -1,8 +1,26 @@
 {
-  "pages": 58,
-  "figuresFound": 63,
-  "figures": 63,
-  "leakedStrokes": 0,
-  "figureStrokes": 2949,
-  "figureCountOk": 58
+  "geometry": {
+    "pages": 58,
+    "figuresFound": 63,
+    "figures": 63,
+    "leakedStrokes": 0,
+    "figureStrokes": 2949,
+    "figureCountOk": 58
+  },
+  "kb": {
+    "notebooks": 6,
+    "expectedConcepts": 54,
+    "predictedConcepts": 54,
+    "conceptHits": 51,
+    "conceptCorrect": 51,
+    "expectedEdges": 60,
+    "predictedEdges": 59,
+    "edgeHits": 55,
+    "edgeCorrect": 55,
+    "duplicates": 0,
+    "falseMerges": 0,
+    "provenanceOk": 103,
+    "provenanceTotal": 106,
+    "idempotent": 6
+  }
 }

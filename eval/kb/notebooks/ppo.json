@@ -1,0 +1,465 @@
+{
+ "name": "ppo",
+ "description": "PPO and GAE: parenthetical acronym alias, a [[GAE|long form]] alias that a later heading re-defines, glossary plural (advantages), advantage vs advantage function near-miss, and a plain-text term (KL penalty) a human counts but no deterministic source covers.",
+ "glossary": [
+  "PPO",
+  "KL divergence",
+  "advantage"
+ ],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "PPO",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Proximal Policy Optimization (PPO)",
+      "strokeIds": [
+       "s64",
+       "s65"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "PPO is an [[actor-critic]] method. It clips the [[policy ratio]] so one update cannot move the policy too far; a KL penalty is the older alternative.",
+      "strokeIds": [
+       "s66",
+       "s67"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "paragraph",
+      "text": "Advantages come from [[GAE|generalized advantage estimation]].",
+      "strokeIds": [
+       "s68",
+       "s69"
+      ]
+     },
+     {
+      "id": "b4",
+      "kind": "diagram",
+      "text": "PPO loop",
+      "strokeIds": [
+       "s54",
+       "s55",
+       "s56",
+       "s57",
+       "s58",
+       "s59",
+       "s60",
+       "s61",
+       "s62",
+       "s63"
+      ],
+      "figure": {
+       "kind": "flowchart",
+       "nodes": [
+        {
+         "id": "r",
+         "label": "collect rollouts",
+         "strokeIds": [
+          "s54",
+          "s55"
+         ]
+        },
+        {
+         "id": "a",
+         "label": "compute advantages",
+         "strokeIds": [
+          "s56",
+          "s57"
+         ]
+        },
+        {
+         "id": "u",
+         "label": "clipped update",
+         "strokeIds": [
+          "s58",
+          "s59"
+         ]
+        }
+       ],
+       "edges": [
+        {
+         "from": "r",
+         "to": "a",
+         "strokeIds": [
+          "s60"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "a",
+         "to": "u",
+         "strokeIds": [
+          "s61"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "u",
+         "to": "r",
+         "strokeIds": [
+          "s62"
+         ],
+         "kind": "arrow",
+         "label": "repeat"
+        }
+       ],
+       "sequence": [
+        "collect rollouts",
+        "compute advantages",
+        "clipped update"
+       ],
+       "shapes": [],
+       "labels": [
+        "collect rollouts",
+        "compute advantages",
+        "clipped update"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "GAE",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Generalized Advantage Estimation",
+      "strokeIds": [
+       "s70",
+       "s71"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "GAE trades bias for variance with λ: an exponentially weighted sum of TD errors.",
+      "strokeIds": [
+       "s72",
+       "s73"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "heading",
+      "level": 2,
+      "text": "Advantage function",
+      "strokeIds": [
+       "s74",
+       "s75"
+      ]
+     },
+     {
+      "id": "b4",
+      "kind": "paragraph",
+      "text": "The advantage A(s,a) = Q(s,a) − V(s): how much better an action is than average. Keep a low KL divergence between PPO updates.",
+      "strokeIds": [
+       "s76",
+       "s77"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Proximal Policy Optimization",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ],
+    "aliases": [
+     "PPO"
+    ]
+   },
+   {
+    "label": "actor-critic",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "policy ratio",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "KL penalty",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "GAE",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ],
+    "aliases": [
+     "generalized advantage estimation"
+    ]
+   },
+   {
+    "label": "advantage",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "Advantage function",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "KL divergence",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "collect rollouts",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "compute advantages",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "clipped update",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "Proximal Policy Optimization",
+    "to": "actor-critic",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Proximal Policy Optimization",
+    "to": "policy ratio",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Proximal Policy Optimization",
+    "to": "KL penalty",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Proximal Policy Optimization",
+    "to": "GAE",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Proximal Policy Optimization",
+    "to": "advantage",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "collect rollouts",
+    "to": "compute advantages",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "compute advantages",
+    "to": "clipped update",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "clipped update",
+    "to": "collect rollouts",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ],
+    "label": "repeat"
+   },
+   {
+    "from": "GAE",
+    "to": "Advantage function",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Advantage function",
+    "to": "advantage",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "Advantage function",
+    "to": "KL divergence",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "Advantage function",
+    "to": "Proximal Policy Optimization",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": [
+   [
+    "advantage",
+    "Advantage function"
+   ],
+   [
+    "advantage",
+    "compute advantages"
+   ],
+   [
+    "KL divergence",
+    "KL penalty"
+   ],
+   [
+    "GAE",
+    "advantage"
+   ]
+  ]
+ },
+ "notes": [
+  "'KL penalty' is written in plain text with no link and is not in the glossary.",
+  "Headings 'Generalized Advantage Estimation' / 'Advantage function' contain the word advantage but name other concepts: not mentions of 'advantage'."
+ ]
+}

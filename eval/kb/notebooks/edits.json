@@ -1,0 +1,228 @@
+{
+ "name": "edits",
+ "description": "Edit and delete: a page re-written so two links disappear (one concept survives because another page defines it, one vanishes), a deleted page whose only concepts vanish, and a page re-synced unchanged (idempotency).",
+ "glossary": [],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "Activations",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Activation functions",
+      "strokeIds": [
+       "s119",
+       "s120"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "list",
+      "text": "- [[ReLU]]: max(0, x)\n- [[sigmoid]] squashes to (0, 1)",
+      "strokeIds": [
+       "s121",
+       "s122"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "Sigmoid",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Sigmoid",
+      "strokeIds": [
+       "s115",
+       "s116"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Saturates for large |x|; outputs lie in (0, 1).",
+      "strokeIds": [
+       "s117",
+       "s118"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p3",
+    "title": "Softmax",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Output layers",
+      "strokeIds": [
+       "s123",
+       "s124"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Use [[softmax]] for multi-class outputs.",
+      "strokeIds": [
+       "s125",
+       "s126"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "Activations",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Activation functions",
+      "strokeIds": [
+       "s127",
+       "s128"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "list",
+      "text": "- [[tanh]] is zero-centred",
+      "strokeIds": [
+       "s129",
+       "s130"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "paragraph",
+      "text": "Prefer [[GELU|Gaussian error linear unit]] in transformers.",
+      "strokeIds": [
+       "s131",
+       "s132"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "delete",
+   "pageId": "p3"
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "Sigmoid",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Sigmoid",
+      "strokeIds": [
+       "s115",
+       "s116"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Saturates for large |x|; outputs lie in (0, 1).",
+      "strokeIds": [
+       "s117",
+       "s118"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Activation functions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     }
+    ]
+   },
+   {
+    "label": "tanh",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "GELU",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ],
+    "aliases": [
+     "Gaussian error linear unit"
+    ]
+   },
+   {
+    "label": "Sigmoid",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "Activation functions",
+    "to": "tanh",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Activation functions",
+    "to": "GELU",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": []
+ }
+}
