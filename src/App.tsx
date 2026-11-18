@@ -81,6 +81,11 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  const persistence = usePagePersistence(next => {
+    kb.pageChanged(next);
+    setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
+  });
+
   // Load pages + corrections once.
   useEffect(() => {
     if (!isIndexedDbAvailable()) return;
@@ -88,8 +93,7 @@ export default function App() {
       const [list, corr] = await Promise.all([db.listPages(), db.listCorrections()]);
       setCorrections(corr);
       if (list.length === 0) {
-        const p = createPage('My first page');
-        await db.putPage(p);
+        const p = await persistence.writer.replace(createPage('My first page'));
         setPages([p]);
         setPage(p);
       } else {
@@ -98,12 +102,7 @@ export default function App() {
       }
       setLoaded(true);
     })();
-  }, []);
-
-  const persistence = usePagePersistence(next => {
-    kb.pageChanged(next);
-    setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
-  });
+  }, [persistence.writer]);
   const updatePage = useCallback((pageId: string, fn: (p: Page) => Page) => {
     const updatedAt = Date.now();
     setPage((prev) => {
@@ -316,9 +315,7 @@ export default function App() {
   };
 
   const newPage = async () => {
-    const p = createPage(`Page ${pages.length + 1}`);
-    await db.putPage(p);
-    kb.pageChanged(p);
+    const p = await persistence.writer.replace(createPage(`Page ${pages.length + 1}`));
     setPages((l) => [p, ...l]);
     openPage(p);
   };
@@ -335,7 +332,7 @@ export default function App() {
       setToast({ text: 'No strokes found in that file.' });
       return;
     }
-    for (const p of imported) { await db.putPage(p); kb.pageChanged(p); }
+    imported = await Promise.all(imported.map(p => persistence.writer.replace(p)));
     setPages((l) => [...imported, ...l]);
     openPage(imported[0]);
     setToast({ text: `Imported ${imported.length === 1 ? '1 page' : `${imported.length} pages`}.` });
@@ -344,11 +341,12 @@ export default function App() {
   const renamePage = (id: string, title: string) => {
     if (page?.id === id) updatePage(id, (p) => ({ ...p, title }));
     else {
-      setPages((list) => {
-        const target = list.find((p) => p.id === id);
-        if (target) { const next = { ...target, title, updatedAt: Date.now() }; void db.putPage(next).then(() => kb.pageChanged(next)); }
-        return list.map((p) => (p.id === id ? { ...p, title, updatedAt: Date.now() } : p));
-      });
+      const target = pages.find(p => p.id === id);
+      if (!target) return;
+      const latest = persistence.writer.resolve(target, null);
+      const next = { ...latest, title, updatedAt: Math.max(Date.now(), latest.updatedAt + 1) };
+      persistence.writer.schedule(next);
+      setPages(list => list.map(p => p.id === id ? next : p));
     }
   };
 
