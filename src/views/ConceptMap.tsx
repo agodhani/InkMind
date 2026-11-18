@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Page } from '../model/page';
 import type { ConceptEdgeKind, Provenance } from '../kb/model';
-import type { ViewGraph } from '../kb/proposals';
+import type { KbGraph } from '../kb/model';
 import type { KbDecisions } from '../kb/decisions';
 import { filterGraph, layoutGraph, neighbourhood } from '../kb/mapView';
 import { Icon } from '../ui/icons';
 import { Segmented } from '../ui/primitives';
 import { ConceptDetail } from './ConceptDetail';
+import type { ReviewProposal } from './ProposalReview';
 import { visibleLabels, zoomAt, type MapCamera } from './mapGestures';
 
 const kinds: ConceptEdgeKind[] = ['contains', 'follows', 'supports', 'mentions'];
-export function ConceptMap({ graph, pages, focused, onFocus, decide, onSource }: {
-  graph: ViewGraph; pages: Page[]; focused: string | null; onFocus: (id: string | null) => void;
+export function ConceptMap({ graph, pages, focused, onFocus, decide, review, onSource }: {
+  graph: KbGraph; pages: Page[]; focused: string | null; onFocus: (id: string | null) => void;
   decide: (fn: (d: KbDecisions) => KbDecisions) => void; onSource: (p: Provenance) => void;
+  review: ReviewProposal;
 }) {
   const [query, setQuery] = useState(''), [pageId, setPageId] = useState('');
   const [enabled, setEnabled] = useState(kinds), [depth, setDepth] = useState<'1' | '2'>('1');
@@ -59,8 +61,9 @@ export function ConceptMap({ graph, pages, focused, onFocus, decide, onSource }:
           <defs>{kinds.map(kind => <marker key={kind} id={`arrow-${kind}`} viewBox="0 0 10 10" refX="22" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className={`kb-arrow kb-kind-${kind}`} /></marker>)}</defs>
           <g transform={`translate(${camera.x},${camera.y}) scale(${camera.zoom})`}>
             <g className="kb-hit-targets" aria-hidden="true">{shown.concepts.map(c => <circle key={c.id} cx={positions[c.id].x} cy={positions[c.id].y} r={Math.max(22, 22 / camera.zoom)} onClick={() => { if (!moved.current) onFocus(c.id); }} />)}</g>
-            {shown.edges.map(e => { const a = positions[e.from], b = positions[e.to]; return a && b && <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`kb-edge kb-kind-${e.kind} ${graph.edges.find(x => x.id === e.id)?.status === 'suggested' ? 'suggested' : ''}`} markerEnd={e.kind === 'mentions' ? undefined : `url(#arrow-${e.kind})`} />; })}
-            {shown.concepts.map(c => { const p = positions[c.id], suggested = graph.concepts.find(x => x.id === c.id)?.status === 'suggested', labelVisible = labels.has(c.id); return <g key={c.id} transform={`translate(${p.x},${p.y})`} className={`kb-node ${suggested ? 'suggested' : ''} ${c.id === focused ? 'focused' : ''}`} role="button" aria-label={`Concept: ${c.label}`} tabIndex={0} onPointerEnter={() => setHovered(c.id)} onPointerLeave={() => setHovered(null)} onClick={() => { if (!moved.current) onFocus(c.id); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFocus(c.id); } }}><title>{c.label}{suggested ? ' · Suggested' : ''}</title><circle className="kb-node-hit" r={Math.max(22, 22 / camera.zoom)} /><circle r={c.id === focused ? 12 : 5 + Math.min(4, Math.sqrt(degrees[c.id] ?? 0))} />{labelVisible && <text y={-24 / camera.zoom} textAnchor="middle" style={{ fontSize: 12 / camera.zoom }}>{c.label}</text>}{suggested && labelVisible && <text className="kb-suggest-label" y={25 / camera.zoom} textAnchor="middle" style={{ fontSize: 10 / camera.zoom }}>Suggested</text>}</g>; })}
+            {shown.edges.map(e => { const a = positions[e.from], b = positions[e.to]; return a && b && <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`kb-edge kb-kind-${e.kind} ${graph.edges.find(x => x.id === e.id)?.status === 'proposed' ? 'suggested' : ''}`} markerEnd={e.kind === 'mentions' ? undefined : `url(#arrow-${e.kind})`} />; })}
+            {shown.concepts.map(c => { const p = positions[c.id], suggested = c.status === 'proposed'; return <g key={c.id} transform={`translate(${p.x},${p.y})`} className={`kb-node ${suggested ? 'suggested' : ''} ${c.id === focused ? 'focused' : ''}`} role="button" aria-label={`Concept: ${c.label}`} tabIndex={0} onPointerEnter={() => setHovered(c.id)} onPointerLeave={() => setHovered(null)} onClick={() => { if (!moved.current) onFocus(c.id); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFocus(c.id); } }}><title>{c.label}{suggested ? ' · Suggested' : ''}</title><circle className="kb-node-hit" r={Math.max(22, 22 / camera.zoom)} /><circle r={c.id === focused ? 12 : 5 + Math.min(4, Math.sqrt(degrees[c.id] ?? 0))} /></g>; })}
+            <g className="kb-labels" aria-hidden="true">{shown.concepts.filter(c => labels.has(c.id)).map(c => <g key={c.id} transform={`translate(${positions[c.id].x},${positions[c.id].y})`}><text y={-24 / camera.zoom} textAnchor="middle" style={{ fontSize: 12 / camera.zoom }}>{c.label}</text>{c.status === 'proposed' && <text className="kb-suggest-label" y={25 / camera.zoom} textAnchor="middle" style={{ fontSize: 10 / camera.zoom }}>Suggested</text>}</g>)}</g>
           </g>
         </svg>
         {!shown.concepts.length && <div className="kb-map-empty"><Icon name="map" size={32}/><h2>No concepts here yet</h2><p>Try another filter, or add headings and [[links]] to your notes.</p></div>}
@@ -68,6 +71,6 @@ export function ConceptMap({ graph, pages, focused, onFocus, decide, onSource }:
         <div className="kb-map-zoom"><button className="btn" aria-label="Zoom out map" onClick={() => setCamera(c => zoomAt(c, { x: size.width / 2, y: size.height / 2 }, 0.8))}>−</button><span>{Math.round(camera.zoom * 100)}%</span><button className="btn" aria-label="Zoom in map" onClick={() => setCamera(c => zoomAt(c, { x: size.width / 2, y: size.height / 2 }, 1.25))}>+</button></div>
       </div>
     </div>
-    {active && <ConceptDetail key={active.id} graph={graph} pages={pages} conceptId={active.id} decide={decide} onFocus={onFocus} onSource={onSource} onClose={() => onFocus(null)} />}
+    {active && <ConceptDetail key={active.id} graph={graph} pages={pages} conceptId={active.id} decide={decide} review={review} onFocus={onFocus} onSource={onSource} onClose={() => onFocus(null)} />}
   </div>;
 }

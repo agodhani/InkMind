@@ -1,10 +1,14 @@
 import type { DigitalBlock, Page } from '../model/page';
 import { demoGraph } from '../kb/mapView';
-import type { KbProposal } from '../kb/proposals';
+import type { PageExtraction, Provenance } from '../kb/model';
+import { extractPage } from '../kb/extract';
+import { parseModelExtraction } from '../kb/modelExtractor';
 
 interface NotebookPage { id: string; title?: string; blocks: (Partial<DigitalBlock> & Pick<DigitalBlock, 'id' | 'kind' | 'text'>)[] }
 export interface DemoNotebook { name: string; glossary: string[]; steps: ({ op: 'put'; page: NotebookPage } | { op: 'delete'; pageId: string })[] }
 const notebooks = import.meta.glob<DemoNotebook>('../../eval/kb/notebooks/*.json', { eager: true, import: 'default' });
+const savedResponses = import.meta.glob<string>('../../eval/kb/results/kb-ollama-qwen25-3b-v2/raw/*/*.json', { eager: true, query: '?raw', import: 'default' });
+export interface KbDemo { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }
 export function replayNotebook(notebook: DemoNotebook, prefix = notebook.name): Page[] {
   const pages = new Map<string, Page>();
   for (const step of notebook.steps) {
@@ -26,15 +30,23 @@ export function largeDemoPages(n = 120): Page[] {
   });
   return [...pages.values()];
 }
-export function loadKbDemo(): { pages: Page[]; glossary: string[]; proposals: KbProposal[] } {
+export function loadKbDemo(): KbDemo {
   const fixtures = Object.entries(notebooks).sort(([a], [b]) => a.localeCompare(b)).map(([, n]) => n);
-  const pages = [...fixtures.flatMap(n => replayNotebook(n)), ...largeDemoPages()];
-  const provenance = [{ pageId: 'large-0', blockId: 'topic-0', strokeIds: [], extractor: 'fixture', surface: 'Knowledge synthesis' }];
-  const proposals: KbProposal[] = [
-    { id: 'fixture-synthesis', kind: 'concept', label: 'Knowledge synthesis', provenance, origin: 'fixture', status: 'suggested' },
-    { id: 'fixture-retrieval', kind: 'concept', label: 'Knowledge retrieval', provenance, origin: 'fixture', status: 'suggested' },
-    { id: 'fixture-support', kind: 'edge', from: 'Knowledge topic 1', to: 'fixture-synthesis', edgeKind: 'supports', provenance, origin: 'fixture', status: 'suggested' },
-    { id: 'fixture-follows', kind: 'edge', from: 'fixture-synthesis', to: 'fixture-retrieval', edgeKind: 'follows', provenance, origin: 'fixture', status: 'suggested' },
-  ];
-  return { pages, glossary: [...new Set(fixtures.flatMap(n => n.glossary))], proposals };
+  const pages = fixtures.flatMap(n => replayNotebook(n));
+  const glossary = [...new Set(fixtures.flatMap(n => n.glossary))];
+  const latest = new Map<string, PageExtraction>();
+  for (const [path, raw] of Object.entries(savedResponses).sort(([a], [b]) => Number(a.split('/').at(-1)!.split('-')[0]) - Number(b.split('/').at(-1)!.split('-')[0]) || a.localeCompare(b))) {
+    const extraction = parseModelExtraction(raw), prefix = path.split('/').at(-2)!;
+    latest.set(`${prefix}-${extraction.pageId}`, extraction);
+  }
+  const extractions = pages.flatMap(page => {
+    const original = latest.get(page.id);
+    if (!original?.model) return [];
+    const blockId = (id: string) => `${page.id}-${id}`;
+    const prov = (p: Provenance): Provenance => ({ ...p, pageId: page.id, blockId: blockId(p.blockId), strokeIds: [] });
+    const fresh = extractPage(page, { glossary });
+    const model = { ...original.model, blocks: original.model.blocks.map(b => ({ ...b, id: blockId(b.id) })), suggestions: original.model.suggestions.map(s => s.kind === 'edge' ? { ...s, relation: { ...s.relation, prov: prov(s.relation.prov) } } : { ...s, prov: prov(s.prov) }) };
+    return [{ ...fresh, extractor: 'deterministic+model', model }];
+  });
+  return { pages, glossary, extractions };
 }

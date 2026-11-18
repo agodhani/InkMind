@@ -55,7 +55,7 @@ export function layoutGraph(graph: KbGraph, { width: outputWidth, height: output
   const boxes = components.map(component => {
     const pageKey = (c: Concept) => c.provenance.map(p => p.pageId).sort()[0] ?? '';
     const pages = [...new Set(component.map(pageKey))].sort();
-    const columns = Math.ceil(Math.sqrt(pages.length));
+    const columns = Math.min(pages.length, Math.ceil(Math.sqrt(pages.length * outputWidth / outputHeight)));
     const counters = new Map<string, number>();
     const p = component.map(c => {
       const key = pageKey(c), page = pages.indexOf(key), i = counters.get(key) ?? 0;
@@ -64,11 +64,12 @@ export function layoutGraph(graph: KbGraph, { width: outputWidth, height: output
       return { x: page % columns * 190 + Math.cos(angle) * r, y: Math.floor(page / columns) * 190 + Math.sin(angle) * r };
     });
     const index = new Map(component.map((c, i) => [c.id, i]));
+    const anchors = p.map(v => ({ ...v }));
     const edges = graph.edges.map(e => [index.get(e.from), index.get(e.to)]).filter((e): e is number[] => e[0] !== undefined && e[1] !== undefined);
     for (let step = 0; step < 180; step++) {
-      const d = p.map(() => ({ x: 0, y: 0 }));
+      const d = p.map((v, i) => ({ x: (anchors[i].x - v.x) * 0.025, y: (anchors[i].y - v.y) * 0.025 }));
       for (let i = 0; i < p.length; i++) for (let j = i + 1; j < p.length; j++) {
-        const dx = p[i].x - p[j].x, dy = p[i].y - p[j].y, r = Math.max(0.01, Math.hypot(dx, dy));
+        const dx = p[i].x - p[j].x, dy = p[i].y - p[j].y, r = Math.sqrt(Math.max(0.0001, dx * dx + dy * dy));
         const f = (7000 / (r * r) + Math.max(0, 48 - r) * 0.8) / r;
         d[i].x += dx * f; d[i].y += dy * f; d[j].x -= dx * f; d[j].y -= dy * f;
       }

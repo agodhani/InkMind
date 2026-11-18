@@ -13,6 +13,7 @@ export interface AppSettings {
   glossary: string[];
   liveTranscription: boolean;
   scope: TranscriptionScope;
+  modelConceptExtraction: boolean;
 }
 
 const KEY = 'inkmind.settings.v1';
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glossary: [],
   liveTranscription: true,
   scope: 'page',
+  modelConceptExtraction: false,
 };
 
 /** Fill defaults and pick a provider for settings saved before `provider` existed. */

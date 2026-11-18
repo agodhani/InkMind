@@ -16,11 +16,11 @@ import { suiteMarkdown, suitePlan, type SuiteResult } from './suite';
 import { expectedBlocks } from './expectedBlocks';
 import { SuiteResults } from './SuiteResults';
 import { largeDemoPages, loadKbDemo } from './kbDemo';
-import type { KbProposal } from '../kb/proposals';
+import type { KbDemo } from './kbDemo';
 
 export interface SimulatorPanelProps {
   page: Page;
-  onLoadKbDemo?: (demo: { pages: Page[]; glossary: string[]; proposals: KbProposal[] }) => Promise<void>;
+  onLoadKbDemo?: (demo: KbDemo) => Promise<void>;
   viewport: Viewport;
   onViewportChange: (v: Viewport) => void;
   onInjectStrokes: (strokes: InkStroke[]) => void;
@@ -332,7 +332,7 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         <button onClick={clear} disabled={running}>Clear page</button>
         <button onClick={() => fitView()} disabled={running}>Fit view</button>
         </fieldset>
-        {onLoadKbDemo && <fieldset><legend>Knowledge base</legend><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo(loadKbDemo()).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load KB demo notebooks</button><button disabled={running} onClick={() => { setRunning(true); const demo = loadKbDemo(); void onLoadKbDemo({ pages: largeDemoPages(), glossary: [], proposals: demo.proposals }).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load large KB demo (120 concepts)</button></fieldset>}
+        {onLoadKbDemo && <fieldset><legend>Knowledge base</legend><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo(loadKbDemo()).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load KB demo notebooks</button><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo({ pages: largeDemoPages(), glossary: [], extractions: [] }).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load large KB demo (120 concepts)</button></fieldset>}
         <fieldset><legend>Suite</legend>
         <label title="Replay N relation-bearing scenes back-to-back (normal, then messy), transcribe each and summarise">
           Suite

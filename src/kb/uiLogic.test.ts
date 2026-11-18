@@ -2,10 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Page } from '../model/page';
 import { MemoryDecisionsStore, IndexedDbDecisionsStore } from '../store/kbDecisionsDb';
 import { IDBFactory } from 'fake-indexeddb';
-import { applyDecisions, decideProposal, deleteConcept, emptyDecisions, mergeConcept, rejectSuggestion, renameConcept } from './decisions';
+import { applyDecisions, deleteConcept, emptyDecisions, mergeConcept, rejectSuggestion, renameConcept } from './decisions';
 import { MemoryKnowledgeStore, syncPage } from './store';
 import { acceptSuggestion, suggestLinks } from './suggest';
-import { withProposals } from './proposals';
 import { KbSyncer } from './sync';
 import { demoGraph, filterGraph, groupLinks, layoutGraph, neighbourhood } from './mapView';
 
@@ -64,14 +63,18 @@ describe('link suggestions', () => {
   });
 });
 describe('proposals', () => {
-  it('shows, accepts, rejects and ignores malformed/dangling proposals without changing raw graph', () => {
-    const g = demoGraph(1), p = { id: 'proposal', kind: 'concept' as const, label: 'New topic', provenance: [], origin: 'fixture', status: 'suggested' as const };
-    expect(withProposals(g, [p], emptyDecisions()).concepts[1].status).toBe('suggested');
-    const d = decideProposal(emptyDecisions(), p.id, 'accepted');
-    expect(withProposals(g, [p, { ...p, id: 'edge', kind: 'edge', from: g.concepts[0].id, to: p.id, edgeKind: 'supports' }], d).edges).toHaveLength(1);
-    expect(withProposals(g, [p], decideProposal(d, p.id, 'rejected')).concepts).toHaveLength(1);
-    expect(withProposals(g, [{ ...p, label: undefined }, { ...p, kind: 'edge' }], d).concepts).toHaveLength(1);
-    expect(g.concepts).toHaveLength(1);
+  it('reattaches merged proposals, rewires their edge IDs, and hides deleted concepts', () => {
+    const g = { ...demoGraph(3), proposals: [
+      { id: 'alias', kind: 'alias' as const, label: 'Short name', conceptId: 'demo-0', provenance: [], origin: 'model' as const, status: 'proposed' as const },
+      { id: 'edge', kind: 'edge' as const, label: 'Connection', edgeId: 'demo-0|mentions|demo-2', provenance: [], origin: 'model' as const, status: 'proposed' as const },
+    ] };
+    g.edges.push({ ...g.edges[0], id: 'demo-0|mentions|demo-2', to: 'demo-2' });
+    const merged = applyDecisions(g, mergeConcept(emptyDecisions(), g.concepts[0].label, g.concepts[1].label));
+    expect(merged.proposals![0].conceptId).toBe('demo-1');
+    expect(merged.proposals![1].edgeId).toBe('demo-1|mentions|demo-2');
+    const deleted = applyDecisions(merged, deleteConcept(emptyDecisions(), g.concepts[1].label));
+    expect(deleted.proposals).toEqual([]);
+    expect(g.proposals[0].conceptId).toBe('demo-0');
   });
 });
 describe('KB sync queue', () => {

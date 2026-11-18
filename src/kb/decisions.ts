@@ -6,7 +6,6 @@ export interface KbDecisions {
   merges: { from: string; into: string }[];
   deletes: string[];
   rejected: { pageId: string; blockId: string; key: string }[];
-  proposals?: { id: string; status: 'accepted' | 'rejected' }[];
 }
 export const emptyDecisions = (): KbDecisions => ({ renames: [], merges: [], deletes: [], rejected: [] });
 export const conceptMatches = (c: Concept, key: string): boolean => [c.label, ...c.aliases].some(s => termKey(s) === termKey(key));
@@ -32,20 +31,27 @@ export function applyDecisions(graph: KbGraph, decisions: KbDecisions): KbGraph 
       into.provenance = union([...into.provenance, ...from.provenance]);
       result.concepts = result.concepts.filter(c => c !== from);
       result.edges.forEach(e => { if (e.from === from.id) e.from = into.id; if (e.to === from.id) e.to = into.id; });
+      result.proposals?.forEach(p => { if (p.conceptId === from.id) p.conceptId = into.id; });
     }
     pending = deferred;
   }
   result.concepts = result.concepts.filter(c => !decisions.deletes.some(k => conceptMatches(c, k)));
   const ids = new Set(result.concepts.map(c => c.id));
   const edges = new Map<string, KbGraph['edges'][number]>();
+  const edgeIds = new Map<string, string>();
   for (const e of result.edges) {
     if (e.from === e.to || !ids.has(e.from) || !ids.has(e.to)) continue;
-    e.id = `${e.from}|${e.kind}|${e.to}`;
+    const oldId = e.id; e.id = `${e.from}|${e.kind}|${e.to}`; edgeIds.set(oldId, e.id);
     const prev = edges.get(e.id);
     if (prev) { prev.labels = union([...prev.labels, ...e.labels]); prev.provenance = union([...prev.provenance, ...e.provenance]); }
     else edges.set(e.id, e);
   }
   result.edges = [...edges.values()];
+  if (result.proposals) result.proposals = result.proposals.filter(p => {
+    if (p.conceptId && !ids.has(p.conceptId)) return false;
+    if (p.edgeId) { const id = edgeIds.get(p.edgeId); if (!id) return false; p.edgeId = id; }
+    return true;
+  });
   return result;
 }
 export function renameConcept(d: KbDecisions, key: string, label: string): KbDecisions {
@@ -64,7 +70,4 @@ export function deleteConcept(d: KbDecisions, key: string): KbDecisions {
 }
 export function rejectSuggestion(d: KbDecisions, pageId: string, blockId: string, key: string): KbDecisions {
   return { ...d, rejected: union([...d.rejected, { pageId, blockId, key: termKey(key) }]) };
-}
-export function decideProposal(d: KbDecisions, id: string, status: 'accepted' | 'rejected'): KbDecisions {
-  return { ...d, proposals: [...(d.proposals ?? []).filter(p => p.id !== id), { id, status }] };
 }

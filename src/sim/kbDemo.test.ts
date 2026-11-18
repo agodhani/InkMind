@@ -14,7 +14,12 @@ it('replays each notebook to final pages with defining concepts preserved', () =
   }
   const demo = loadKbDemo();
   expect(new Set(demo.pages.map(p => p.id)).size).toBe(demo.pages.length);
-  expect(demo.proposals).toHaveLength(4); expect(demo.glossary.length).toBeGreaterThan(0);
+  expect(demo.extractions.length).toBeGreaterThan(0); expect(demo.glossary.length).toBeGreaterThan(0);
+  const graph = buildGraph(demo.extractions);
+  expect(graph.proposals?.some(p => p.status === 'proposed')).toBe(true);
+  expect(graph.proposals?.some(p => p.kind === 'alias')).toBe(true);
+  expect(graph.proposals?.some(p => p.kind === 'proposition')).toBe(true);
+  expect(graph.proposals?.every(p => p.provenance.every(s => demo.pages.some(page => page.id === s.pageId && page.blocks.some(b => b.id === s.blockId))))).toBe(true);
   const large = largeDemoPages(); expect(large).toHaveLength(10);
   expect(buildGraph(large.map(p => extractPage(p, { glossary: [] }))).concepts).toHaveLength(120);
   expect(replayNotebook({ name: 'empty', glossary: [], steps: [] })).toEqual([]);

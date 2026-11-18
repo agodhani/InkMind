@@ -30,8 +30,7 @@ import { isEditableTarget, matchesShortcut, SHORTCUTS } from './ui/shortcuts';
 import { stepBrushSize } from './ui/brush';
 import { Icon } from './ui/icons';
 import { useKnowledgeBase } from './kb/useKnowledgeBase';
-import type { Provenance } from './kb/model';
-import type { KbProposal } from './kb/proposals';
+import type { Provenance, PageExtraction } from './kb/model';
 import { ConceptMap } from './views/ConceptMap';
 import { PageConcepts } from './views/PageConcepts';
 import { buildVault, zipFiles } from './export/vault';
@@ -54,7 +53,6 @@ export default function App() {
   const [page, setPage] = useState<Page | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [corrections, setCorrections] = useState<Correction[]>([]);
-  const kb = useKnowledgeBase(pages, loaded, settings.glossary);
   const [showConcepts, setShowConcepts] = useState(false);
   const [focusedConcept, setFocusedConcept] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(() => (window.innerWidth > 900 ? 'split' : 'ink'));
@@ -139,6 +137,8 @@ export default function App() {
     scope: settings.scope,
     onBlocks,
   });
+  const kb = useKnowledgeBase(pages, loaded, settings, status.state === 'running' || status.state === 'waiting');
+  useEffect(() => { if (page) kb.pageEdited(page.id); }, [page, kb.pageEdited]);
 
   const syncHistoryLen = () => setHistoryLen({ undo: undoStack.current.length, redo: redoStack.current.length });
   const pushHistory = useCallback((p: Page) => {
@@ -305,11 +305,11 @@ export default function App() {
     openPage(target); setView('digital'); setShowConcepts(false);
     setSelectedBlockId(block.id); setHighlightStrokeIds(block.strokeIds);
   };
-  const loadDemo = async (demo: { pages: Page[]; glossary: string[]; proposals: KbProposal[] }) => {
+  const loadDemo = async (demo: { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }) => {
     setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
     for (const p of demo.pages) { await db.putPage(p); kb.pageChanged(p); }
     setPages(prev => [...prev.filter(p => !demo.pages.some(d => d.id === p.id)), ...demo.pages]);
-    kb.saveProposals(demo.proposals);
+    await kb.seedExtractions(demo.pages, demo.extractions);
     if (demo.pages[0]) { openPage(demo.pages[0]); setView('digital'); }
     setToast({ text: `Loaded ${demo.pages.length} KB demo pages.` });
   };
@@ -533,7 +533,7 @@ export default function App() {
       )}
 
       <main className="workspace">
-        {view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} onSource={jumpToSource} /> : !page ? (
+        {view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} review={kb.review} onSource={jumpToSource} /> : !page ? (
           <div className="workspace-empty">
             <div className="card empty">
               <div className="empty-art">
@@ -589,7 +589,7 @@ export default function App() {
 
       <PagesDrawer open={showPages} pages={pages} currentId={page?.id ?? null} onClose={() => setShowPages(false)} onOpen={openPage} onNew={() => void newPage()} onImport={(f) => void importStrokes(f)} onRename={renamePage} onDelete={(p) => void deletePage(p)} />
 
-      {showConcepts && page && <PageConcepts key={page.id} page={page} pages={pages} graph={kb.graph} decisions={kb.decisions} proposals={kb.proposals} decide={kb.decide} onMap={focusConcept} onSource={jumpToSource} onAccept={(block, text) => onEditBlock(block, text, false)} onClose={() => setShowConcepts(false)} />}
+      {showConcepts && page && <PageConcepts key={page.id} page={page} pages={pages} graph={kb.graph} decisions={kb.decisions} decide={kb.decide} review={kb.review} onMap={focusConcept} onSource={jumpToSource} onAccept={(block, text) => onEditBlock(block, text, false)} onClose={() => setShowConcepts(false)} />}
       {(kb.error || persistence.error) && <div className="kb-error" role="alert">{persistence.error ? `Page save: ${persistence.error}` : `Knowledge base: ${kb.error}`}</div>}
       <SettingsDrawer
         open={showSettings}

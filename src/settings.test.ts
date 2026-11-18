@@ -4,6 +4,8 @@ import { DEFAULT_SETTINGS, migrateSettings } from './settings';
 describe('migrateSettings', () => {
   it('defaults to mock when nothing is stored', () => {
     expect(migrateSettings({}).provider).toBe('mock');
+    expect(migrateSettings({}).modelConceptExtraction).toBe(false);
+    expect(migrateSettings({ modelConceptExtraction: true }).modelConceptExtraction).toBe(true);
   });
   it('keeps pre-provider users with a key on openrouter', () => {
     expect(migrateSettings({ openRouterApiKey: 'sk-or-x' }).provider).toBe('openrouter');
