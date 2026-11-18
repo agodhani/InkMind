@@ -31,17 +31,20 @@ export function ConceptMap({ graph, pages, focused, onFocus, decide, review, onS
     return () => observer.disconnect();
   }, []);
   const matching = useMemo(() => filterGraph(graph, { query, pageIds: pageId ? [pageId] : [] }).concepts, [graph, query, pageId]);
+  const active = graph.concepts.find(c => c.id === focused);
+  useEffect(() => {
+    if (focused && !active) { setHovered(null); onFocus(null); }
+  }, [focused, active, onFocus]);
   const shown = useMemo(() => {
     const filtered = filterGraph(graph, { kinds: enabled, pageIds: pageId ? [pageId] : [] });
     filtered.edges = filtered.edges.filter(e => enabled.includes(e.kind));
-    return focused ? neighbourhood(filtered, focused, Number(depth)) : filtered;
-  }, [graph, enabled, pageId, focused, depth]);
+    return active ? neighbourhood(filtered, active.id, Number(depth)) : filtered;
+  }, [graph, enabled, pageId, active, depth]);
   const positions = useMemo(() => layoutGraph(shown, { width: Math.max(100, size.width - 80), height: Math.max(100, size.height - 100), seed: 17 }), [shown, size]);
   const degrees = useMemo(() => { const result: Record<string, number> = {}; for (const e of shown.edges) { result[e.from] = (result[e.from] ?? 0) + 1; result[e.to] = (result[e.to] ?? 0) + 1; } return result; }, [shown]);
   const labels = useMemo(() => visibleLabels(shown.concepts.map(c => ({ id: c.id, label: c.label, ...positions[c.id], degree: degrees[c.id] ?? 0 })), camera, size, [focused, hovered, ...(query ? matching.map(c => c.id) : [])].filter((id): id is string => !!id)), [shown, positions, degrees, camera, size, focused, hovered, query, matching]);
   const fit = () => setCamera({ x: 40, y: 40, zoom: 1 });
   useEffect(() => { setCamera({ x: 40, y: 40, zoom: 1 }); }, [size, shown]);
-  const active = graph.concepts.find(c => c.id === focused);
   return <div className={`kb-map ${active ? 'has-detail' : ''}`}>
     <div className="kb-map-main">
       <header className="kb-map-heading"><h1>Concept map <span className="badge">{graph.concepts.length}</span></h1></header>
