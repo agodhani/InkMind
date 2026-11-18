@@ -32,6 +32,7 @@ import { Icon } from './ui/icons';
 import { useKnowledgeBase } from './kb/useKnowledgeBase';
 import type { Provenance, PageExtraction } from './kb/model';
 import { ConceptMap } from './views/ConceptMap';
+import { conceptForLink } from './kb/wikilink';
 import { PageConcepts } from './views/PageConcepts';
 import { buildVault, zipFiles } from './export/vault';
 import { usePagePersistence } from './store/usePagePersistence';
@@ -464,6 +465,7 @@ export default function App() {
       onHighlightStrokes={setHighlightStrokeIds}
       onEditBlock={onEditBlock}
       onEditFigure={onEditFigure}
+      onOpenLink={target => { const id = conceptForLink(kb.graph, target); if (id) focusConcept(id); }}
       emptyHint={
         page.strokes.length === 0
           ? 'Write on the ink page. Pause for a second and the digital version appears here.'

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DigitalBlock, InkStroke } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import { DiagramCard } from './DiagramCard';
 import type { FigureEdit } from './FigureEditor';
 import { Icon } from '../ui/icons';
 import { Kbd } from '../ui/primitives';
+import { parseWikilink } from '../kb/wikilink';
 
 export interface DigitalViewProps {
   blocks: DigitalBlock[];
@@ -16,10 +17,12 @@ export interface DigitalViewProps {
   onHighlightStrokes?: (strokeIds: string[] | null) => void;
   onEditBlock: (block: DigitalBlock, newText: string) => void;
   onEditFigure?: (block: DigitalBlock, next: FigureEdit) => void;
+  /** Tap on a [[link]] in the text; receives the link target (not the shown alias). */
+  onOpenLink?: (target: string) => void;
   emptyHint?: string;
 }
 
-export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onHighlightStrokes, onEditBlock, onEditFigure, emptyHint }: DigitalViewProps) {
+export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, onHoverBlock, onHighlightStrokes, onEditBlock, onEditFigure, onOpenLink, emptyHint }: DigitalViewProps) {
   const ordered = useMemo(() => sortBlocksForReading(blocks), [blocks]);
   const strokeById = useMemo(() => new Map(strokes.map((s) => [s.id, s])), [strokes]);
   const footnotes = ordered.filter((b) => b.kind === 'footnote_def');
@@ -40,6 +43,7 @@ export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, o
   }
 
   return (
+    <OpenLink.Provider value={onOpenLink}>
     <div className="digital-view" onClick={() => onSelectBlock(null)}>
       {main.map((b) => (
         <BlockView key={b.id} block={b} strokeById={strokeById} selected={b.id === selectedBlockId} onSelect={onSelectBlock} onHover={onHoverBlock} onHighlightStrokes={onHighlightStrokes} onEdit={onEditBlock} onEditFigure={onEditFigure} />
@@ -52,6 +56,7 @@ export function DigitalView({ blocks, strokes, selectedBlockId, onSelectBlock, o
         </div>
       )}
     </div>
+    </OpenLink.Provider>
   );
 }
 
@@ -239,8 +244,11 @@ function BlockText({ block }: { block: DigitalBlock }) {
   }
 }
 
+const OpenLink = createContext<((target: string) => void) | undefined>(undefined);
+
 /** Minimal inline Markdown: **bold**, *italic*, `code`, $math$, [[links]]. */
 function Inline({ text }: { text: string }) {
+  const openLink = useContext(OpenLink);
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$[^$]+\$|\[\[[^\]]+\]\])/g);
   return (
     <>
@@ -249,7 +257,10 @@ function Inline({ text }: { text: string }) {
         if (p.startsWith('*') && p.endsWith('*') && p.length > 2) return <em key={i}>{p.slice(1, -1)}</em>;
         if (p.startsWith('`') && p.endsWith('`')) return <code key={i}>{p.slice(1, -1)}</code>;
         if (p.startsWith('$') && p.endsWith('$')) return <code key={i} className="inline-math">{p.slice(1, -1)}</code>;
-        if (p.startsWith('[[') && p.endsWith(']]')) return <a key={i} className="wikilink">{p.slice(2, -2)}</a>;
+        if (p.startsWith('[[') && p.endsWith(']]')) {
+          const { target, shown } = parseWikilink(p);
+          return <a key={i} className="wikilink" role="link" tabIndex={0} onClick={e => { e.stopPropagation(); openLink?.(target); }} onKeyDown={e => { if (e.key === 'Enter') openLink?.(target); }}>{shown}</a>;
+        }
         return <span key={i}>{p}</span>;
       })}
     </>
