@@ -28,7 +28,7 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
       tx.oncomplete = () => { connection.close(); resolve(); };
       tx.onabort = () => { connection.close(); reject(tx.error); };
     })).catch(report);
-    void new IndexedDbKnowledgeStore().loadGraph().then(setGraph).catch(report);
+    void syncer.load().catch(report);
     void decisionsStore.load().then(d => { decisionRef.current = d; setDecisions(d); }).catch(report);
     return () => syncer.abortModel();
   }, [decisionsStore, report, syncer]);

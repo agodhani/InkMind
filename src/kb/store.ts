@@ -1,5 +1,5 @@
 import type { Page } from '../model/page';
-import type { KbGraph, PageExtraction, ProposalDecision } from './model';
+import type { GraphProposal, KbGraph, PageExtraction, ProposalDecision } from './model';
 import type { ExtractionContext, Extractor } from './extractor';
 import { extractPage } from './extract';
 import { buildGraph } from './graph';
@@ -46,9 +46,9 @@ export async function syncPage(store: KnowledgeStore, page: Page, opts: SyncOpti
   return graph;
 }
 
-export async function reviewProposal(store: KnowledgeStore, id: string, decision: ProposalDecision): Promise<KbGraph> {
+export async function reviewProposal(store: KnowledgeStore, id: string, decision: ProposalDecision, knownProposal?: GraphProposal): Promise<KbGraph> {
   const [all, previous] = await Promise.all([store.listExtractions(), store.loadGraph()]);
-  if (!previous.proposals?.some(p => p.id === id)) throw new Error(`Unknown proposal: ${id}`);
+  if (!previous.proposals?.some(p => p.id === id) && knownProposal?.id !== id) throw new Error(`Unknown proposal: ${id}`);
   const graph = buildGraph(all, { ...previous, proposalDecisions: { ...previous.proposalDecisions, [id]: decision } });
   await store.commit(null, null, graph);
   return graph;
