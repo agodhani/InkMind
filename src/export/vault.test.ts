@@ -6,6 +6,16 @@ import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
 import { applyDecisions, emptyDecisions, renameConcept } from '../kb/decisions';
 
+it('preserves literal wiki-links in fenced code and matching backtick spans', () => {
+  const page = largeDemoPages(1)[0], graph = { concepts: [{ id: 'c', label: 'Model: Free', aliases: ['MF'], provenance: [] }], edges: [] };
+  const code = ['```md\n[[Model: Free]]\n```', '~~~~\n[[MF|literal]]\n~~~\n[[MF]]\n~~~~', '`[[MF]]`', '``a ` [[MF|literal]] b``', '`multi\n[[MF]]\nline`'];
+  page.blocks = [{ ...page.blocks[0], kind: 'paragraph', text: `${code.join('\n\n')}\n\n[[MF]] [[Model: Free|shown]]\n\n\`\`\`\n[[MF]]` }];
+  const note = buildVault([page], graph).find(f => f.path.startsWith('Pages/'))!.content;
+  for (const literal of code) expect(note).toContain(literal);
+  expect(note).toContain('[[Model- Free|MF]] [[Model- Free|shown]]');
+  expect(note).toContain('```\n[[MF]]\n\n^block-1');
+});
+
 it('keeps original concept labels as aliases when vault filenames are sanitized', () => {
   const page = largeDemoPages(1)[0];
   page.blocks[0].text = '[[Model: Free]]';

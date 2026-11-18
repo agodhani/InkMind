@@ -6,6 +6,27 @@ import { termKey } from '../kb/normalize';
 import { pageToMarkdown } from './markdown';
 
 export interface VaultFile { path: string; content: string }
+function outsideCode(markdown: string, rewrite: (text: string) => string): string {
+  const tokens = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)|(`+)/gm;
+  let cursor = 0, result = '', token: RegExpExecArray | null;
+  while ((token = tokens.exec(markdown))) {
+    let end: number | undefined;
+    if (token[1]) {
+      const fence = token[1], closing = new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*(?:\\n|$)`, 'gm');
+      closing.lastIndex = tokens.lastIndex;
+      const match = closing.exec(markdown);
+      end = match ? closing.lastIndex : markdown.length;
+    } else {
+      const closing = /`+/g; closing.lastIndex = tokens.lastIndex;
+      let match: RegExpExecArray | null;
+      while ((match = closing.exec(markdown))) if (match[0].length === token[2].length) { end = closing.lastIndex; break; }
+    }
+    if (end === undefined) continue;
+    result += rewrite(markdown.slice(cursor, token.index)) + markdown.slice(token.index, end);
+    cursor = end; tokens.lastIndex = end;
+  }
+  return result + rewrite(markdown.slice(cursor));
+}
 function names(items: { id: string; label: string }[]): Map<string, string> {
   const used = new Set<string>(), result = new Map<string, string>();
   for (const item of [...items].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -33,7 +54,7 @@ export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
     refs.set(page.id, ids);
     const header = pageToMarkdown(page, []);
     const body = blocks.map(b => {
-      const markdown = rewriteLinks(pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim());
+      const markdown = outsideCode(pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim(), rewriteLinks);
       const structured = b.kind === 'diagram' || b.kind === 'math' || /\n|^(?:[-*+] |\d+\. |\|)/.test(markdown);
       return markdown + `${structured ? '\n\n' : ' '}^${ids.get(b.id)}`;
     }).join('\n\n');
