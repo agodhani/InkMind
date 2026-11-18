@@ -3,6 +3,7 @@ import { sortBlocksForReading } from '../model/page';
 import type { KbGraph } from '../kb/model';
 import { groupLinks } from '../kb/mapView';
 import { termKey } from '../kb/normalize';
+import { applyDecisions, type KbDecisions } from '../kb/decisions';
 import { pageToMarkdown } from './markdown';
 import { blockInkSvg } from './inkSvg';
 
@@ -38,7 +39,14 @@ function names(items: { id: string; label: string }[]): Map<string, string> {
   }
   return result;
 }
-export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
+export function buildVault(pages: Page[], graph: KbGraph, decisions?: KbDecisions): VaultFile[] {
+  const deleted = new Set(decisions?.deletes.map(termKey));
+  if (decisions) {
+    const beforeDeletion = applyDecisions(graph, { ...decisions, deletes: [] });
+    graph = applyDecisions(graph, decisions);
+    const remaining = new Set(graph.concepts.map(c => c.id));
+    for (const c of beforeDeletion.concepts) if (!remaining.has(c.id)) for (const label of [c.label, ...c.aliases]) deleted.add(termKey(label));
+  }
   const pageNames = names(pages.map(p => ({ id: p.id, label: p.title }))), conceptNames = names(graph.concepts);
   const targets = new Map<string, string>();
   for (const c of graph.concepts) for (const label of [c.label, ...c.aliases]) {
@@ -47,7 +55,8 @@ export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
   }
   const rewriteLinks = (markdown: string) => markdown.replace(/(?<!!)\[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/g, (link, target: string, display: string | undefined) => {
     const name = targets.get(termKey(target));
-    return name && name !== target ? `[[${name}|${display ?? target}]]` : link;
+    if (name) return name !== target ? `[[${name}|${display ?? target}]]` : link;
+    return deleted.has(termKey(target)) ? display ?? target : link;
   });
   const refs = new Map<string, Map<string, string>>();
   const assets: VaultFile[] = [], inkPages = names(pages.map(p => ({ id: p.id, label: p.id })));

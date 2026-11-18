@@ -55,5 +55,5 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
   const pageEdited = useCallback((id: string) => syncer.abortModel(id), [syncer]);
   const pageDeleted = useCallback((id: string) => { void syncer.pageDeleted(id).catch(report); }, [syncer, report]);
   const displayed = useMemo(() => applyDecisions(graph, decisions), [graph, decisions]);
-  return { graph: displayed, decisions, decide, review, seedExtractions, pageChanged, pageEdited, pageDeleted, error };
+  return { graph: displayed, rawGraph: graph, decisions, decide, review, seedExtractions, pageChanged, pageEdited, pageDeleted, error };
 }

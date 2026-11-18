@@ -380,7 +380,7 @@ export default function App() {
   };
 
   const exportVault = () => {
-    const bytes = zipFiles(buildVault(pages, kb.graph));
+    const bytes = zipFiles(buildVault(pages, kb.rawGraph, kb.decisions));
     const blob = new Blob([new Uint8Array(bytes)], { type: 'application/zip' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'inkmind-vault.zip'; a.click(); URL.revokeObjectURL(a.href);
     setToast({ text: 'Exported inkmind-vault.zip' });
