@@ -11,6 +11,23 @@ import { KbSyncer } from './sync';
 const page: Page = { id: 'p', title: 'Test', createdAt: 0, updatedAt: 0, strokes: [], blocks: [{ id: 'b', kind: 'paragraph', text: '[[Alpha]] [[Beta]] Alpha supports Beta. Spaced retrieval improves learning.', strokeIds: [], confidence: 1, bbox: { left: 0, top: 0, right: 500, bottom: 30 } }] };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+it('does not schedule model work from a deterministic commit resumed after deletion', async () => {
+  vi.useFakeTimers();
+  const store = new MemoryKnowledgeStore(), commit = store.commit.bind(store);
+  let resume!: () => void, started!: () => void;
+  const gate = new Promise<void>(r => { resume = r; }), entered = new Promise<void>(r => { started = r; });
+  let pause = true;
+  store.commit = async (...args) => { if (pause) { pause = false; started(); await gate; } await commit(...args); };
+  const syncer = new KbSyncer(store, () => [], { debounceMs: 0, modelDebounceMs: 5000, modelExtractor: () => deterministicExtractor });
+  const changed = syncer.pageChanged(page);
+  await vi.advanceTimersByTimeAsync(0); await entered;
+  const deleted = syncer.pageDeleted(page.id);
+  resume(); await changed; await deleted;
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(await store.listExtractions()).toEqual([]);
+  syncer.abortModel();
+});
+
 it('defaults off, disables Mock, and chooses only local or free model providers', () => {
   expect(configuredKbExtractor(DEFAULT_SETTINGS)).toBeUndefined();
   expect(configuredKbExtractor({ ...DEFAULT_SETTINGS, modelConceptExtraction: true })).toBeUndefined();

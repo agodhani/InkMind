@@ -11,6 +11,10 @@ export class KbSyncer {
   private pending = new Map<string, { handle: unknown; resolve: (() => void)[]; reject: ((e: unknown) => void)[] }>();
   private listeners = new Set<(graph: KbGraph) => void>();
   private models = new Map<string, { handle?: unknown; controller: AbortController }>();
+  private generations = new Map<string, number>();
+  private advance(id: string): number {
+    const next = (this.generations.get(id) ?? 0) + 1; this.generations.set(id, next); return next;
+  }
   private timers: SyncTimers;
   private store: KnowledgeStore;
   private glossary: () => string[];
@@ -47,19 +51,22 @@ export class KbSyncer {
       work.controller.abort(); if (work.handle !== undefined) this.timers.clearTimeout(work.handle); this.models.delete(key);
     }
   }
-  private scheduleModel(page: Page): void {
+  private scheduleModel(page: Page, generation: number): void {
+    if (this.generations.get(page.id) !== generation) return;
     this.abortModel(page.id);
     if (!this.options.modelExtractor?.()) return;
     const work = { controller: new AbortController(), handle: undefined as unknown };
     const run = () => {
-      if (work.controller.signal.aborted) return;
+      if (work.controller.signal.aborted || this.generations.get(page.id) !== generation) return;
       if (this.options.busy?.()) { work.handle = this.timers.setTimeout(run, this.options.modelDebounceMs ?? 5000); return; }
       void this.enqueue(async () => {
         const extractor = this.options.modelExtractor?.();
-        if (!extractor || work.controller.signal.aborted) return;
+        if (!extractor || work.controller.signal.aborted || this.generations.get(page.id) !== generation) return;
         if (this.options.busy?.()) { work.handle = this.timers.setTimeout(run, this.options.modelDebounceMs ?? 5000); return; }
         const guarded: Extractor = { ...extractor, extract: async (p, ctx) => {
-          const result = await extractor.extract(p, ctx); ctx.signal?.throwIfAborted(); return result;
+          const result = await extractor.extract(p, ctx); ctx.signal?.throwIfAborted();
+          if (this.generations.get(page.id) !== generation) throw new DOMException('Superseded', 'AbortError');
+          return result;
         } };
         this.emit(await syncPage(this.store, page, { glossary: this.glossary(), extractor: guarded, signal: work.controller.signal }));
       }).catch(e => { if (!work.controller.signal.aborted) this.options.onError?.(e); });
@@ -74,6 +81,7 @@ export class KbSyncer {
     return this.enqueue(async () => { this.emit(await syncPage(this.store, page, { glossary: this.glossary(), extractor })); });
   }
   pageChanged(page: Page): Promise<void> {
+    const generation = this.advance(page.id);
     this.abortModel(page.id);
     const snapshot = structuredClone(page), prev = this.pending.get(page.id);
     if (prev) this.timers.clearTimeout(prev.handle);
@@ -81,7 +89,7 @@ export class KbSyncer {
       const entry = { handle: undefined as unknown, resolve: [...(prev?.resolve ?? []), resolve], reject: [...(prev?.reject ?? []), reject] };
       entry.handle = this.timers.setTimeout(() => {
         this.pending.delete(page.id);
-        void this.enqueue(() => this.sync(snapshot)).then(() => { this.scheduleModel(snapshot); entry.resolve.forEach(fn => fn()); }, e => entry.reject.forEach(fn => fn(e)));
+        void this.enqueue(() => this.sync(snapshot)).then(() => { this.scheduleModel(snapshot, generation); entry.resolve.forEach(fn => fn()); }, e => entry.reject.forEach(fn => fn(e)));
       }, this.options.debounceMs ?? 800);
       this.pending.set(page.id, entry);
     });
@@ -91,17 +99,23 @@ export class KbSyncer {
     if (p) { this.timers.clearTimeout(p.handle); this.pending.delete(id); p.resolve.forEach(fn => fn()); }
   }
   pageDeleted(id: string): Promise<void> {
+    this.advance(id);
     this.abortModel(id);
     this.cancel(id);
     return this.enqueue(async () => { this.emit(await removePage(this.store, id)); });
   }
   indexAll(pages: Page[]): Promise<void> {
     const snapshots = structuredClone(pages);
+    const generations = new Map(snapshots.map(p => [p.id, this.advance(p.id)]));
     [...this.pending.keys()].forEach(id => this.cancel(id));
     return this.enqueue(async () => {
       const ids = new Set(snapshots.map(p => p.id));
       for (const e of await this.store.listExtractions()) if (!ids.has(e.pageId)) { this.abortModel(e.pageId); this.cancel(e.pageId); this.emit(await removePage(this.store, e.pageId)); }
-      for (const p of snapshots) { await this.sync(p); this.scheduleModel(p); }
+      for (const p of snapshots) {
+        const generation = generations.get(p.id)!;
+        if (this.generations.get(p.id) !== generation) continue;
+        await this.sync(p); this.scheduleModel(p, generation);
+      }
     });
   }
 }
