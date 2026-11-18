@@ -28,7 +28,7 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
       tx.oncomplete = () => { connection.close(); resolve(); };
       tx.onabort = () => { connection.close(); reject(tx.error); };
     })).catch(report);
-    void new IndexedDbKnowledgeStore().loadGraph().then(setGraph).catch(report);
+    void syncer.load().catch(report);
     void decisionsStore.load().then(d => { decisionRef.current = d; setDecisions(d); }).catch(report);
     return () => syncer.abortModel();
   }, [decisionsStore, report, syncer]);
@@ -55,5 +55,5 @@ export function useKnowledgeBase(pages: Page[], loaded: boolean, settings: AppSe
   const pageEdited = useCallback((id: string) => syncer.abortModel(id), [syncer]);
   const pageDeleted = useCallback((id: string) => { void syncer.pageDeleted(id).catch(report); }, [syncer, report]);
   const displayed = useMemo(() => applyDecisions(graph, decisions), [graph, decisions]);
-  return { graph: displayed, decisions, decide, review, seedExtractions, pageChanged, pageEdited, pageDeleted, error };
+  return { graph: displayed, rawGraph: graph, decisions, decide, review, seedExtractions, pageChanged, pageEdited, pageDeleted, error };
 }

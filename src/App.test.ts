@@ -4,13 +4,20 @@ import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import type { ToolbarProps } from './ui/Toolbar';
 import type { PagesDrawerProps } from './ui/PagesDrawer';
+import type { KbGraph } from './kb/model';
+import { deleteConcept, emptyDecisions } from './kb/decisions';
+import * as vault from './export/vault';
 import { createPage } from './model/page';
 import { db } from './store/db';
 import { PagePersistence } from './store/pagePersistence';
 import { stroke } from './__tests__/helpers';
 import App from './App';
 
-const controls = vi.hoisted(() => ({ toolbar: null as ToolbarProps | null, drawer: null as PagesDrawerProps | null }));
+const controls = vi.hoisted(() => ({
+  toolbar: null as ToolbarProps | null, drawer: null as PagesDrawerProps | null,
+  rawGraph: { concepts: [], edges: [] } as KbGraph,
+  decisions: { renames: [], merges: [], deletes: [], rejected: [] } as ReturnType<typeof emptyDecisions>,
+}));
 vi.mock('./ui/Toolbar', () => ({ Toolbar: (props: ToolbarProps) => { controls.toolbar = props; return null; } }));
 vi.mock('./ui/PagesDrawer', () => ({ PagesDrawer: (props: PagesDrawerProps) => { controls.drawer = props; return null; } }));
 vi.mock('./ink/InkCanvas', () => ({ InkCanvas: () => null }));
@@ -19,7 +26,8 @@ vi.mock('./ui/SettingsDrawer', () => ({ SettingsDrawer: () => null }));
 vi.mock('./ui/Onboarding', () => ({ Onboarding: () => null }));
 vi.mock('./transcribe/useTranscription', () => ({ useTranscription: () => ({ status: { state: 'idle' } }) }));
 vi.mock('./kb/useKnowledgeBase', () => ({ useKnowledgeBase: () => ({
-  graph: { concepts: [], edges: [] }, pageChanged: vi.fn(), pageEdited: vi.fn(), pageDeleted: vi.fn(),
+  graph: { concepts: [], edges: [] }, rawGraph: controls.rawGraph, decisions: controls.decisions,
+  pageChanged: vi.fn(), pageEdited: vi.fn(), pageDeleted: vi.fn(),
 }) }));
 vi.mock('./store/db', () => ({
   isIndexedDbAvailable: () => true,
@@ -75,6 +83,29 @@ it('routes first-page creation, new pages and imports through persistence', asyn
     expect(replace.mock.calls.map(([p]) => p.id).sort()).toEqual([...stored.keys()].sort());
   } finally {
     await act(async () => root.unmount());
+    vi.restoreAllMocks(); vi.unstubAllGlobals();
+  }
+});
+
+it('exports the raw graph and deletion decisions rather than losing deleted targets in the displayed graph', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.stubGlobal('URL', class extends URL {
+    static createObjectURL = vi.fn(() => 'blob:vault');
+    static revokeObjectURL = vi.fn();
+  });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const build = vi.spyOn(vault, 'buildVault'), page = createPage('Export');
+  controls.rawGraph = { concepts: [{ id: 'deleted', label: 'actor-critic', aliases: ['AC'], provenance: [] }], edges: [] };
+  controls.decisions = deleteConcept(emptyDecisions(), 'actor-critic');
+  vi.mocked(db.listPages).mockResolvedValue([page]);
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(App)));
+    await act(async () => controls.toolbar!.onExportVault());
+    expect(build).toHaveBeenCalledWith([page], controls.rawGraph, controls.decisions);
+  } finally {
+    await act(async () => root.unmount());
+    controls.rawGraph = { concepts: [], edges: [] }; controls.decisions = emptyDecisions();
     vi.restoreAllMocks(); vi.unstubAllGlobals();
   }
 });

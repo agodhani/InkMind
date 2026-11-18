@@ -3,7 +3,9 @@ import { sortBlocksForReading } from '../model/page';
 import type { KbGraph } from '../kb/model';
 import { groupLinks } from '../kb/mapView';
 import { termKey } from '../kb/normalize';
+import { applyDecisions, type KbDecisions } from '../kb/decisions';
 import { pageToMarkdown } from './markdown';
+import { blockInkSvg } from './inkSvg';
 
 export interface VaultFile { path: string; content: string }
 function outsideCode(markdown: string, rewrite: (text: string) => string): string {
@@ -37,7 +39,14 @@ function names(items: { id: string; label: string }[]): Map<string, string> {
   }
   return result;
 }
-export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
+export function buildVault(pages: Page[], graph: KbGraph, decisions?: KbDecisions): VaultFile[] {
+  const deleted = new Set(decisions?.deletes.map(termKey));
+  if (decisions) {
+    const beforeDeletion = applyDecisions(graph, { ...decisions, deletes: [] });
+    graph = applyDecisions(graph, decisions);
+    const remaining = new Set(graph.concepts.map(c => c.id));
+    for (const c of beforeDeletion.concepts) if (!remaining.has(c.id)) for (const label of [c.label, ...c.aliases]) deleted.add(termKey(label));
+  }
   const pageNames = names(pages.map(p => ({ id: p.id, label: p.title }))), conceptNames = names(graph.concepts);
   const targets = new Map<string, string>();
   for (const c of graph.concepts) for (const label of [c.label, ...c.aliases]) {
@@ -46,20 +55,30 @@ export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
   }
   const rewriteLinks = (markdown: string) => markdown.replace(/(?<!!)\[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/g, (link, target: string, display: string | undefined) => {
     const name = targets.get(termKey(target));
-    return name && name !== target ? `[[${name}|${display ?? target}]]` : link;
+    if (name) return name !== target ? `[[${name}|${display ?? target}]]` : link;
+    return deleted.has(termKey(target)) ? display ?? target : link;
   });
   const refs = new Map<string, Map<string, string>>();
+  const assets: VaultFile[] = [], inkPages = names(pages.map(p => ({ id: p.id, label: p.id })));
   const files: VaultFile[] = pages.map(page => {
     const blocks = sortBlocksForReading(page.blocks), ids = new Map(blocks.map((b, i) => [b.id, `block-${i + 1}`]));
+    const inkBlocks = names(blocks.map(b => ({ id: b.id, label: b.id })));
     refs.set(page.id, ids);
     const header = pageToMarkdown(page, []);
     const body = blocks.map(b => {
-      const markdown = outsideCode(pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim(), rewriteLinks);
+      let exported = pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim();
+      if (b.kind === 'diagram') {
+        const svg = blockInkSvg(page, b), path = `Assets/Ink/${inkPages.get(page.id)}/${inkBlocks.get(b.id)}.svg`;
+        if (svg) assets.push({ path, content: svg });
+        exported = exported.replace(`![[${page.id}/${b.id}.png]]`, svg ? `![[${path}]]` : '').trim() || '*No source ink available.*';
+      }
+      const markdown = outsideCode(exported, rewriteLinks);
       const structured = b.kind === 'diagram' || b.kind === 'math' || /\n|^(?:[-*+] |\d+\. |\|)/.test(markdown);
       return markdown + `${structured ? '\n\n' : ' '}^${ids.get(b.id)}`;
     }).join('\n\n');
     return { path: `Pages/${pageNames.get(page.id)}.md`, content: `${header}\n${body}\n` };
   });
+  files.push(...assets);
   for (const c of graph.concepts) {
     const aliases = [...new Set([...c.aliases, ...(conceptNames.get(c.id) !== c.label ? [c.label] : [])])];
     const lines = ['---', `aliases: ${JSON.stringify(aliases)}`, '---', '', `# ${c.label}`, ''];

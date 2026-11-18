@@ -7,6 +7,7 @@ import { MemoryKnowledgeStore, syncPage } from './store';
 import { acceptSuggestion, suggestLinks } from './suggest';
 import { KbSyncer } from './sync';
 import { demoGraph, filterGraph, groupLinks, layoutGraph, neighbourhood } from './mapView';
+import { fitCamera } from '../views/mapGestures';
 
 const page = (id = 'p', text = '[[Alpha]] [[Beta]] [[Gamma]]'): Page => ({ id, title: id, strokes: [], createdAt: 0, updatedAt: 0, blocks: [{ id: 'b', kind: 'paragraph', text, bbox: { left: 0, top: 0, right: 600, bottom: 30 }, confidence: 1, strokeIds: [] }] });
 describe('KB decisions', () => {
@@ -58,8 +59,10 @@ describe('link suggestions', () => {
     expect(suggestLinks(p, graph, emptyDecisions())).toEqual([]);
     p.blocks[0].text = 'no matches'; expect(suggestLinks(p, graph, emptyDecisions())).toEqual([]);
     expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('no matches');
-    p.blocks[0].text = 'Alphas'; expect(acceptSuggestion(p.blocks[0], { ...suggestions[0], surface: 'Alphas' })).toBe('[[Alpha]]');
-    p.blocks[0].text = 'Firstborn First'; expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('Firstborn [[Alpha|First]]');
+    p.blocks[0].kind = 'paragraph';
+    p.blocks[0].text = 'Alphas'; expect(acceptSuggestion(p.blocks[0], suggestLinks(p, graph, emptyDecisions())[0])).toBe('[[Alpha]]');
+    p.blocks[0].text = 'Firstborn First'; expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('Firstborn First');
+    expect(acceptSuggestion(p.blocks[0], suggestLinks(p, graph, emptyDecisions())[0])).toBe('Firstborn [[Alpha|First]]');
   });
 });
 describe('proposals', () => {
@@ -117,13 +120,15 @@ describe('map helpers', () => {
     const start = performance.now(), positions = layoutGraph(g, opts), elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(200);
     expect(layoutGraph(g, opts)).toEqual(positions);
-    expect(Object.values(positions).every(p => p.x >= 0 && p.x <= 1000 && p.y >= 0 && p.y <= 700)).toBe(true);
+    const camera = fitCamera(Object.values(positions), opts);
+    expect(Object.values(positions).every(p => p.x * camera.zoom + camera.x >= 40 && p.y * camera.zoom + camera.y >= 40)).toBe(true);
     expect(layoutGraph({ concepts: [], edges: [] }, opts)).toEqual({});
     expect(() => layoutGraph(g, { width: 0, height: 1 })).toThrow();
   });
   it('fits without wall clamping and centers a single concept', () => {
     const positions = Object.values(layoutGraph(demoGraph(120), { width: 900, height: 200 }));
-    expect(positions.every(p => p.x > 0 && p.x < 900 && p.y > 0 && p.y < 200)).toBe(true);
+    const camera = fitCamera(positions, { width: 900, height: 200 });
+    expect(positions.every(p => p.x * camera.zoom + camera.x > 0 && p.x * camera.zoom + camera.x < 900 && p.y * camera.zoom + camera.y > 0 && p.y * camera.zoom + camera.y < 200)).toBe(true);
     expect(layoutGraph(demoGraph(1), { width: 900, height: 200 })).toEqual({ 'demo-0': { x: 450, y: 100 } });
   });
 });
