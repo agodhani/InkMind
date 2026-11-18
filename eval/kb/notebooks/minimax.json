@@ -407,6 +407,17 @@
    },
    {
     "from": "Minimax",
+    "to": "Expectimax",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "Minimax",
     "to": "Alpha-beta pruning",
     "kind": "contains",
     "provenance": [
