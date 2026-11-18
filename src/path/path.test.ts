@@ -52,6 +52,51 @@ describe('notes and paths', () => {
     expect(planPath(tiny(), ['c'], matches).steps[1].reason).toContain('page p');
     expect(matchNotes(tiny(), { ...empty, extractions: [extractions[0]], }, ['PG'])[1].evidence).toEqual([]);
   });
+  it('restores deleted-page evidence steps at canonical positions without ordering violations', () => {
+    const m = tiny(), initial = planPath(m, ['c'], matchNotes(m, empty));
+    const notes = { graph: { concepts: [{ id: 'pg', label: 'PG', aliases: [], provenance: [{ pageId: 'p', blockId: 'b', surface: 'PG', strokeIds: [], extractor: 'test' }] }], edges: [] }, extractions: [] };
+    const covered = planPath(m, ['c'], matchNotes(m, notes), initial);
+    expect(covered.steps.map(s => s.status)).toEqual(['done', 'done', 'todo']);
+    const restored = planPath(m, ['c'], matchNotes(m, empty), covered);
+    expect(restored.steps.map(s => [s.conceptId, s.status])).toEqual([['a', 'todo'], ['b', 'todo'], ['c', 'todo']]);
+    expect(restored.steps.flatMap((s, i) => m.concepts.find(c => c.id === s.conceptId)!.prerequisites.filter(p => restored.steps.findIndex(s => s.conceptId === p) > i))).toHaveLength(0);
+    expect(restored.steps[1].missing).toEqual(['a']); expect(restored.next).toEqual(['a']);
+  });
+  it('inserts extra goals canonically and drops obsolete uncovered steps on goal changes', () => {
+    const m = tiny();
+    m.concepts.push({ id: 'd', label: 'Independent', aliases: [], description: 'D', prerequisites: [] });
+    const matches = matchNotes(m, empty), initial = planPath(m, ['d'], matches);
+    const expanded = planPath(m, ['c', 'd'], matches, initial);
+    expect(expanded.steps.map(s => s.conceptId)).toEqual(['a', 'b', 'c', 'd']);
+    const changed = planPath(m, ['c'], matches, expanded);
+    expect(changed.steps.map(s => s.conceptId)).toEqual(['a', 'b', 'c']);
+    const retained = planPath(m, ['c'], matchNotes(m, empty, ['Independent']), expanded);
+    expect(retained.steps.at(-1)).toMatchObject({ conceptId: 'd', status: 'done' });
+  });
+  it('preserves the remaining order under monotone replanning', () => {
+    const m = tiny(), initial = planPath(m, ['c'], matchNotes(m, empty));
+    const next = planPath(m, ['c'], matchNotes(m, empty, ['Policy']), initial);
+    const remaining = next.steps.filter(s => s.status !== 'done').map(s => s.conceptId);
+    expect(remaining).toEqual(initial.steps.map(s => s.conceptId).filter(id => id !== 'a'));
+  });
+  it('uses grammatical dependent lists and names goals that are also prerequisites', () => {
+    const m = tiny();
+    m.concepts.push({ id: 'd', label: 'Fourth', aliases: [], description: 'D', prerequisites: ['a'] },
+      { id: 'e', label: 'Fifth', aliases: [], description: 'E', prerequisites: ['a'] });
+    const p = planPath(m, ['b', 'c', 'd', 'e'], matchNotes(m, empty));
+    expect(p.steps[0].reason).toBe('Policy gradient, Fourth and Fifth need Policy; nothing in your notes on it yet');
+    expect(p.steps[1].reason).toBe('Your goal: Policy gradient, and Actor critic needs it; nothing in your notes on it yet');
+    expect(p.steps[2].reason).toBe('Your goal: Actor critic; nothing in your notes on it yet');
+    expect(planPath(tiny(), ['c'], matchNotes(tiny(), empty)).steps[0].reason).toContain('Policy gradient needs Policy;');
+  });
+  it('chooses the first known dependent in canonical rather than file or match order', () => {
+    const m = tiny();
+    m.concepts = [m.concepts[2], m.concepts[1], m.concepts[0]];
+    const matches = matchNotes(m, empty, ['Actor critic', 'PG']);
+    const p = planPath(m, ['c'], matches);
+    expect(p.skipped.find(s => s.conceptId === 'a')?.reason).toBe('assumed: you said you know Policy gradient, which builds on it');
+    expect(planPath(m, ['c'], [...matches].reverse())).toEqual(p);
+  });
   it('does not trust proposals, but trusts accepted model concepts and preserves note evidence', () => {
     const provenance = [{ pageId: 'p', blockId: 'b', surface: 'PG', strokeIds: [], extractor: 'test' }];
     const graph: KbGraph = { concepts: [{ id: 'n', label: 'PG', aliases: [], provenance, origin: 'model', status: 'proposed' }], edges: [],

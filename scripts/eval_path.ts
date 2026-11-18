@@ -101,7 +101,7 @@ export async function evaluatePaths() {
       counts.orderingViolations += bad.length;
       if (bad.length) details.push(`ordering: ${step.conceptId} before ${bad.join(', ')}`);
       counts.reasonsTotal++;
-      const namesNeed = /goal/i.test(step.reason) || step.neededBy.some(id => step.reason.includes(mlMap.concepts.find(c => c.id === id)!.label));
+      const namesNeed = (step.goal && step.reason.startsWith(`Your goal: ${step.label}`)) || step.neededBy.some(id => step.reason.includes(mlMap.concepts.find(c => c.id === id)!.label));
       const notesStatus = /notes|you said|assumed:/i.test(step.reason);
       counts.reasonsOk += Number(namesNeed && notesStatus);
       if (!namesNeed || !notesStatus) details.push(`reason incomplete: ${step.conceptId}: ${step.reason}`);
