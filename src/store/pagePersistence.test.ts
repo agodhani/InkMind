@@ -45,13 +45,28 @@ it('allows explicit recreation after deletion without reviving pre-deletion queu
   expect(write.mock.calls[2][0].title).toBe('New edit');
 });
 
-it('deletes an unsaved page and propagates deletion failures while blocking stale saves', async () => {
+it('restores normal saving after a deletion failure', async () => {
   const write = vi.fn(async () => {}), writer = new PagePersistence(write, vi.fn());
   const page = createPage('Pending'), failure = new Error('Delete failed');
   writer.schedule(page);
   await expect(writer.remove(page.id, async () => { throw failure; })).rejects.toBe(failure);
-  writer.schedule(page); await writer.flush();
-  expect(write).not.toHaveBeenCalled();
+  const edited = { ...page, title: 'Edited after failure', updatedAt: page.updatedAt + 1 };
+  writer.schedule(edited); await writer.flush();
+  expect(write.mock.calls).toEqual([[edited]]);
+});
+
+it.each([false, true])('reschedules the latest snapshot after deletion fails (edited during deletion: %s)', async during => {
+  const write = vi.fn(async () => {}), writer = new PagePersistence(write, vi.fn());
+  const page = createPage('Pending'), edited = { ...page, title: 'Edited during deletion', updatedAt: page.updatedAt + 1 };
+  let reject!: (error: Error) => void;
+  const failure = new Error('Delete failed'), gate = new Promise<void>((_, r) => { reject = r; });
+  writer.schedule(page);
+  const deleting = writer.remove(page.id, () => gate);
+  if (during) writer.schedule(edited);
+  reject(failure);
+  await expect(deleting).rejects.toBe(failure);
+  await writer.flush();
+  expect(write.mock.calls).toEqual([[during ? edited : page]]);
 });
 
 it.each([false, true])('persists explicit demo replacement over a cached edit (already saved: %s)', async saved => {

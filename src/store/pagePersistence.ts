@@ -14,10 +14,10 @@ export class PagePersistence {
   }
 
   schedule(page: Page) {
-    if (this.deleted.has(page.id)) return;
     const latest = this.latest.get(page.id);
     if (latest && latest.updatedAt > page.updatedAt) return;
     this.latest.set(page.id, page);
+    if (this.deleted.has(page.id)) return;
     if (this.pending.get(page.id)?.page === page) return;
     this.cancel(page.id);
     const timer = setTimeout(() => { void this.flushPage(page.id); }, this.delay);
@@ -41,10 +41,20 @@ export class PagePersistence {
 
   async remove(id: string, remove: () => Promise<unknown>): Promise<void> {
     this.cancel(id);
-    this.latest.delete(id);
     this.deleted.add(id);
-    this.generations.set(id, (this.generations.get(id) ?? 0) + 1);
-    await this.enqueue(id, remove);
+    const generation = (this.generations.get(id) ?? 0) + 1;
+    this.generations.set(id, generation);
+    try {
+      await this.enqueue(id, remove);
+      if (this.generations.get(id) === generation && this.deleted.has(id)) this.latest.delete(id);
+    } catch (error) {
+      if (this.generations.get(id) === generation && this.deleted.has(id)) {
+        this.deleted.delete(id);
+        const latest = this.latest.get(id);
+        if (latest) this.schedule(latest);
+      }
+      throw error;
+    }
   }
 
   private persist(page: Page): Promise<void> {

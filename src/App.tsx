@@ -354,7 +354,12 @@ export default function App() {
 
   const deletePage = async (p: Page) => {
     if (!window.confirm(`Delete “${p.title || 'Untitled'}”? Its ink and transcription are removed from this browser.`)) return;
-    await persistence.writer.remove(p.id, () => db.deletePage(p.id));
+    try {
+      await persistence.writer.remove(p.id, () => db.deletePage(p.id));
+    } catch (error) {
+      setToast({ text: `Could not delete page: ${error instanceof Error ? error.message : String(error)}` });
+      return;
+    }
     kb.pageDeleted(p.id);
     const rest = pages.filter((x) => x.id !== p.id);
     setPages(rest);
