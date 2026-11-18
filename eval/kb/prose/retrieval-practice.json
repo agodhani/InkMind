@@ -1,0 +1,27 @@
+{
+  "name": "Retrieval practice in prose",
+  "description": "An unstructured study journal explains mechanisms rather than naming them in headings or a glossary.",
+  "glossary": [],
+  "steps": [
+    { "op": "put", "page": { "id": "p1", "blocks": [
+      { "id": "b1", "kind": "paragraph", "text": "Retrieval practice makes you reconstruct an answer without looking. Spaced repetition schedules those attempts further apart as recall gets stronger." },
+      { "id": "b2", "kind": "paragraph", "text": "Interleaving mixes problem types. Unlike blocked practice, interleaving forces you to decide which method fits before applying it." },
+      { "id": "b3", "kind": "footnote_def", "text": "Desirable difficulty: the attempt can feel harder now while improving retention later. Retrieval practice is one example of desirable difficulty." }
+    ] } }
+  ],
+  "expected": {
+    "concepts": [
+      { "label": "Retrieval practice", "provenance": [{ "pageId": "p1", "blockId": "b1" }, { "pageId": "p1", "blockId": "b3" }] },
+      { "label": "Spaced repetition", "provenance": [{ "pageId": "p1", "blockId": "b1" }] },
+      { "label": "Interleaving", "provenance": [{ "pageId": "p1", "blockId": "b2" }] },
+      { "label": "Blocked practice", "provenance": [{ "pageId": "p1", "blockId": "b2" }] },
+      { "label": "Desirable difficulty", "provenance": [{ "pageId": "p1", "blockId": "b3" }] }
+    ],
+    "edges": [
+      { "from": "Spaced repetition", "to": "Retrieval practice", "kind": "supports", "provenance": [{ "pageId": "p1", "blockId": "b1" }] },
+      { "from": "Interleaving", "to": "Blocked practice", "kind": "mentions", "provenance": [{ "pageId": "p1", "blockId": "b2" }] },
+      { "from": "Desirable difficulty", "to": "Retrieval practice", "kind": "contains", "provenance": [{ "pageId": "p1", "blockId": "b3" }] }
+    ],
+    "mustNotMerge": [["Retrieval practice", "Blocked practice"], ["Spaced repetition", "Interleaving"]]
+  }
+}

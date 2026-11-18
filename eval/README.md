@@ -6,6 +6,9 @@
 npm run eval:kb
 npm run eval:kb -- --extractor deterministic --run kb-baseline
 npm run eval:kb -- --replay kb-baseline --run kb-replay
+ollama pull qwen2.5:3b
+npm run eval:kb -- --provider ollama --run kb-local
+npm run eval:kb -- --provider replay --replay kb-ollama-qwen25-3b-v2 --run kb-model-replay
 ```
 
 The offline KB evaluator reads `eval/kb/notebooks/*.json`. Each notebook contains `name`,
@@ -22,12 +25,25 @@ cell is empty. Concept labels are selected from declared term forms rather than 
 variants (for example, glossary `advantage` written as `Advantages` is labelled `advantage`).
 
 Each notebook runs in a fresh memory store. After all steps, every surviving page is re-synced
-and the graph must be deep-equal. A future extractor implements the raw/parse `Extractor`
+and the graph must be deep-equal. Extractors implement the raw/parse `Extractor`
 interface in `src/kb/extractor.ts`. Every extraction call (including re-syncs) saves raw JSON
 under `eval/kb/results/<run>/raw/<notebook>/<step>-<pageId>.json`. Replay reads those exact
 files, parses them through the extractor and never falls back to live extraction. A missing file
-or mismatched page ID is an error; source and output runs must differ. Raw directories are ignored
-by git; synthetic-only `summary.md` and `summary.json` remain committable.
+or mismatched page ID is an error; source and output runs must differ.
+
+The model providers (`ollama`, `openrouter`, `replay`) compare deterministic-only and
+deterministic+model against the **same** notebooks, including harder independent answer keys in
+`eval/kb/prose/`. Reports compare each notebook and totals, include provenance and both quality
+and idempotency metrics, and time each live page that sends a model request. `--model` overrides
+the local/free default; `--ollama-url` can override the localhost endpoint. OpenRouter requires
+an already-configured `OPENROUTER_API_KEY` and defaults to `openrouter/free` (overrides must end
+in `:free`). No provider or key is needed for replay.
+
+Model envelopes retain provider replies alongside the deterministic baseline and block data needed
+for validation. In a comparison run, model envelopes are under `raw/` and the companion
+deterministic run is under `deterministic-raw/`. Both directories are ignored by default. The
+committed `kb-ollama-qwen25-3b-v2` raw files are curated replay fixtures produced only from these
+synthetic notebooks; do not force-add raw responses containing personal notes.
 
 The table and `kb-total` line report:
 
@@ -46,11 +62,12 @@ The table and `kb-total` line report:
 All missing concepts/edges, extras, duplicates, false merges and provenance mismatches are printed
 below the table and saved in both summaries. A non-perfect score is not an evaluator error.
 
-`npm run check` runs geometry then KB evals, cleans their `check-gate` outputs, and compares
+`npm run check` runs geometry then the unchanged original deterministic KB suite, cleans their `check-gate` outputs, and compares
 `eval/check-baseline.json` sections `geometry` and `kb`. It fails on falling concept/edge P/R,
 provenance ratio, notebook count or idempotent count, or rising duplicate/false-merge counts.
 A legacy geometry-only baseline is readable but fails with an update hint until a KB baseline is
-added. Use `npm run check -- --update-baseline` only for intentional score changes. See
+added. Model comparisons and prose notebooks are reported but never gated.
+Use `npm run check -- --update-baseline` only for improvements. See
 [KB architecture](../docs/KB.md) for extraction and persistence semantics.
 
 ## Transcription datasets

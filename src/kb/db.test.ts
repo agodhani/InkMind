@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../store/db';
 import { IndexedDbKnowledgeStore } from '../store/kbDb';
 import type { Page } from '../model/page';
-import { removePage, syncPage } from './store';
+import { mockKbModel, modelExtractor } from './modelExtractor';
+import { removePage, reviewProposal, syncPage } from './store';
 
 const page: Page = { id: 'p', title: 'Kept', strokes: [], createdAt: 0, updatedAt: 0, blocks: [{ id: 'b', kind: 'heading', text: 'Policy', bbox: { left: 0, top: 0, right: 100, bottom: 30 }, strokeIds: [], confidence: 1 }] };
 
@@ -43,5 +44,27 @@ describe('IndexedDB knowledge store', () => {
     await expect(store.commit('p', null, { concepts: [{ ...graph.concepts[0], id: undefined! }], edges: [] })).rejects.toThrow();
     expect(await store.loadGraph()).toEqual(graph);
     expect(await store.listExtractions()).toHaveLength(1);
+  });
+  it('persists rejection across reopen, delete, and re-extraction without deleting deterministic facts', async () => {
+    const extractor = modelExtractor(mockKbModel(async () => JSON.stringify({ concepts: [
+      { block: 'a', term: 'Backprop', canonical: 'Backpropagation' }, { block: 'a', term: 'KL penalty' },
+    ] })));
+    const notes = { ...page, blocks: [{ ...page.blocks[0], text: 'Backpropagation' },
+      { ...page.blocks[0], id: 'a', kind: 'paragraph' as const, text: 'Backprop and KL penalty' }] };
+    const store = new IndexedDbKnowledgeStore();
+    const graph = await syncPage(store, notes, { glossary: [], extractor });
+    const alias = graph.proposals!.find(p => p.kind === 'alias')!;
+    const term = graph.proposals!.find(p => p.label === 'KL penalty')!;
+    await reviewProposal(store, alias.id, 'rejected');
+    const rejected = await reviewProposal(store, term.id, 'rejected');
+    const reopened = new IndexedDbKnowledgeStore();
+    expect(await reopened.loadGraph()).toEqual(rejected);
+    await removePage(reopened, notes.id);
+    expect((await syncPage(reopened, notes, { glossary: [], extractor })).concepts).toEqual(rejected.concepts);
+    expect(await reopened.loadGraph()).toMatchObject({ proposalDecisions: { [alias.id]: 'rejected', [term.id]: 'rejected' } });
+    expect((await reopened.loadGraph()).proposals).toBeUndefined();
+    expect(rejected.concepts).toEqual([expect.objectContaining({ label: 'Backpropagation', aliases: [] })]);
+    await reopened.clear();
+    expect(await reopened.loadGraph()).toEqual({ concepts: [], edges: [] });
   });
 });
