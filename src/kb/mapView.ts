@@ -30,6 +30,10 @@ export function groupLinks(graph: KbGraph, conceptId: string): Record<ConceptEdg
   return groups;
 }
 export interface Position { x: number; y: number }
+export const MAP_NODE_BOX = 44;
+export function mapNodeRadius(degree: number, focused = false): number {
+  return focused ? 12 : 5 + Math.min(4, Math.sqrt(degree));
+}
 export function layoutGraph(graph: KbGraph, { width: outputWidth, height: outputHeight, seed = 1 }: { width: number; height: number; seed?: number }): Record<string, Position> {
   if (!(outputWidth > 0 && outputHeight > 0)) throw new Error('Layout dimensions must be positive');
   const nodes = [...graph.concepts].sort((a, b) => a.id.localeCompare(b.id));
@@ -83,6 +87,14 @@ export function layoutGraph(graph: KbGraph, { width: outputWidth, height: output
         p[i].x += d[i].x * scale; p[i].y += d[i].y * scale;
       }
     }
+    for (let i = 0; i < p.length; i++) {
+      const previous = p.slice(0, i);
+      let overlap: Position | undefined;
+      while ((overlap = previous.find(v => Math.abs(v.x - p[i].x) < MAP_NODE_BOX && Math.abs(v.y - p[i].y) < MAP_NODE_BOX))) {
+        const dx = overlap.x + MAP_NODE_BOX - p[i].x, dy = overlap.y + MAP_NODE_BOX - p[i].y;
+        if (dx < dy) p[i].x = overlap.x + MAP_NODE_BOX + 0.01; else p[i].y = overlap.y + MAP_NODE_BOX + 0.01;
+      }
+    }
     const minX = Math.min(...p.map(v => v.x)), minY = Math.min(...p.map(v => v.y));
     return { component, p: p.map(v => ({ x: v.x - minX + 28, y: v.y - minY + 28 })), width: Math.max(...p.map(v => v.x)) - minX + 56, height: Math.max(...p.map(v => v.y)) - minY + 56 };
   }).sort((a, b) => b.height - a.height || a.component[0].id.localeCompare(b.component[0].id));
@@ -94,10 +106,10 @@ export function layoutGraph(graph: KbGraph, { width: outputWidth, height: output
     box.component.forEach((c, i) => { packed[c.id] = { x: x + box.p[i].x, y: y + box.p[i].y }; });
     totalWidth = Math.max(totalWidth, x + box.width); rowHeight = Math.max(rowHeight, box.height); x += box.width + 40;
   }
-  const totalHeight = y + rowHeight, scale = Math.min(outputWidth / totalWidth, outputHeight / totalHeight);
+  const totalHeight = y + rowHeight;
   return Object.fromEntries(nodes.map(c => [c.id, {
-    x: (outputWidth - totalWidth * scale) / 2 + packed[c.id].x * scale,
-    y: (outputHeight - totalHeight * scale) / 2 + packed[c.id].y * scale,
+    x: (outputWidth - totalWidth) / 2 + packed[c.id].x,
+    y: (outputHeight - totalHeight) / 2 + packed[c.id].y,
   }]));
 }
 export function demoGraph(n = 120): KbGraph {
