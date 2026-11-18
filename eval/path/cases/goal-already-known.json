@@ -1,0 +1,21 @@
+{
+ "name": "goal-already-known",
+ "description": "Notes on RLHF and RLVR themselves: both goals are known, the path is empty.",
+ "notebooks": [
+  "rlhf-rlvr"
+ ],
+ "declared": [],
+ "goals": [
+  "RLHF",
+  "RLVR"
+ ],
+ "expected": {
+  "steps": [],
+  "known": [
+   "rlhf",
+   "rlvr"
+  ],
+  "partial": [],
+  "mustSkip": []
+ }
+}

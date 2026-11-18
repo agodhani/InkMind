@@ -1,0 +1,111 @@
+{
+ "name": "backprop-minimax-to-rlhf-rlvr",
+ "description": "The user's case: notes on backprop and minimax, goal RLHF and RLVR. Backprop implies its prerequisites (chain rule, gradient descent, neural networks, logistic regression, entropy); minimax notes are irrelevant to the goal. Re-plan after adding the RL-basics notebook.",
+ "notebooks": [
+  "backprop",
+  "minimax"
+ ],
+ "declared": [],
+ "goals": [
+  "RLHF",
+  "RLVR"
+ ],
+ "expected": {
+  "steps": [
+   "conditional-probability",
+   "log-likelihood",
+   "sampling",
+   "importance-sampling",
+   "kl-divergence",
+   "softmax",
+   "embeddings",
+   "residual",
+   "normalization",
+   "rl",
+   "mdp",
+   "policy",
+   "return",
+   "value-function",
+   "q-function",
+   "bellman",
+   "td-learning",
+   "policy-gradient",
+   "reinforce",
+   "baseline",
+   "advantage-function",
+   "gae",
+   "actor-critic",
+   "ppo",
+   "tokenization",
+   "language-model",
+   "attention",
+   "transformer",
+   "llm",
+   "fine-tuning",
+   "sft",
+   "human-preferences",
+   "bradley-terry",
+   "reward-model",
+   "rl-finetuning",
+   "reward-hacking",
+   "kl-penalty",
+   "rlhf",
+   "verifiable-rewards",
+   "grpo",
+   "rlvr"
+  ],
+  "known": [
+   "backpropagation",
+   "chain-rule",
+   "gradient-descent",
+   "sgd",
+   "computational-graph",
+   "minimax"
+  ],
+  "partial": [],
+  "mustSkip": [
+   "calculus",
+   "linear-algebra",
+   "neural-network",
+   "logistic-regression",
+   "entropy",
+   "loss-function",
+   "alpha-beta",
+   "search",
+   "trpo",
+   "dpo",
+   "bandits",
+   "q-learning",
+   "dqn",
+   "cnn",
+   "rnn",
+   "decoding",
+   "peft",
+   "optimizers"
+  ]
+ },
+ "replan": {
+  "notebooks": [
+   "rl-basics"
+  ],
+  "declared": [],
+  "expectedDone": [
+   "rl",
+   "mdp",
+   "policy",
+   "return",
+   "value-function",
+   "q-function",
+   "bellman",
+   "td-learning",
+   "policy-gradient",
+   "reinforce",
+   "baseline",
+   "advantage-function",
+   "actor-critic",
+   "sampling",
+   "log-likelihood",
+   "conditional-probability"
+  ]
+ }
+}

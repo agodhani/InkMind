@@ -1,0 +1,81 @@
+{
+ "name": "partly-known-actor-critic",
+ "description": "One page on policy gradients that mentions REINFORCE, baselines and actor-critic in passing: those are partly known steps, value functions are new. Re-plan after a page on the Q-function (which implies value functions).",
+ "notebooks": [],
+ "glossary": [],
+ "pages": [
+  {
+   "id": "pg",
+   "title": "Policy gradient",
+   "blocks": [
+    {
+     "id": "pg-b0",
+     "kind": "heading",
+     "text": "Policy gradient",
+     "level": 1
+    },
+    {
+     "id": "pg-b1",
+     "kind": "paragraph",
+     "text": "REINFORCE weights each log-probability by the return; subtracting a baseline reduces variance. Actor-critic methods learn that baseline."
+    }
+   ]
+  }
+ ],
+ "declared": [],
+ "goals": [
+  "actor-critic"
+ ],
+ "expected": {
+  "steps": [
+   "reinforce",
+   "value-function",
+   "baseline",
+   "q-function",
+   "advantage-function",
+   "bellman",
+   "td-learning",
+   "actor-critic"
+  ],
+  "known": [
+   "policy-gradient"
+  ],
+  "partial": [
+   "reinforce",
+   "baseline",
+   "actor-critic"
+  ],
+  "mustSkip": [
+   "policy",
+   "mdp",
+   "return",
+   "log-likelihood"
+  ]
+ },
+ "replan": {
+  "pages": [
+   {
+    "id": "qf",
+    "title": "Q-function",
+    "blocks": [
+     {
+      "id": "qf-b0",
+      "kind": "heading",
+      "text": "Q-function",
+      "level": 1
+     },
+     {
+      "id": "qf-b1",
+      "kind": "paragraph",
+      "text": "Q(s, a) is the expected discounted reward after taking action a in state s and then following the policy."
+     }
+    ]
+   }
+  ],
+  "declared": [],
+  "expectedDone": [
+   "value-function",
+   "q-function"
+  ]
+ }
+}

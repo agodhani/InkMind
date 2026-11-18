@@ -1,0 +1,61 @@
+{
+ "name": "declared-backprop-ppo",
+ "description": "No notes; the user declares they already know backprop and PPO. Declarations are kept apart from note evidence. Re-plan after declaring Transformers.",
+ "notebooks": [],
+ "declared": [
+  "Backprop",
+  "PPO"
+ ],
+ "goals": [
+  "RLHF"
+ ],
+ "expected": {
+  "steps": [
+   "tokenization",
+   "language-model",
+   "softmax",
+   "embeddings",
+   "attention",
+   "residual",
+   "normalization",
+   "sgd",
+   "transformer",
+   "llm",
+   "fine-tuning",
+   "sft",
+   "human-preferences",
+   "bradley-terry",
+   "reward-model",
+   "rl-finetuning",
+   "reward-hacking",
+   "kl-penalty",
+   "rlhf"
+  ],
+  "known": [
+   "backpropagation",
+   "ppo"
+  ],
+  "partial": [],
+  "mustSkip": [
+   "actor-critic",
+   "gae",
+   "neural-network",
+   "chain-rule",
+   "kl-divergence"
+  ]
+ },
+ "replan": {
+  "declared": [
+   "Transformers"
+  ],
+  "expectedDone": [
+   "transformer",
+   "attention",
+   "residual",
+   "normalization",
+   "embeddings",
+   "sgd",
+   "softmax"
+  ]
+ }
+}

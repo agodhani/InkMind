@@ -1,3 +1,25 @@
+# Learning path
+
+Run `npm run eval:path` (optional `-- --run name`) offline. Cases in
+`eval/path/cases` reference KB notebooks by filename (their final graphs, with
+glossaries unioned), or add `glossary` and synthetic `pages` in the KB page format.
+`graphPatch.concepts` can add accepted or pending model-origin concepts. `declared`
+and `goals` resolve map labels/aliases; goals also accept ids. `expected` contains
+`steps`, `known` (known or assumed/skipped), `partial`, and `mustSkip` map ids.
+Optional `replan` adds notebooks/pages/declarations and `expectedDone` ids.
+
+The per-case table and miss details are saved as
+`eval/path/results/<run>/summary.{md,json}`. `path-total` reports step precision
+and recall counts, known/partial/done hits, forbidden steps, prerequisite ordering
+violations across all plans, deterministic reruns and shuffled-input comparisons,
+replan order/done-state stability, and reasons naming a dependent/goal plus notes
+status. Maps must validate. Answer keys are domain judgments, never auto-rewritten.
+
+`npm run check` runs this after the KB eval. The baseline gates every accuracy
+rate, forbidden-step count, determinism, replan stability, and case coverage.
+Ordering violations always fail, even when updating the baseline. A missing path
+baseline requires the explicit `npm run check -- --update-baseline` command.
+
 # Transcription eval
 
 ## Knowledge-base eval

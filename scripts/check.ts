@@ -10,6 +10,8 @@ import { readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'no
 import { join } from 'node:path';
 import { ratio } from '../src/kb/score';
 import type { KbCounts } from '../src/kb/score';
+import { emptyPathCounts } from '../src/path/score';
+import type { PathCounts } from '../src/path/score';
 
 const BASELINE = 'eval/check-baseline.json';
 const RUN = 'check-gate';
@@ -66,6 +68,28 @@ export function kbRegressions(now: KbCounts, base: KbCounts): string[] {
   return worse;
 }
 
+export function parsePathTotal(out: string): PathCounts {
+  const line = out.split('\n').filter(l => l.startsWith('path-total ')).pop();
+  if (!line) throw new Error('Path eval printed no path-total line');
+  const value = JSON.parse(line.slice('path-total '.length)) as PathCounts;
+  if (Object.keys(emptyPathCounts()).some(k => !Number.isInteger(value[k as keyof PathCounts]) || value[k as keyof PathCounts] < 0)) throw new Error('Invalid path-total counts');
+  return value;
+}
+
+export function pathRegressions(now: PathCounts, base: PathCounts): string[] {
+  const worse: string[] = [];
+  const rates: [string, keyof PathCounts, keyof PathCounts][] = [
+    ['step precision', 'stepHits', 'predictedSteps'], ['step recall', 'stepHits', 'expectedSteps'],
+    ['known', 'knownHits', 'knownExpected'], ['partial', 'partialHits', 'partialExpected'],
+    ['done', 'doneHits', 'doneExpected'], ['reasons', 'reasonsOk', 'reasonsTotal'],
+  ];
+  for (const [label, n, d] of rates) if (ratio(now[n], now[d]) < ratio(base[n], base[d])) worse.push(`${label} ${base[n]}/${base[d]} → ${now[n]}/${now[d]}`);
+  if (now.orderingViolations > 0) worse.push(`orderingViolations ${now.orderingViolations}`);
+  if (now.mustSkipViolations > base.mustSkipViolations) worse.push(`mustSkipViolations ${base.mustSkipViolations} → ${now.mustSkipViolations}`);
+  for (const key of ['cases', 'deterministic', 'replanStable'] as const) if (now[key] < base[key]) worse.push(`${key} ${base[key]} → ${now[key]}`);
+  return worse;
+}
+
 function cleanup() {
   rmSync(join('eval/shapes-suite', `${RUN}.md`), { force: true });
   for (const d of readdirSync('eval', { withFileTypes: true })) if (d.isDirectory()) rmSync(join('eval', d.name, 'results', RUN), { recursive: true, force: true });
@@ -76,25 +100,33 @@ function main() {
   step('lint', 'npm', ['run', '-s', 'lint']);
   step('unit tests', 'npm', ['test', '--', '--run']);
   step('build', 'npm', ['run', '-s', 'build']);
-  let now: Scores, kb: KbCounts;
+  let now: Scores, kb: KbCounts, path: PathCounts;
   try {
     now = parseTotal(step('geometry eval (synthetic shape suite, no model)', 'npm', ['run', '-s', 'eval:shapes', '--', '--provider', 'geometry', '--run', RUN]));
     kb = parseKbTotal(step('KB eval (deterministic, no model)', 'npm', ['run', '-s', 'eval:kb', '--', '--run', RUN]));
+    path = parsePathTotal(step('path eval (answer keys, no model)', 'npm', ['run', '-s', 'eval:path', '--', '--run', RUN]));
+    process.stdout.write(`path-total ${JSON.stringify(path)}\n`);
   } finally { cleanup(); }
   if (!update && !existsSync(BASELINE)) {
     process.stdout.write(`\n✗ ${BASELINE} is missing; restore it, or create one with: npm run check -- --update-baseline\n`);
     process.exit(1);
   }
   if (update) {
-    writeFileSync(BASELINE, JSON.stringify({ geometry: now, kb }, null, 2) + '\n');
-    process.stdout.write(`baseline written: ${JSON.stringify({ geometry: now, kb })}\n`);
+    if (path.orderingViolations) throw new Error('Cannot baseline path ordering violations');
+    writeFileSync(BASELINE, JSON.stringify({ geometry: now, kb, path }, null, 2) + '\n');
+    process.stdout.write(`baseline written: ${JSON.stringify({ geometry: now, kb, path })}\n`);
     return;
   }
-  const saved = JSON.parse(readFileSync(BASELINE, 'utf8')) as Scores | { geometry: Scores; kb?: KbCounts };
+  const saved = JSON.parse(readFileSync(BASELINE, 'utf8')) as Scores | { geometry: Scores; kb?: KbCounts; path?: PathCounts };
   const base = 'geometry' in saved ? saved.geometry : saved;
   const kbBase = 'geometry' in saved ? saved.kb : undefined;
   if (!kbBase) {
     process.stdout.write(`\n✗ ${BASELINE} has no KB baseline; run: npm run check -- --update-baseline\n`);
+    process.exit(1);
+  }
+  const pathBase = 'geometry' in saved ? saved.path : undefined;
+  if (!pathBase) {
+    process.stdout.write(`\n✗ ${BASELINE} has no path baseline; run: npm run check -- --update-baseline\n`);
     process.exit(1);
   }
   const worse: string[] = [];
@@ -103,6 +135,7 @@ function main() {
   if (now.leakedStrokes * base.figureStrokes > base.leakedStrokes * now.figureStrokes) worse.push(`text leak ${base.leakedStrokes}/${base.figureStrokes} → ${now.leakedStrokes}/${now.figureStrokes} strokes`);
   if (now.figureCountOk / now.pages < base.figureCountOk / base.pages) worse.push(`figure count ok ${base.figureCountOk}/${base.pages} → ${now.figureCountOk}/${now.pages}`);
   worse.push(...kbRegressions(kb, kbBase).map(s => `KB ${s}`));
+  worse.push(...pathRegressions(path, pathBase).map(s => `path ${s}`));
   if (worse.length) {
     process.stdout.write(`\n✗ eval regressed vs ${BASELINE}:\n  ${worse.join('\n  ')}\n  (intended? npm run check -- --update-baseline)\n`);
     process.exit(1);

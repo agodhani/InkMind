@@ -1,0 +1,82 @@
+{
+ "name": "unrelated-notes",
+ "description": "Notes on photosynthesis and the French Revolution (one says 'tax policy'): nothing counts as known or partly known; the path equals the empty-notes path.",
+ "notebooks": [],
+ "glossary": [],
+ "pages": [
+  {
+   "id": "bio",
+   "title": "Photosynthesis",
+   "blocks": [
+    {
+     "id": "bio-b0",
+     "kind": "heading",
+     "text": "Photosynthesis",
+     "level": 1
+    },
+    {
+     "id": "bio-b1",
+     "kind": "paragraph",
+     "text": "Chlorophyll absorbs light; the Calvin cycle fixes carbon dioxide into sugar."
+    }
+   ]
+  },
+  {
+   "id": "hist",
+   "title": "French Revolution",
+   "blocks": [
+    {
+     "id": "hist-b0",
+     "kind": "heading",
+     "text": "French Revolution",
+     "level": 1
+    },
+    {
+     "id": "hist-b1",
+     "kind": "paragraph",
+     "text": "Royal tax policy and bread prices fed unrest before 1789."
+    }
+   ]
+  }
+ ],
+ "declared": [],
+ "goals": [
+  "PPO"
+ ],
+ "expected": {
+  "steps": [
+   "ppo",
+   "actor-critic",
+   "gae",
+   "importance-sampling",
+   "kl-divergence",
+   "entropy",
+   "policy-gradient",
+   "policy",
+   "mdp",
+   "rl",
+   "probability",
+   "expectation",
+   "conditional-probability",
+   "return",
+   "log-likelihood",
+   "gradient-descent",
+   "partial-derivatives",
+   "calculus",
+   "linear-algebra",
+   "loss-function",
+   "ml-basics",
+   "sampling",
+   "baseline",
+   "reinforce",
+   "value-function",
+   "advantage-function",
+   "q-function",
+   "td-learning",
+   "bellman"
+  ],
+  "known": [],
+  "partial": [],
+  "mustSkip": []
+ }
+}
