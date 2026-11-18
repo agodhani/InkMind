@@ -1,5 +1,6 @@
 import type { Concept, ConceptEdge, KbGraph, PageExtraction, Provenance, RelationMention, TermMention } from './model';
 import { scanTerms, termKey } from './normalize';
+import { mergeModelProposals } from './mergeProposals';
 
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const provenanceKey = (p: Provenance) => JSON.stringify([p.pageId, p.blockId, p.extractor, p.surface]);
@@ -74,8 +75,9 @@ export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): K
   }).sort((a, b) => compare(termKey(a.label), termKey(b.label)));
   const used = new Set<string>(), byKey = new Map<string, Concept>(), concepts: Concept[] = [];
   for (const cluster of clusters) {
-    const candidates = (previous?.concepts ?? []).filter(c => [c.label, ...c.aliases].some(s => cluster.keys.has(termKey(s))))
-      .sort((a, b) => Number([b.label, ...b.aliases].some(s => termKey(s) === termKey(cluster.label))) - Number([a.label, ...a.aliases].some(s => termKey(s) === termKey(cluster.label))) || compare(a.id, b.id));
+    const previousForms = (c: Concept) => [c.label, ...c.aliases.filter(alias => !previous?.proposals?.some(p => p.kind === 'alias' && p.conceptId === c.id && p.label === alias))];
+    const candidates = (previous?.concepts ?? []).filter(c => !c.origin && previousForms(c).some(s => cluster.keys.has(termKey(s))))
+      .sort((a, b) => Number(previousForms(b).some(s => termKey(s) === termKey(cluster.label))) - Number(previousForms(a).some(s => termKey(s) === termKey(cluster.label))) || compare(a.id, b.id));
     const base = `c_${termKey(cluster.label).replace(/[^\p{L}\p{N}]+/gu, '-')}`;
     let id = candidates.find(c => !used.has(c.id))?.id ?? base, suffix = 2;
     while (used.has(id)) id = `${base}-${suffix++}`;
@@ -109,5 +111,6 @@ export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): K
   concepts.forEach(c => { c.provenance = provenance(c.provenance); });
   const edges = [...edgeMap.values()];
   edges.forEach(e => { e.labels = [...new Set(e.labels)].sort(compare); e.provenance = provenance(e.provenance); });
-  return { concepts: concepts.sort((a, b) => compare(a.id, b.id)), edges: edges.sort((a, b) => compare(a.id, b.id)) };
+  const base = { concepts: concepts.sort((a, b) => compare(a.id, b.id)), edges: edges.sort((a, b) => compare(a.id, b.id)) };
+  return mergeModelProposals(base, source, previous?.proposalDecisions);
 }

@@ -1,5 +1,6 @@
 import type { RawBlock, TranscribeRequest, TranscribeResult, Transcriber } from './types';
-import { BLOCK_KINDS, ModelOutputError, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
+import { BLOCK_KINDS, SYSTEM_PROMPT, buildUserPrompt, extractJson } from './prompt';
+import { requestCompatibleChat } from './chat';
 import { cellGrid, normaliseFigure, stringList } from './figure';
 import { FIGURE_KINDS, type BlockKind, type FigureKind } from '../model/page';
 
@@ -16,8 +17,6 @@ export interface OpenAICompatOptions {
   /** Extra top-level request fields (e.g. OpenRouter's `reasoning`). */
   extraBody?: Record<string, unknown>;
 }
-
-const RETRY_DELAYS_MS = [3000, 10000, 20000];
 
 type ContentPart =
   | { type: 'text'; text: string }
@@ -43,7 +42,7 @@ export class OpenAICompatTranscriber implements Transcriber {
 
   private async request(req: TranscribeRequest, temperature: number, signal?: AbortSignal): Promise<TranscribeResult> {
     const started = performance.now();
-    const { baseUrl, model, apiKey, maxExamples = 6 } = this.opts;
+    const { model, maxExamples = 6 } = this.opts;
 
     const userContent: ContentPart[] = [];
     for (const ex of req.profile.examples.slice(0, maxExamples)) {
@@ -53,40 +52,15 @@ export class OpenAICompatTranscriber implements Transcriber {
     userContent.push({ type: 'text', text: buildUserPrompt(req) });
     userContent.push({ type: 'image_url', image_url: { url: req.imageDataUrl, detail: 'high' } });
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...this.opts.headers };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-    const body = JSON.stringify({
-        model,
-        temperature,
-        // Reasoning models spend tokens thinking before the JSON; too small a cap returns empty content.
-        max_tokens: 8000,
-        response_format: { type: 'json_object' },
-        ...this.opts.extraBody,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-      });
-
-    // Free-tier routes are often rate-limited upstream (429) or briefly unavailable (5xx); back off and retry.
-    let response: Response | undefined;
-    for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
-      response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers, signal, body });
-      if (response.ok || attempt === RETRY_DELAYS_MS.length || !(response.status === 429 || response.status >= 500)) break;
-      await response.text().catch(() => '');
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    }
-    if (!response || !response.ok) {
-      const text = response ? await response.text().catch(() => '') : '';
-      throw new Error(`${this.opts.provider} ${response?.status ?? 'network'}: ${text.slice(0, 300)}`);
-    }
-    const data = (await response.json()) as { choices?: { finish_reason?: string; message?: { content?: string | ContentPart[] } }[] };
-    const choice = data.choices?.[0];
-    const content = choice?.message?.content;
-    const text = typeof content === 'string' ? content : (content ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
-    if (!text.trim()) throw new ModelOutputError(`Model returned empty content (finish_reason: ${choice?.finish_reason ?? 'unknown'})`, JSON.stringify(data).slice(0, 2000));
+    const text = await requestCompatibleChat(this.opts, {
+      // Reasoning models spend tokens thinking before the JSON; too small a cap returns empty content.
+      max_tokens: 8000, temperature, response_format: { type: 'json_object' },
+      ...this.opts.extraBody,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userContent },
+      ],
+    }, signal);
     const blocks = normaliseBlocks(extractJson(text));
     return { blocks, model, durationMs: performance.now() - started, raw: text };
   }

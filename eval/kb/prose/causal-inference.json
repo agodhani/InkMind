@@ -1,0 +1,34 @@
+{
+  "name": "Causal inference across pages",
+  "description": "Similar-sounding concepts have opposite implications; the graph must preserve that distinction from prose.",
+  "glossary": [],
+  "steps": [
+    { "op": "put", "page": { "id": "p1", "blocks": [
+      { "id": "b1", "kind": "heading", "text": "Causal inference" },
+      { "id": "b2", "kind": "paragraph", "text": "A common cause influences both treatment and outcome. A common cause can produce confounding even when treatment has no effect." },
+      { "id": "b3", "kind": "paragraph", "text": "A common effect is a collider. Conditioning on a collider creates selection bias between its causes rather than removing confounding." }
+    ] } },
+    { "op": "put", "page": { "id": "p2", "blocks": [
+      { "id": "b1", "kind": "paragraph", "text": "To control confounding, random assignment balances measured and unmeasured common causes on average. It does not repair selection bias introduced after assignment." }
+    ] } }
+  ],
+  "expected": {
+    "concepts": [
+      { "label": "Causal inference", "provenance": [{ "pageId": "p1", "blockId": "b1" }] },
+      { "label": "Common cause", "provenance": [{ "pageId": "p1", "blockId": "b2" }, { "pageId": "p2", "blockId": "b1" }] },
+      { "label": "Confounding", "provenance": [{ "pageId": "p1", "blockId": "b2" }, { "pageId": "p1", "blockId": "b3" }, { "pageId": "p2", "blockId": "b1" }] },
+      { "label": "Collider", "aliases": ["Common effect"], "provenance": [{ "pageId": "p1", "blockId": "b3" }] },
+      { "label": "Selection bias", "provenance": [{ "pageId": "p1", "blockId": "b3" }, { "pageId": "p2", "blockId": "b1" }] },
+      { "label": "Random assignment", "provenance": [{ "pageId": "p2", "blockId": "b1" }] }
+    ],
+    "edges": [
+      { "from": "Causal inference", "to": "Common cause", "kind": "mentions", "provenance": [{ "pageId": "p1", "blockId": "b2" }] },
+      { "from": "Causal inference", "to": "Confounding", "kind": "mentions", "provenance": [{ "pageId": "p1", "blockId": "b2" }, { "pageId": "p1", "blockId": "b3" }] },
+      { "from": "Causal inference", "to": "Collider", "kind": "mentions", "provenance": [{ "pageId": "p1", "blockId": "b3" }] },
+      { "from": "Causal inference", "to": "Selection bias", "kind": "mentions", "provenance": [{ "pageId": "p1", "blockId": "b3" }] },
+      { "from": "Common cause", "to": "Confounding", "kind": "follows", "provenance": [{ "pageId": "p1", "blockId": "b2" }] },
+      { "from": "Collider", "to": "Selection bias", "kind": "follows", "provenance": [{ "pageId": "p1", "blockId": "b3" }] }
+    ],
+    "mustNotMerge": [["Common cause", "Collider"], ["Confounding", "Selection bias"]]
+  }
+}

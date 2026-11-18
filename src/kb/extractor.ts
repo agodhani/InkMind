@@ -1,10 +1,17 @@
 import type { Page } from '../model/page';
-import type { PageExtraction } from './model';
+import type { KbGraph, PageExtraction } from './model';
 import { extractPage } from './extract';
+
+export interface ExtractionContext {
+  glossary: string[];
+  graph?: KbGraph;
+  previous?: PageExtraction;
+  signal?: AbortSignal;
+}
 
 export interface Extractor {
   name: string;
-  extract(page: Page, ctx: { glossary: string[] }): Promise<{ raw: string }>;
+  extract(page: Page, ctx: ExtractionContext): Promise<{ raw: string }>;
   parse(raw: string): PageExtraction;
 }
 

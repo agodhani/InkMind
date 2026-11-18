@@ -1,0 +1,566 @@
+{
+  "extractor": "deterministic",
+  "results": [
+    {
+      "name": "backprop",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 11,
+        "predictedConcepts": 11,
+        "conceptHits": 11,
+        "conceptCorrect": 11,
+        "expectedEdges": 13,
+        "predictedEdges": 12,
+        "edgeHits": 12,
+        "edgeCorrect": 12,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 22,
+        "provenanceTotal": 23,
+        "idempotent": 1
+      },
+      "details": [
+        "Provenance mismatch: concept Backpropagation; expected [\"p1/b1\",\"p1/b2\",\"p2/b2\"]; got [\"p1/b1\"]",
+        "Missing edge: gradient descent —mentions→ Backpropagation"
+      ]
+    },
+    {
+      "name": "edits",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 4,
+        "predictedConcepts": 4,
+        "conceptHits": 4,
+        "conceptCorrect": 4,
+        "expectedEdges": 2,
+        "predictedEdges": 2,
+        "edgeHits": 2,
+        "edgeCorrect": 2,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 6,
+        "provenanceTotal": 6,
+        "idempotent": 1
+      },
+      "details": []
+    },
+    {
+      "name": "minimax",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 6,
+        "predictedConcepts": 6,
+        "conceptHits": 6,
+        "conceptCorrect": 6,
+        "expectedEdges": 10,
+        "predictedEdges": 10,
+        "edgeHits": 10,
+        "edgeCorrect": 10,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 16,
+        "provenanceTotal": 16,
+        "idempotent": 1
+      },
+      "details": []
+    },
+    {
+      "name": "ppo",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 11,
+        "predictedConcepts": 10,
+        "conceptHits": 10,
+        "conceptCorrect": 10,
+        "expectedEdges": 12,
+        "predictedEdges": 11,
+        "edgeHits": 11,
+        "edgeCorrect": 11,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 21,
+        "provenanceTotal": 21,
+        "idempotent": 1
+      },
+      "details": [
+        "Missing concept: KL penalty",
+        "Missing edge: Proximal Policy Optimization —mentions→ KL penalty"
+      ]
+    },
+    {
+      "name": "rl-basics",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 10,
+        "predictedConcepts": 10,
+        "conceptHits": 10,
+        "conceptCorrect": 10,
+        "expectedEdges": 11,
+        "predictedEdges": 11,
+        "edgeHits": 11,
+        "edgeCorrect": 11,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 21,
+        "provenanceTotal": 21,
+        "idempotent": 1
+      },
+      "details": []
+    },
+    {
+      "name": "rlhf-rlvr",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 12,
+        "predictedConcepts": 11,
+        "conceptHits": 11,
+        "conceptCorrect": 11,
+        "expectedEdges": 15,
+        "predictedEdges": 14,
+        "edgeHits": 14,
+        "edgeCorrect": 14,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 25,
+        "provenanceTotal": 25,
+        "idempotent": 1
+      },
+      "details": [
+        "Missing concept: Reward hacking",
+        "Missing edge: RLHF —mentions→ Reward hacking"
+      ]
+    },
+    {
+      "name": "Causal inference across pages",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 6,
+        "predictedConcepts": 1,
+        "conceptHits": 1,
+        "conceptCorrect": 1,
+        "expectedEdges": 6,
+        "predictedEdges": 0,
+        "edgeHits": 0,
+        "edgeCorrect": 0,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 1,
+        "provenanceTotal": 1,
+        "idempotent": 1
+      },
+      "details": [
+        "Missing concept: Common cause",
+        "Missing concept: Confounding",
+        "Missing concept: Collider",
+        "Missing concept: Selection bias",
+        "Missing concept: Random assignment",
+        "Missing edge: Causal inference —mentions→ Common cause",
+        "Missing edge: Causal inference —mentions→ Confounding",
+        "Missing edge: Causal inference —mentions→ Collider",
+        "Missing edge: Causal inference —mentions→ Selection bias",
+        "Missing edge: Common cause —follows→ Confounding",
+        "Missing edge: Collider —follows→ Selection bias"
+      ]
+    },
+    {
+      "name": "Retrieval practice in prose",
+      "counts": {
+        "notebooks": 1,
+        "expectedConcepts": 5,
+        "predictedConcepts": 0,
+        "conceptHits": 0,
+        "conceptCorrect": 0,
+        "expectedEdges": 3,
+        "predictedEdges": 0,
+        "edgeHits": 0,
+        "edgeCorrect": 0,
+        "duplicates": 0,
+        "falseMerges": 0,
+        "provenanceOk": 0,
+        "provenanceTotal": 0,
+        "idempotent": 1
+      },
+      "details": [
+        "Missing concept: Retrieval practice",
+        "Missing concept: Spaced repetition",
+        "Missing concept: Interleaving",
+        "Missing concept: Blocked practice",
+        "Missing concept: Desirable difficulty",
+        "Missing edge: Spaced repetition —supports→ Retrieval practice",
+        "Missing edge: Interleaving —mentions→ Blocked practice",
+        "Missing edge: Desirable difficulty —contains→ Retrieval practice"
+      ]
+    }
+  ],
+  "total": {
+    "notebooks": 8,
+    "expectedConcepts": 65,
+    "predictedConcepts": 53,
+    "conceptHits": 53,
+    "conceptCorrect": 53,
+    "expectedEdges": 72,
+    "predictedEdges": 60,
+    "edgeHits": 60,
+    "edgeCorrect": 60,
+    "duplicates": 0,
+    "falseMerges": 0,
+    "provenanceOk": 112,
+    "provenanceTotal": 113,
+    "idempotent": 8
+  },
+  "model": {
+    "provider": "ollama:qwen2.5:3b",
+    "results": [
+      {
+        "name": "backprop",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 11,
+          "predictedConcepts": 12,
+          "conceptHits": 11,
+          "conceptCorrect": 11,
+          "expectedEdges": 13,
+          "predictedEdges": 13,
+          "edgeHits": 12,
+          "edgeCorrect": 12,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 20,
+          "provenanceTotal": 23,
+          "idempotent": 1
+        },
+        "details": [
+          "Provenance mismatch: concept Backpropagation; expected [\"p1/b1\",\"p1/b2\",\"p2/b2\"]; got [\"p1/b1\",\"p1/b2\"]",
+          "Provenance mismatch: concept gradient; expected [\"p1/b2\",\"p2/b2\"]; got [\"p1/b2\",\"p2/b1\",\"p2/b2\"]",
+          "Extra concept: training loop (c_training-loop)",
+          "Provenance mismatch: edge gradient descent —mentions→ gradient; expected [\"p2/b2\"]; got [\"p2/b1\",\"p2/b2\"]",
+          "Missing edge: gradient descent —mentions→ Backpropagation",
+          "Extra edge: Computational graph —mentions→ training loop"
+        ]
+      },
+      {
+        "name": "edits",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 4,
+          "predictedConcepts": 6,
+          "conceptHits": 4,
+          "conceptCorrect": 4,
+          "expectedEdges": 2,
+          "predictedEdges": 3,
+          "edgeHits": 2,
+          "edgeCorrect": 2,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 6,
+          "provenanceTotal": 6,
+          "idempotent": 1
+        },
+        "details": [
+          "Extra concept: Sigmoid saturates for large |x| and outputs lie in (0, 1). (c_sigmoid-saturate-for-large-x-and-output-lie-in-0-1)",
+          "Extra concept: zero-centred (c_zero-centred)",
+          "Extra edge: Activation functions —mentions→ zero-centred"
+        ]
+      },
+      {
+        "name": "minimax",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 6,
+          "predictedConcepts": 8,
+          "conceptHits": 6,
+          "conceptCorrect": 6,
+          "expectedEdges": 10,
+          "predictedEdges": 10,
+          "edgeHits": 10,
+          "edgeCorrect": 10,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 16,
+          "provenanceTotal": 16,
+          "idempotent": 1
+        },
+        "details": [
+          "Extra concept: Minimax and Maximin are the same (c_minimax-and-maximin-are-the-same)",
+          "Extra concept: Minimax assumes an optimal opponent (c_minimax-assume-an-optimal-opponent)"
+        ]
+      },
+      {
+        "name": "ppo",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 11,
+          "predictedConcepts": 10,
+          "conceptHits": 10,
+          "conceptCorrect": 10,
+          "expectedEdges": 12,
+          "predictedEdges": 14,
+          "edgeHits": 11,
+          "edgeCorrect": 11,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 21,
+          "provenanceTotal": 21,
+          "idempotent": 1
+        },
+        "details": [
+          "Missing concept: KL penalty",
+          "Missing edge: Proximal Policy Optimization —mentions→ KL penalty",
+          "Extra edge: advantage —supports→ Generalized Advantage Estimation",
+          "Extra edge: Generalized Advantage Estimation —follows→ advantage",
+          "Extra edge: PPO —follows→ actor-critic"
+        ]
+      },
+      {
+        "name": "rl-basics",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 10,
+          "predictedConcepts": 12,
+          "conceptHits": 10,
+          "conceptCorrect": 10,
+          "expectedEdges": 11,
+          "predictedEdges": 11,
+          "edgeHits": 11,
+          "edgeCorrect": 11,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 21,
+          "provenanceTotal": 21,
+          "idempotent": 1
+        },
+        "details": [
+          "Extra concept: A policy is a mapping from states to actions (c_a-policy-is-a-mapping-from-state-to-action)",
+          "Extra concept: REINFORCE uses a policy gradient method (c_reinforce-use-a-policy-gradient-method)"
+        ]
+      },
+      {
+        "name": "rlhf-rlvr",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 12,
+          "predictedConcepts": 14,
+          "conceptHits": 11,
+          "conceptCorrect": 11,
+          "expectedEdges": 15,
+          "predictedEdges": 15,
+          "edgeHits": 14,
+          "edgeCorrect": 14,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 25,
+          "provenanceTotal": 25,
+          "idempotent": 1
+        },
+        "details": [
+          "Missing concept: Reward hacking",
+          "Extra concept: A verifier can be used to replace the learned reward model in RLVR (c_a-verifier-can-be-used-to-replace-the-learned-reward-model-in-rlvr)",
+          "Extra concept: A verifier returns 1 if the answer checks out, else 0 (c_a-verifier-return-1-if-the-answer-check-out-else-0)",
+          "Extra concept: programmatic verifier (c_programmatic-verifier)",
+          "Missing edge: RLHF —mentions→ Reward hacking",
+          "Extra edge: Reinforcement Learning with Verifiable Rewards —mentions→ programmatic verifier"
+        ]
+      },
+      {
+        "name": "Causal inference across pages",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 6,
+          "predictedConcepts": 6,
+          "conceptHits": 3,
+          "conceptCorrect": 3,
+          "expectedEdges": 6,
+          "predictedEdges": 2,
+          "edgeHits": 2,
+          "edgeCorrect": 2,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 3,
+          "provenanceTotal": 5,
+          "idempotent": 1
+        },
+        "details": [
+          "Missing concept: Common cause",
+          "Provenance mismatch: concept Confounding; expected [\"p1/b2\",\"p1/b3\",\"p2/b1\"]; got [\"p1/b2\"]",
+          "Missing concept: Collider",
+          "Missing concept: Random assignment",
+          "Extra concept: A common cause can produce confounding even when treatment has no effect. (c_a-common-cause-can-produce-confounding-even-when-treatment-has-no-effect)",
+          "Extra concept: Conditioning on a collider creates selection bias between its causes rather than removing confounding. (c_conditioning-on-a-collider-create-selection-bia-between-its-cause-rather-than-removing-confounding)",
+          "Extra concept: Random assignment does not repair selection bias. (c_random-assignment-doe-not-repair-selection-bia)",
+          "Missing edge: Causal inference —mentions→ Common cause",
+          "Provenance mismatch: edge Causal inference —mentions→ Confounding; expected [\"p1/b2\",\"p1/b3\"]; got [\"p1/b2\"]",
+          "Missing edge: Causal inference —mentions→ Collider",
+          "Missing edge: Common cause —follows→ Confounding",
+          "Missing edge: Collider —follows→ Selection bias"
+        ]
+      },
+      {
+        "name": "Retrieval practice in prose",
+        "counts": {
+          "notebooks": 1,
+          "expectedConcepts": 5,
+          "predictedConcepts": 6,
+          "conceptHits": 3,
+          "conceptCorrect": 3,
+          "expectedEdges": 3,
+          "predictedEdges": 0,
+          "edgeHits": 0,
+          "edgeCorrect": 0,
+          "duplicates": 0,
+          "falseMerges": 0,
+          "provenanceOk": 2,
+          "provenanceTotal": 3,
+          "idempotent": 1
+        },
+        "details": [
+          "Provenance mismatch: concept Retrieval practice; expected [\"p1/b1\",\"p1/b3\"]; got [\"p1/b1\"]",
+          "Missing concept: Spaced repetition",
+          "Missing concept: Blocked practice",
+          "Extra concept: Desirable difficulty makes attempts feel harder. (c_desirable-difficulty-make-attempt-feel-harder)",
+          "Extra concept: Interleaving requires deciding on the method. (c_interleaving-require-deciding-on-the-method)",
+          "Extra concept: Retrieval practice makes recall stronger. (c_retrieval-practice-make-recall-stronger)",
+          "Missing edge: Spaced repetition —supports→ Retrieval practice",
+          "Missing edge: Interleaving —mentions→ Blocked practice",
+          "Missing edge: Desirable difficulty —contains→ Retrieval practice"
+        ]
+      }
+    ],
+    "total": {
+      "notebooks": 8,
+      "expectedConcepts": 65,
+      "predictedConcepts": 74,
+      "conceptHits": 58,
+      "conceptCorrect": 58,
+      "expectedEdges": 72,
+      "predictedEdges": 68,
+      "edgeHits": 62,
+      "edgeCorrect": 62,
+      "duplicates": 0,
+      "falseMerges": 0,
+      "provenanceOk": 114,
+      "provenanceTotal": 120,
+      "idempotent": 8
+    }
+  },
+  "timing": [
+    {
+      "notebook": "backprop",
+      "page": "p1",
+      "step": 0,
+      "seconds": 32.685766838999996,
+      "batches": 1
+    },
+    {
+      "notebook": "backprop",
+      "page": "p2",
+      "step": 1,
+      "seconds": 20.266964721999997,
+      "batches": 1
+    },
+    {
+      "notebook": "edits",
+      "page": "p1",
+      "step": 0,
+      "seconds": 13.441648666,
+      "batches": 1
+    },
+    {
+      "notebook": "edits",
+      "page": "p2",
+      "step": 1,
+      "seconds": 10.375047795000006,
+      "batches": 1
+    },
+    {
+      "notebook": "edits",
+      "page": "p3",
+      "step": 2,
+      "seconds": 8.181524383999989,
+      "batches": 1
+    },
+    {
+      "notebook": "edits",
+      "page": "p1",
+      "step": 3,
+      "seconds": 14.56756786000001,
+      "batches": 1
+    },
+    {
+      "notebook": "minimax",
+      "page": "p1",
+      "step": 0,
+      "seconds": 18.047145842,
+      "batches": 1
+    },
+    {
+      "notebook": "minimax",
+      "page": "p2",
+      "step": 1,
+      "seconds": 16.557313227000005,
+      "batches": 1
+    },
+    {
+      "notebook": "ppo",
+      "page": "p1",
+      "step": 0,
+      "seconds": 24.953436174000004,
+      "batches": 1
+    },
+    {
+      "notebook": "ppo",
+      "page": "p2",
+      "step": 1,
+      "seconds": 12.125020527000014,
+      "batches": 1
+    },
+    {
+      "notebook": "rl-basics",
+      "page": "p1",
+      "step": 0,
+      "seconds": 12.690002279000007,
+      "batches": 1
+    },
+    {
+      "notebook": "rl-basics",
+      "page": "p2",
+      "step": 1,
+      "seconds": 15.534089749999985,
+      "batches": 1
+    },
+    {
+      "notebook": "rlhf-rlvr",
+      "page": "p1",
+      "step": 0,
+      "seconds": 11.221091119000018,
+      "batches": 1
+    },
+    {
+      "notebook": "rlhf-rlvr",
+      "page": "p2",
+      "step": 1,
+      "seconds": 17.55481637800002,
+      "batches": 1
+    },
+    {
+      "notebook": "causal-inference",
+      "page": "p1",
+      "step": 0,
+      "seconds": 15.640820267999981,
+      "batches": 1
+    },
+    {
+      "notebook": "causal-inference",
+      "page": "p2",
+      "step": 1,
+      "seconds": 7.3643172159999954,
+      "batches": 1
+    },
+    {
+      "notebook": "retrieval-practice",
+      "page": "p1",
+      "step": 0,
+      "seconds": 21.35574800699999,
+      "batches": 1
+    }
+  ]
+}

@@ -31,3 +31,4 @@ dist-ssr
 
 # Replayed extractor output (summaries remain committable)
 eval/kb/results/*/raw/
+eval/kb/results/*/deterministic-raw/

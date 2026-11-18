@@ -1,7 +1,8 @@
 import type { TranscribeRequest, TranscribeResult, Transcriber } from './types';
 import { ModelOutputError, SYSTEM_PROMPT, buildCompactSystemPrompt, buildUserPrompt, extractJson } from './prompt';
 import { looksDegenerate, normaliseBlocks, pickSaner } from './openaiCompat';
-import { closeJsonPrefix, detectLoop } from './loopGuard';
+import { requestOllamaChat } from './chat';
+import { closeJsonPrefix } from './loopGuard';
 import { preserveCompactNameWords } from './figure';
 
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
@@ -98,81 +99,24 @@ export class OllamaTranscriber implements Transcriber {
         `\nThe LAST image is the region to transcribe.\n\n`
       : '';
 
-    const controller = new AbortController();
-    const abort = () => controller.abort(signal?.reason);
-    signal?.throwIfAborted();
-    signal?.addEventListener('abort', abort, { once: true });
-    let raw = '';
-    let guardedAt: number | undefined;
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const { raw, guardedAt, timing } = await requestOllamaChat(this.url, {
+      model: this.model,
+      format: 'json',
+      options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: ollamaTokenBudget(req.groups.length) },
+      messages: [
+        { role: 'system', content: this.promptStyle === 'compact' ? buildCompactSystemPrompt(req) : SYSTEM_PROMPT },
+        { role: 'user', content: exampleText + buildUserPrompt(req, this.promptStyle), images },
+      ],
+    }, signal);
+    const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
+    let blocks: TranscribeResult['blocks'];
     try {
-      const response = await fetch(`${this.url}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: this.model,
-          stream: true,
-          format: 'json',
-          options: { temperature, seed: 7, num_ctx: this.numCtx, num_predict: ollamaTokenBudget(req.groups.length) },
-          messages: [
-            { role: 'system', content: this.promptStyle === 'compact' ? buildCompactSystemPrompt(req) : SYSTEM_PROMPT },
-            { role: 'user', content: exampleText + buildUserPrompt(req, this.promptStyle), images },
-          ],
-        }),
-      });
-      if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`ollama ${response.status}: ${body.slice(0, 300)}`);
-      }
-      if (!response.body) throw new Error('Ollama response has no stream');
-      reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let pending = '';
-      let done = false;
-      let timing: Record<string, number | undefined> | undefined;
-      const consume = (line: string) => {
-        if (!line.trim()) return;
-        const chunk = JSON.parse(line) as { message?: { content?: string }; error?: string; done?: boolean; prompt_eval_count?: number; prompt_eval_duration?: number; eval_count?: number; eval_duration?: number };
-        if (chunk.done) timing = { prompt_eval_count: chunk.prompt_eval_count, prompt_eval_duration: chunk.prompt_eval_duration, eval_count: chunk.eval_count, eval_duration: chunk.eval_duration };
-        if (chunk.error) throw new Error(chunk.error);
-        raw += chunk.message?.content ?? '';
-        const loop = detectLoop(raw);
-        if (loop) {
-          guardedAt = raw.length;
-          raw = closeJsonPrefix(raw.slice(0, loop.keepUntil));
-          controller.abort();
-          done = true;
-        } else if (chunk.done) done = true;
-      };
-      while (!done) {
-        const part = await reader.read();
-        pending += decoder.decode(part.value, { stream: !part.done });
-        let newline: number;
-        while (!done && (newline = pending.indexOf('\n')) >= 0) {
-          consume(pending.slice(0, newline));
-          pending = pending.slice(newline + 1);
-        }
-        if (part.done) {
-          if (!done) consume(pending);
-          break;
-        }
-      }
-      signal?.throwIfAborted();
-      const debugRaw = raw + (guardedAt === undefined ? '' : `\n[loop-guard: aborted at ${guardedAt} chars]`) + (timing ? `\n[ollama-timing: ${JSON.stringify(timing)}]` : '') + `\n[ollama-input: ${JSON.stringify({ imageSize: req.imageSize, promptStyle: this.promptStyle, maxImageEdge: this.maxImageEdge })}]`;
-      let blocks: TranscribeResult['blocks'];
-      try {
-        blocks = parseOllamaOutput(raw, this.promptStyle);
-      } catch (e) {
-        if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
-        throw e;
-      }
-      return { blocks, model: this.model, durationMs: performance.now() - started, raw: debugRaw };
-    } finally {
-      signal?.removeEventListener('abort', abort);
-      await reader?.cancel().catch(() => {});
-      reader?.releaseLock();
+      blocks = parseOllamaOutput(raw, this.promptStyle);
+    } catch (e) {
+      if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, debugRaw);
+      throw e;
     }
+    return { blocks, model: this.model, durationMs: performance.now() - started, raw: debugRaw };
   }
 }
 
