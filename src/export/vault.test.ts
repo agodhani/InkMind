@@ -6,6 +6,15 @@ import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
 import { applyDecisions, emptyDecisions, renameConcept } from '../kb/decisions';
 
+it.each([1, 2, 3, 4, 5, 6])('rewrites links following line-leading inline code with %s backticks', length => {
+  const page = largeDemoPages(1)[0], graph = { concepts: [{ id: 'c', label: 'Model: Free', aliases: ['MF'], provenance: [] }], edges: [] };
+  const ticks = '`'.repeat(length), inline = `${ticks}x [[MF]]${ticks}`;
+  page.blocks = [{ ...page.blocks[0], kind: 'paragraph', text: `${inline} see [[Model: Free]]\n\n[[MF]]` }];
+  const note = buildVault([page], graph).find(f => f.path.startsWith('Pages/'))!.content;
+  expect(note).toContain(`${inline} see [[Model- Free|Model: Free]]`);
+  expect(note).toContain('\n\n[[Model- Free|MF]]');
+});
+
 it('preserves literal wiki-links in fenced code and matching backtick spans', () => {
   const page = largeDemoPages(1)[0], graph = { concepts: [{ id: 'c', label: 'Model: Free', aliases: ['MF'], provenance: [] }], edges: [] };
   const code = ['```md\n[[Model: Free]]\n```', '~~~~\n[[MF|literal]]\n~~~\n[[MF]]\n~~~~', '`[[MF]]`', '``a ` [[MF|literal]] b``', '`multi\n[[MF]]\nline`'];

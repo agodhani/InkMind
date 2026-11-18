@@ -7,7 +7,7 @@ import { pageToMarkdown } from './markdown';
 
 export interface VaultFile { path: string; content: string }
 function outsideCode(markdown: string, rewrite: (text: string) => string): string {
-  const tokens = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)|(`+)/gm;
+  const tokens = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})[^\n]*(?:\n|$)|(`+)/gm;
   let cursor = 0, result = '', token: RegExpExecArray | null;
   while ((token = tokens.exec(markdown))) {
     let end: number | undefined;
