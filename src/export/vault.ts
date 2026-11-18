@@ -22,7 +22,11 @@ export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
     const blocks = sortBlocksForReading(page.blocks), ids = new Map(blocks.map((b, i) => [b.id, `block-${i + 1}`]));
     refs.set(page.id, ids);
     const header = pageToMarkdown(page, []);
-    const body = blocks.map(b => pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim() + ` ^${ids.get(b.id)}`).join('\n\n');
+    const body = blocks.map(b => {
+      const markdown = pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim();
+      const structured = b.kind === 'diagram' || b.kind === 'math' || /\n|^(?:[-*+] |\d+\. |\|)/.test(markdown);
+      return markdown + `${structured ? '\n\n' : ' '}^${ids.get(b.id)}`;
+    }).join('\n\n');
     return { path: `Pages/${pageNames.get(page.id)}.md`, content: `${header}\n${body}\n` };
   });
   for (const c of graph.concepts) {

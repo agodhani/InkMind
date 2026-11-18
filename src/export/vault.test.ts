@@ -5,6 +5,24 @@ import { largeDemoPages } from '../sim/kbDemo';
 import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
 
+it('keeps fences, display math, lists and tables intact with standalone source refs', () => {
+  const page = largeDemoPages(1)[0];
+  const texts = ['```mermaid\ngraph TD\nA --> B\n```', '$$\nx = y\n$$', '- Alpha\n- Beta', '| A | B |\n| --- | --- |\n| 1 | 2 |', 'Following paragraph'];
+  page.blocks = texts.map((text, i) => ({ ...page.blocks[0], id: `b${i}`, kind: i === 1 ? 'math' : 'paragraph', text, bbox: { left: 0, right: 600, top: i * 40, bottom: i * 40 + 30 } }));
+  const graph = buildGraph([extractPage(page, { glossary: [] })]);
+  graph.concepts.push({ id: 'source', label: 'Source', aliases: [], provenance: page.blocks.map(b => ({ pageId: page.id, blockId: b.id, strokeIds: [], extractor: 'test', surface: b.text })) });
+  const files = buildVault([page], graph), note = files.find(f => f.path.startsWith('Pages/'))!.content;
+  for (let i = 0; i < texts.length - 1; i++) {
+    expect(note).toContain(`${texts[i]}\n\n^block-${i + 1}\n`);
+    expect(files.find(f => f.path === 'Concepts/Source.md')!.content).toContain(`#^block-${i + 1}|`);
+  }
+  expect(note).toContain('Following paragraph');
+  page.blocks = [{ ...page.blocks[0], kind: 'diagram', text: '', figure: { kind: 'flowchart', shapes: [], labels: ['A', 'B'], edges: [{ from: 'A', to: 'B' }] } }, page.blocks.at(-1)!];
+  const diagram = buildVault([page], graph).find(f => f.path.startsWith('Pages/'))!.content;
+  expect(diagram).toContain('```mermaid');
+  expect(diagram).toContain('```\n\n^block-1\n\nFollowing paragraph');
+});
+
 it('exports grouped concept links, aliases and valid page block sources without changing markdown', () => {
   const pages = largeDemoPages(3); pages[0].title = '../unsafe/title';
   const before = pageToMarkdown(pages[0]), graph = buildGraph(pages.map(p => extractPage(p, { glossary: [] })));
