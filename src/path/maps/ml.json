@@ -670,9 +670,7 @@
   {
    "id": "q-learning",
    "label": "Q-learning",
-   "aliases": [
-    "SARSA"
-   ],
+   "aliases": [],
    "area": "rl",
    "description": "Learning action values off-policy with TD updates.",
    "prerequisites": [

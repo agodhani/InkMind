@@ -26,6 +26,13 @@ describe('subject maps', () => {
   ])('detects %s', (message, mutate) => { const m = tiny(); mutate(m); expect(validateMap(m).join(';')).toContain(message); });
 });
 describe('notes and paths', () => {
+  it('does not treat SARSA notes as knowledge of Q-learning', () => {
+    const graph: KbGraph = { concepts: [{ id: 'sarsa', label: 'SARSA', aliases: [], provenance: [
+      { pageId: 'sarsa-page', blockId: 'heading', surface: 'SARSA', strokeIds: [], extractor: 'det:heading' },
+    ] }], edges: [] };
+    expect(matchNotes(mlMap, { graph, extractions: [] }).find(m => m.conceptId === 'q-learning'))
+      .toMatchObject({ state: 'new', basis: 'none', evidence: [] });
+  });
   it('handles empty notes, no areas, unverified maps and errors', () => {
     const m = tiny(), matches = matchNotes(m, empty), p = planPath(m, ['Actor critic'], matches);
     expect(p.steps.map(s => s.conceptId)).toEqual(['a', 'b', 'c']);
