@@ -2,6 +2,7 @@ import type { Page } from '../model/page';
 
 export class PagePersistence {
   private latest = new Map<string, Page>();
+  private writing = new Map<string, Promise<unknown>>();
   private pending = new Map<string, { page: Page; timer: ReturnType<typeof setTimeout> }>();
   private write: (page: Page) => Promise<unknown>;
   private onError: (error: unknown) => void;
@@ -25,6 +26,23 @@ export class PagePersistence {
       .filter((p): p is Page => !!p).reduce((a, b) => b.updatedAt >= a.updatedAt ? b : a);
   }
 
+  async replace(page: Page, active: Page | null = null): Promise<Page> {
+    const newest = this.resolve(page, active);
+    const replacement = { ...page, updatedAt: Math.max(Date.now(), newest.updatedAt + 1) };
+    this.cancel(page.id);
+    this.latest.set(page.id, replacement);
+    await this.persist(replacement);
+    return replacement;
+  }
+
+  private async persist(page: Page): Promise<void> {
+    const previous = this.writing.get(page.id);
+    const operation = previous ? previous.catch(() => {}).then(() => this.write(page)) : this.write(page);
+    this.writing.set(page.id, operation);
+    try { await operation; }
+    finally { if (this.writing.get(page.id) === operation) this.writing.delete(page.id); }
+  }
+
   cancel(id: string) {
     const pending = this.pending.get(id);
     if (pending) clearTimeout(pending.timer);
@@ -35,7 +53,7 @@ export class PagePersistence {
     const pending = this.pending.get(id);
     if (!pending) return;
     this.cancel(id);
-    try { await this.write(pending.page); } catch (error) { this.onError(error); }
+    try { await this.persist(pending.page); } catch (error) { this.onError(error); }
   }
 
   async flush() {

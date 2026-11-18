@@ -4,6 +4,36 @@ import { PagePersistence } from './pagePersistence';
 
 afterEach(() => vi.useRealTimers());
 
+it.each([false, true])('persists explicit demo replacement over a cached edit (already saved: %s)', async saved => {
+  vi.useFakeTimers(); vi.setSystemTime(100);
+  const demo = { ...createPage('Demo content'), updatedAt: 0 }, edited = { ...demo, title: 'User edit', updatedAt: 200 };
+  let stored = demo;
+  const write = vi.fn(async (page: typeof demo) => { stored = page; });
+  const writer = new PagePersistence(write, vi.fn());
+  writer.schedule(edited); if (saved) await writer.flush();
+  const replacement = await writer.replace(demo, edited);
+  const opened = writer.resolve(replacement, edited);
+  writer.schedule(opened);
+  await vi.runAllTimersAsync(); await writer.flush();
+  expect(opened.title).toBe('Demo content');
+  expect(stored.title).toBe('Demo content');
+  expect(stored.updatedAt).toBeGreaterThan(edited.updatedAt);
+});
+
+it('serializes replacement after an edit whose write is already in flight', async () => {
+  const demo = { ...createPage('Demo content'), updatedAt: 0 }, edited = { ...demo, title: 'User edit', updatedAt: Date.now() + 100 };
+  let resume!: () => void, stored = demo;
+  const gate = new Promise<void>(r => { resume = r; });
+  const writer = new PagePersistence(async p => { if (p === edited) await gate; stored = p; }, vi.fn());
+  writer.schedule(edited);
+  const saving = writer.flush(), replacing = writer.replace(demo, edited);
+  expect(writer.resolve(demo, edited).title).toBe('Demo content');
+  resume(); await saving;
+  const replacement = await replacing;
+  expect(stored).toBe(replacement);
+  expect(writer.resolve(demo, edited)).toBe(replacement);
+});
+
 it('does not replace a pending or saved edit with the stale drawer snapshot', async () => {
   vi.useFakeTimers();
   const write = vi.fn(async () => {}), writer = new PagePersistence(write, vi.fn());

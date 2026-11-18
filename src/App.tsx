@@ -307,10 +307,11 @@ export default function App() {
   };
   const loadDemo = async (demo: { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }) => {
     setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
-    for (const p of demo.pages) { await db.putPage(p); kb.pageChanged(p); }
-    setPages(prev => [...prev.filter(p => !demo.pages.some(d => d.id === p.id)), ...demo.pages]);
-    await kb.seedExtractions(demo.pages, demo.extractions);
-    if (demo.pages[0]) { openPage(demo.pages[0]); setView('digital'); }
+    const replacements: Page[] = [];
+    for (const p of demo.pages) replacements.push(await persistence.writer.replace(p, page));
+    setPages(prev => [...prev.filter(p => !replacements.some(d => d.id === p.id)), ...replacements]);
+    await kb.seedExtractions(replacements, demo.extractions);
+    if (replacements[0]) { openPage(replacements[0]); setView('digital'); }
     setToast({ text: `Loaded ${demo.pages.length} KB demo pages.` });
   };
 
