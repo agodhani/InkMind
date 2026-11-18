@@ -4,6 +4,21 @@ import { PagePersistence } from './pagePersistence';
 
 afterEach(() => vi.useRealTimers());
 
+it('does not replace a pending or saved edit with the stale drawer snapshot', async () => {
+  vi.useFakeTimers();
+  const write = vi.fn(async () => {}), writer = new PagePersistence(write, vi.fn());
+  const stale = { ...createPage('Old'), updatedAt: 1 }, edited = { ...stale, title: 'Edited', updatedAt: 2 };
+  writer.schedule(edited);
+  expect(writer.resolve(stale, edited)).toBe(edited);
+  writer.schedule(stale);
+  await writer.flush();
+  expect(write.mock.calls).toEqual([[edited]]);
+  expect(writer.resolve(stale, null)).toBe(edited);
+  writer.schedule(stale);
+  await writer.flush();
+  expect(write.mock.calls).toEqual([[edited]]);
+});
+
 it('debounces each page independently and writes its latest snapshot', async () => {
   vi.useFakeTimers();
   const write = vi.fn(async () => {}), error = vi.fn();

@@ -108,7 +108,7 @@ export default function App() {
     const updatedAt = Date.now();
     setPage((prev) => {
       if (!prev || prev.id !== pageId) return prev;
-      return { ...fn(prev), updatedAt };
+      return { ...fn(prev), updatedAt: Math.max(updatedAt, prev.updatedAt + 1) };
     });
   }, []);
   useEffect(() => {
@@ -288,7 +288,7 @@ export default function App() {
   );
 
   const openPage = (p: Page) => {
-    setPage(p);
+    setPage(active => persistence.writer.resolve(p, active));
     setSelectedBlockId(null);
     setHoveredBlockId(null);
     resetHistory();
