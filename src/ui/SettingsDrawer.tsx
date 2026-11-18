@@ -165,6 +165,7 @@ function SettingsBody({ settings, corrections, themePref, onThemePref, onChange,
       </Section>
 
       <Section title="Live transcription" icon="refresh">
+        <fieldset className="kb-model-setting" disabled={settings.provider === 'mock'}><Switch checked={settings.modelConceptExtraction && settings.provider !== 'mock'} onChange={v => onChange({ ...settings, modelConceptExtraction: v })} label="Model concept extraction after a page settles" description={settings.provider === 'mock' ? 'Unavailable with Mock. Choose Ollama or OpenRouter to suggest concepts.' : settings.provider === 'ollama' ? 'Optional text-only suggestions after 5 seconds idle, using local qwen2.5:3b. Pauses during transcription.' : 'Optional text-only suggestions after 5 seconds idle, using OpenRouter’s free route only. Sends note text to OpenRouter.'} /></fieldset>
         <Switch checked={settings.liveTranscription} onChange={(v) => onChange({ ...settings, liveTranscription: v })} label="Transcribe while I write" description="After about a second of pause, the page is sent to the model." />
         <Field label="What gets sent after a pause" htmlFor="scope" hint={settings.scope === 'page' ? 'Best accuracy: vision models need the whole page for context.' : 'Cheaper, but small crops starve the model of context on messy writing.'}>
           <select id="scope" value={settings.scope} onChange={(e) => onChange({ ...settings, scope: e.target.value as AppSettings['scope'] })}>

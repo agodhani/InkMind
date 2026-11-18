@@ -15,9 +15,12 @@ import { alignStrokes, replayStrokes } from './replay';
 import { suiteMarkdown, suitePlan, type SuiteResult } from './suite';
 import { expectedBlocks } from './expectedBlocks';
 import { SuiteResults } from './SuiteResults';
+import { largeDemoPages, loadKbDemo } from './kbDemo';
+import type { KbDemo } from './kbDemo';
 
 export interface SimulatorPanelProps {
   page: Page;
+  onLoadKbDemo?: (demo: KbDemo) => Promise<void>;
   viewport: Viewport;
   onViewportChange: (v: Viewport) => void;
   onInjectStrokes: (strokes: InkStroke[]) => void;
@@ -65,7 +68,7 @@ function scoreScene(drawn: Drawn, pageStrokes: InkStroke[], blocks: DigitalBlock
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onSetBlocks, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle' }: SimulatorPanelProps) {
+export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onSetBlocks, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle', onLoadKbDemo }: SimulatorPanelProps) {
   const [kind, setKind] = useState<SceneKind>('flowchart-complex');
   const [seed, setSeed] = useState(1);
   const [messiness, setMessiness] = useState<Messiness>('normal');
@@ -328,7 +331,9 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         </button>
         <button onClick={clear} disabled={running}>Clear page</button>
         <button onClick={() => fitView()} disabled={running}>Fit view</button>
-        </fieldset><fieldset><legend>Suite</legend>
+        </fieldset>
+        {onLoadKbDemo && <fieldset><legend>Knowledge base</legend><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo(loadKbDemo()).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load KB demo notebooks</button><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo({ pages: largeDemoPages(), glossary: [], extractions: [] }).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load large KB demo (120 concepts)</button></fieldset>}
+        <fieldset><legend>Suite</legend>
         <label title="Replay N relation-bearing scenes back-to-back (normal, then messy), transcribe each and summarise">
           Suite
           <select value={suiteSize} onChange={(e) => setSuiteSize(Number(e.target.value))} disabled={running}>

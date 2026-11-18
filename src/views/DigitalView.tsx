@@ -70,6 +70,8 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlight
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(block.text);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const blockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (selected) blockRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [selected]);
 
   const startEditing = () => {
     setDraft(block.text);
@@ -127,6 +129,7 @@ function BlockView({ block, strokeById, selected, onSelect, onHover, onHighlight
   return (
     <div
       className={className}
+      ref={blockRef}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(block.id);

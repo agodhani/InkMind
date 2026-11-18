@@ -29,6 +29,12 @@ import { COMPACT_QUERY, useMediaQuery } from './ui/useMediaQuery';
 import { isEditableTarget, matchesShortcut, SHORTCUTS } from './ui/shortcuts';
 import { stepBrushSize } from './ui/brush';
 import { Icon } from './ui/icons';
+import { useKnowledgeBase } from './kb/useKnowledgeBase';
+import type { Provenance, PageExtraction } from './kb/model';
+import { ConceptMap } from './views/ConceptMap';
+import { PageConcepts } from './views/PageConcepts';
+import { buildVault, zipFiles } from './export/vault';
+import { usePagePersistence } from './store/usePagePersistence';
 
 // Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
 const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
@@ -47,6 +53,8 @@ export default function App() {
   const [page, setPage] = useState<Page | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [corrections, setCorrections] = useState<Correction[]>([]);
+  const [showConcepts, setShowConcepts] = useState(false);
+  const [focusedConcept, setFocusedConcept] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(() => (window.innerWidth > 900 ? 'split' : 'ink'));
   const [tool, setTool] = useState<InkTool>('pen');
   const [brushColor, setBrushColor] = useState('#1b1b1f');
@@ -73,6 +81,11 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  const persistence = usePagePersistence(next => {
+    kb.pageChanged(next);
+    setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
+  });
+
   // Load pages + corrections once.
   useEffect(() => {
     if (!isIndexedDbAvailable()) return;
@@ -80,8 +93,7 @@ export default function App() {
       const [list, corr] = await Promise.all([db.listPages(), db.listCorrections()]);
       setCorrections(corr);
       if (list.length === 0) {
-        const p = createPage('My first page');
-        await db.putPage(p);
+        const p = await persistence.writer.replace(createPage('My first page'));
         setPages([p]);
         setPage(p);
       } else {
@@ -90,21 +102,18 @@ export default function App() {
       }
       setLoaded(true);
     })();
-  }, []);
-
-  const persist = useRef<number | null>(null);
+  }, [persistence.writer]);
   const updatePage = useCallback((pageId: string, fn: (p: Page) => Page) => {
+    const updatedAt = Date.now();
     setPage((prev) => {
       if (!prev || prev.id !== pageId) return prev;
-      const next = { ...fn(prev), updatedAt: Date.now() };
-      if (persist.current) window.clearTimeout(persist.current);
-      persist.current = window.setTimeout(() => {
-        void db.putPage(next);
-        setPages((list) => list.map((p) => (p.id === next.id ? next : p)).sort((a, b) => b.updatedAt - a.updatedAt));
-      }, 400);
-      return next;
+      return { ...fn(prev), updatedAt: Math.max(updatedAt, prev.updatedAt + 1) };
     });
   }, []);
+  useEffect(() => {
+    if (!page || pages.some(p => p === page)) return;
+    persistence.writer.schedule(page);
+  }, [page, pages, persistence.writer]);
 
   const transcriber: Transcriber = useMemo(() => {
     if (settings.provider === 'openrouter' && settings.openRouterApiKey) {
@@ -127,6 +136,8 @@ export default function App() {
     scope: settings.scope,
     onBlocks,
   });
+  const kb = useKnowledgeBase(pages, loaded, settings, status.state === 'running' || status.state === 'waiting');
+  useEffect(() => { if (page) kb.pageEdited(page.id); }, [page, kb.pageEdited]);
 
   const syncHistoryLen = () => setHistoryLen({ undo: undoStack.current.length, redo: redoStack.current.length });
   const pushHistory = useCallback((p: Page) => {
@@ -247,9 +258,9 @@ export default function App() {
   );
 
   const onEditBlock = useCallback(
-    (block: DigitalBlock, newText: string) => {
+    (block: DigitalBlock, newText: string, handwritingCorrection = true) => {
       if (!page || block.text === newText) return;
-      recordCorrection(block, block.text, newText);
+      if (handwritingCorrection) recordCorrection(block, block.text, newText);
       updatePage(page.id, (p) => ({ ...p, blocks: p.blocks.map((b) => (b.id === block.id ? { ...b, text: newText, userEdited: true, confidence: 1 } : b)) }));
     },
     [page, updatePage, recordCorrection],
@@ -276,16 +287,35 @@ export default function App() {
   );
 
   const openPage = (p: Page) => {
-    setPage(p);
+    setPage(active => persistence.writer.resolve(p, active));
     setSelectedBlockId(null);
     setHoveredBlockId(null);
     resetHistory();
     setShowPages(false);
+    setHighlightStrokeIds(null);
+    setView(v => v === 'map' ? 'digital' : v);
+  };
+
+  const focusConcept = (id: string | null) => { setFocusedConcept(id); setView('map'); setShowConcepts(false); };
+  const jumpToSource = (source: Provenance) => {
+    const target = pages.find(p => p.id === source.pageId);
+    const block = target?.blocks.find(b => b.id === source.blockId);
+    if (!target || !block) return;
+    openPage(target); setView('digital'); setShowConcepts(false);
+    setSelectedBlockId(block.id); setHighlightStrokeIds(block.strokeIds);
+  };
+  const loadDemo = async (demo: { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }) => {
+    setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
+    const replacements: Page[] = [];
+    for (const p of demo.pages) replacements.push(await persistence.writer.replace(p, page));
+    setPages(prev => [...prev.filter(p => !replacements.some(d => d.id === p.id)), ...replacements]);
+    await kb.seedExtractions(replacements, demo.extractions);
+    if (replacements[0]) { openPage(replacements[0]); setView('digital'); }
+    setToast({ text: `Loaded ${demo.pages.length} KB demo pages.` });
   };
 
   const newPage = async () => {
-    const p = createPage(`Page ${pages.length + 1}`);
-    await db.putPage(p);
+    const p = await persistence.writer.replace(createPage(`Page ${pages.length + 1}`));
     setPages((l) => [p, ...l]);
     openPage(p);
   };
@@ -302,7 +332,7 @@ export default function App() {
       setToast({ text: 'No strokes found in that file.' });
       return;
     }
-    for (const p of imported) await db.putPage(p);
+    imported = await Promise.all(imported.map(p => persistence.writer.replace(p)));
     setPages((l) => [...imported, ...l]);
     openPage(imported[0]);
     setToast({ text: `Imported ${imported.length === 1 ? '1 page' : `${imported.length} pages`}.` });
@@ -311,17 +341,24 @@ export default function App() {
   const renamePage = (id: string, title: string) => {
     if (page?.id === id) updatePage(id, (p) => ({ ...p, title }));
     else {
-      setPages((list) => {
-        const target = list.find((p) => p.id === id);
-        if (target) void db.putPage({ ...target, title, updatedAt: Date.now() });
-        return list.map((p) => (p.id === id ? { ...p, title, updatedAt: Date.now() } : p));
-      });
+      const target = pages.find(p => p.id === id);
+      if (!target) return;
+      const latest = persistence.writer.resolve(target, null);
+      const next = { ...latest, title, updatedAt: Math.max(Date.now(), latest.updatedAt + 1) };
+      persistence.writer.schedule(next);
+      setPages(list => list.map(p => p.id === id ? next : p));
     }
   };
 
   const deletePage = async (p: Page) => {
     if (!window.confirm(`Delete “${p.title || 'Untitled'}”? Its ink and transcription are removed from this browser.`)) return;
-    await db.deletePage(p.id);
+    try {
+      await persistence.writer.remove(p.id, () => db.deletePage(p.id));
+    } catch (error) {
+      setToast({ text: `Could not delete page: ${error instanceof Error ? error.message : String(error)}` });
+      return;
+    }
+    kb.pageDeleted(p.id);
     const rest = pages.filter((x) => x.id !== p.id);
     setPages(rest);
     if (page?.id === p.id) {
@@ -342,6 +379,12 @@ export default function App() {
     setToast({ text: `Exported ${a.download}` });
   };
 
+  const exportVault = () => {
+    const bytes = zipFiles(buildVault(pages, kb.graph));
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'application/zip' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'inkmind-vault.zip'; a.click(); URL.revokeObjectURL(a.href);
+    setToast({ text: 'Exported inkmind-vault.zip' });
+  };
   const transcribeNow = useCallback(() => void flushNow(), [flushNow]);
   const retranscribe = () => {
     if (!page?.strokes.length) return;
@@ -362,7 +405,7 @@ export default function App() {
       if (matchesShortcut(e, SHORTCUTS.pages)) return fire(() => setShowPages((v) => !v));
       if (matchesShortcut(e, SHORTCUTS.toggleTheme)) return fire(toggleTheme);
       if (matchesShortcut(e, SHORTCUTS.transcribe) && !typing) return fire(transcribeNow);
-      if (typing || showSettings || showPages) return;
+      if (typing || showSettings || showPages || showConcepts) return;
       if (matchesShortcut(e, SHORTCUTS.pen)) return fire(() => setTool('pen'));
       if (matchesShortcut(e, SHORTCUTS.eraser)) return fire(() => setTool('eraser'));
       if (matchesShortcut(e, SHORTCUTS.pan)) return fire(() => setTool('pan'));
@@ -375,7 +418,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showTips, showSettings, showPages, selectedBlockId, toggleTheme, transcribeNow]);
+  }, [showTips, showSettings, showPages, showConcepts, selectedBlockId, toggleTheme, transcribeNow]);
 
   const closeTips = () => {
     dismissOnboarding();
@@ -469,6 +512,9 @@ export default function App() {
         onTranscribeNow={transcribeNow}
         onRetranscribeAll={retranscribe}
         onExport={exportMarkdown}
+        onExportVault={exportVault}
+        onOpenConcepts={() => setShowConcepts(v => !v)}
+        conceptCount={kb.graph.concepts.filter(c => c.provenance.some(p => p.pageId === page?.id)).length}
         onOpenPages={() => setShowPages(true)}
         onOpenSettings={() => setShowSettings(true)}
         onShowTips={() => setShowTips(true)}
@@ -490,7 +536,7 @@ export default function App() {
       )}
 
       <main className="workspace">
-        {!page ? (
+        {view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} review={kb.review} onSource={jumpToSource} /> : !page ? (
           <div className="workspace-empty">
             <div className="card empty">
               <div className="empty-art">
@@ -540,12 +586,14 @@ export default function App() {
 
       {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} onLoadKbDemo={loadDemo} />
         </Suspense>
       )}
 
       <PagesDrawer open={showPages} pages={pages} currentId={page?.id ?? null} onClose={() => setShowPages(false)} onOpen={openPage} onNew={() => void newPage()} onImport={(f) => void importStrokes(f)} onRename={renamePage} onDelete={(p) => void deletePage(p)} />
 
+      {showConcepts && page && <PageConcepts key={page.id} page={page} pages={pages} graph={kb.graph} decisions={kb.decisions} decide={kb.decide} review={kb.review} onMap={focusConcept} onSource={jumpToSource} onAccept={(block, text) => onEditBlock(block, text, false)} onClose={() => setShowConcepts(false)} />}
+      {(kb.error || persistence.error) && <div className="kb-error" role="alert">{persistence.error ? `Page save: ${persistence.error}` : `Knowledge base: ${kb.error}`}</div>}
       <SettingsDrawer
         open={showSettings}
         settings={settings}

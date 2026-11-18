@@ -8,7 +8,7 @@ import { formatShortcut, SHORTCUTS } from './shortcuts';
 import { StatusPill } from './StatusPill';
 import type { ResolvedTheme } from './theme';
 
-export type ViewMode = 'ink' | 'digital' | 'split';
+export type ViewMode = 'ink' | 'digital' | 'split' | 'map';
 
 export interface ToolbarProps {
   title: string;
@@ -31,6 +31,9 @@ export interface ToolbarProps {
   onTranscribeNow: () => void;
   onRetranscribeAll: () => void;
   onExport: () => void;
+  onExportVault: () => void;
+  onOpenConcepts: () => void;
+  conceptCount: number;
   onOpenPages: () => void;
   onOpenSettings: () => void;
   onShowTips: () => void;
@@ -54,6 +57,7 @@ export function Toolbar(p: ToolbarProps) {
         { value: 'ink', label: 'Ink', icon: 'ink', shortcut: sc('viewInk'), iconOnly: p.compact },
         { value: 'split', label: 'Split', icon: 'split', shortcut: sc('viewSplit'), iconOnly: p.compact },
         { value: 'digital', label: 'Digital', icon: 'digital', shortcut: sc('viewDigital'), iconOnly: p.compact },
+        { value: 'map', label: 'Map', icon: 'map', iconOnly: p.compact },
       ]}
     />
   );
@@ -80,6 +84,7 @@ export function Toolbar(p: ToolbarProps) {
           <button role="menuitem" onClick={() => (setMenuOpen(false), p.onExport())}>
             <Icon name="download" /> <span className="menu-label">Export Markdown</span>
           </button>
+          <button role="menuitem" onClick={() => (setMenuOpen(false), p.onExportVault())}><Icon name="download" /><span className="menu-label">Export Obsidian vault (.zip)</span></button>
           <button role="menuitem" onClick={() => (setMenuOpen(false), p.onRetranscribeAll())}>
             <Icon name="refresh" /> <span className="menu-label">Transcribe everything again</span>
           </button>
@@ -112,6 +117,7 @@ export function Toolbar(p: ToolbarProps) {
         )}
         <span className="spacer" />
         <StatusPill status={p.status} live={p.live} providerLabel={p.providerLabel} onRetry={p.onTranscribeNow} />
+        <button className="btn ghost kb-toolbar-concepts" aria-label={`Concepts on this page (${p.conceptCount})`} onClick={p.onOpenConcepts}><Icon name="map" /><span className="badge">{p.conceptCount}</span></button>
         {!p.compact && transcribeBtn}
         <IconButton icon={p.theme === 'dark' ? 'sun' : 'moon'} label={p.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} shortcut={sc('toggleTheme')} onClick={p.onToggleTheme} className="ghost" />
         <IconButton icon="settings" label="Settings" shortcut={sc('settings')} onClick={p.onOpenSettings} className="ghost" tipAlign={p.compact ? 'end' : 'center'} />
