@@ -1,10 +1,42 @@
 import { expect, it } from 'vitest';
 import { buildVault, crc32, zipFiles } from './vault';
 import { pageToMarkdown } from './markdown';
-import { largeDemoPages } from '../sim/kbDemo';
+import { largeDemoPages, loadKbDemo } from '../sim/kbDemo';
+import { stroke } from '../__tests__/helpers';
 import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
 import { applyDecisions, emptyDecisions, renameConcept } from '../kb/decisions';
+
+function unzip(bytes: Uint8Array): Map<string, string> {
+  const view = new DataView(bytes.buffer), decoder = new TextDecoder(), files = new Map<string, string>();
+  let offset = 0;
+  while (view.getUint32(offset, true) === 0x04034b50) {
+    const length = view.getUint32(offset + 18, true), nameLength = view.getUint16(offset + 26, true), start = offset + 30 + nameLength;
+    files.set(decoder.decode(bytes.slice(offset + 30, start)), decoder.decode(bytes.slice(start, start + length)));
+    offset = start + length;
+  }
+  return files;
+}
+
+it('packages ink SVGs and resolves every embed in every demo vault ZIP file', () => {
+  const demo = loadKbDemo(), page = largeDemoPages(1)[0], ink = stroke(10, 20, 100, 80, 0, 'ink');
+  page.id = '../unsafe/page'; page.strokes = [ink, stroke(200, 200, 300, 300, 0, 'unrelated')];
+  page.blocks = [{ ...page.blocks[0], id: '../unsafe/block', kind: 'diagram', text: 'A drawing', strokeIds: ['ink'] }];
+  const pages = [...demo.pages, page], before = pages.map(p => pageToMarkdown(p));
+  const graph = buildGraph(pages.map(p => extractPage(p, { glossary: demo.glossary })));
+  const files = buildVault(pages, graph), archive = unzip(zipFiles(files));
+  const images = files.filter(f => f.path.endsWith('.svg'));
+  expect(images).toHaveLength(1);
+  expect(images[0].content).toContain('<svg'); expect(images[0].content).toContain('10,20');
+  expect(images[0].content).not.toContain('200,200');
+  expect(files.every(f => !f.path.split('/').includes('..'))).toBe(true);
+  expect(files.find(f => f.path.startsWith('Pages/') && f.content.includes('A drawing'))!.content).toContain(`![[${images[0].path}]]`);
+  for (const content of archive.values()) {
+    for (const m of content.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\(([^)]+)\)/g)) expect(archive.has(m[1] ?? m[2])).toBe(true);
+  }
+  expect(buildVault(pages, graph)).toEqual(files);
+  expect(pages.map(p => pageToMarkdown(p))).toEqual(before);
+});
 
 it.each([1, 2, 3, 4, 5, 6])('rewrites links following line-leading inline code with %s backticks', length => {
   const page = largeDemoPages(1)[0], graph = { concepts: [{ id: 'c', label: 'Model: Free', aliases: ['MF'], provenance: [] }], edges: [] };
