@@ -30,8 +30,9 @@ export function groupLinks(graph: KbGraph, conceptId: string): Record<ConceptEdg
   return groups;
 }
 export interface Position { x: number; y: number }
-export function layoutGraph(graph: KbGraph, { width, height, seed = 1 }: { width: number; height: number; seed?: number }): Record<string, Position> {
-  if (!(width > 0 && height > 0)) throw new Error('Layout dimensions must be positive');
+export function layoutGraph(graph: KbGraph, { width: outputWidth, height: outputHeight, seed = 1 }: { width: number; height: number; seed?: number }): Record<string, Position> {
+  if (!(outputWidth > 0 && outputHeight > 0)) throw new Error('Layout dimensions must be positive');
+  const width = Math.sqrt(outputWidth * outputHeight), height = width;
   const nodes = [...graph.concepts].sort((a, b) => a.id.localeCompare(b.id));
   let state = seed >>> 0;
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
@@ -42,7 +43,7 @@ export function layoutGraph(graph: KbGraph, { width, height, seed = 1 }: { width
   for (let step = 0; step < 200; step++) {
     const d = p.map(() => ({ x: 0, y: 0 }));
     for (let i = 0; i < p.length; i++) for (let j = i + 1; j < p.length; j++) {
-      const dx = p[i].x - p[j].x, dy = p[i].y - p[j].y, r2 = Math.max(0.01, dx * dx + dy * dy), f = k * k / r2;
+      const dx = p[i].x - p[j].x, dy = p[i].y - p[j].y, r2 = Math.max(0.01, dx * dx + dy * dy), f = 0.15 * k * k / r2;
       d[i].x += dx * f; d[i].y += dy * f; d[j].x -= dx * f; d[j].y -= dy * f;
     }
     for (const [i, j] of edges) {
@@ -51,12 +52,19 @@ export function layoutGraph(graph: KbGraph, { width, height, seed = 1 }: { width
     }
     const temperature = Math.min(width, height) * 0.1 * (1 - step / 200);
     for (let i = 0; i < p.length; i++) {
+      d[i].x -= (p[i].x - width / 2) * 0.03;
+      d[i].y -= (p[i].y - height / 2) * 0.03;
       const length = Math.max(1, Math.hypot(d[i].x, d[i].y)), scale = Math.min(length, temperature) / length;
-      p[i].x = Math.max(0, Math.min(width, p[i].x + d[i].x * scale));
-      p[i].y = Math.max(0, Math.min(height, p[i].y + d[i].y * scale));
+      p[i].x += d[i].x * scale;
+      p[i].y += d[i].y * scale;
     }
   }
-  return Object.fromEntries(nodes.map((c, i) => [c.id, p[i]]));
+  const minX = Math.min(...p.map(v => v.x)), maxX = Math.max(...p.map(v => v.x));
+  const minY = Math.min(...p.map(v => v.y)), maxY = Math.max(...p.map(v => v.y));
+  return Object.fromEntries(nodes.map((c, i) => [c.id, {
+    x: maxX === minX ? outputWidth / 2 : (p[i].x - minX) / (maxX - minX) * outputWidth,
+    y: maxY === minY ? outputHeight / 2 : (p[i].y - minY) / (maxY - minY) * outputHeight,
+  }]));
 }
 export function demoGraph(n = 120): KbGraph {
   const concepts = Array.from({ length: n }, (_, i) => ({ id: `demo-${i}`, label: `Knowledge topic ${i + 1}`, aliases: [], provenance: [{ pageId: `large-${Math.floor(i / 12)}`, blockId: `topic-${i}`, strokeIds: [], extractor: 'fixture', surface: `Knowledge topic ${i + 1}` }] }));
