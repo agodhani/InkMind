@@ -13,6 +13,7 @@ describe('wikilinks in the digital view', () => {
     const graph = { concepts: [{ id: 'c1', label: 'Proximal Policy Optimization', aliases: ['PPO'], provenance: [] }], edges: [] } as unknown as KbGraph;
     expect(conceptForLink(graph, 'ppo')).toBe('c1');
     expect(conceptForLink(graph, 'proximal policy optimization')).toBe('c1');
+    expect(conceptForLink(graph, 'Proximal Policy Optimization (PPO)')).toBe('c1');
     expect(conceptForLink(graph, 'TRPO')).toBeNull();
   });
 });

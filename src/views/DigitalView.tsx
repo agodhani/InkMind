@@ -188,9 +188,9 @@ function BlockText({ block }: { block: DigitalBlock }) {
     case 'heading': {
       const level = Math.min(3, Math.max(1, block.level ?? 2));
       const clean = text.replace(/^#+\s*/, '');
-      if (level === 1) return <h1>{clean}</h1>;
-      if (level === 2) return <h2>{clean}</h2>;
-      return <h3>{clean}</h3>;
+      if (level === 1) return <h1><Inline text={clean} /></h1>;
+      if (level === 2) return <h2><Inline text={clean} /></h2>;
+      return <h3><Inline text={clean} /></h3>;
     }
     case 'list':
     case 'checklist':
