@@ -354,8 +354,7 @@ export default function App() {
 
   const deletePage = async (p: Page) => {
     if (!window.confirm(`Delete “${p.title || 'Untitled'}”? Its ink and transcription are removed from this browser.`)) return;
-    persistence.writer.cancel(p.id);
-    await db.deletePage(p.id);
+    await persistence.writer.remove(p.id, () => db.deletePage(p.id));
     kb.pageDeleted(p.id);
     const rest = pages.filter((x) => x.id !== p.id);
     setPages(rest);

@@ -4,6 +4,56 @@ import { PagePersistence } from './pagePersistence';
 
 afterEach(() => vi.useRealTimers());
 
+it('deletes after an in-flight save without allowing queued or later saves to recreate the page', async () => {
+  vi.useFakeTimers();
+  const page = createPage('Original'), queued = { ...page, title: 'Queued' };
+  let resume!: () => void, stored: typeof page | undefined = page;
+  const gate = new Promise<void>(r => { resume = r; });
+  const write = vi.fn(async (p: typeof page) => { if (p === page) await gate; stored = p; });
+  const writer = new PagePersistence(write, vi.fn());
+  writer.schedule(page); const saving = writer.flush();
+  writer.schedule(queued); const queuedSave = writer.flush();
+  writer.schedule({ ...page, title: 'Pending' });
+  const remove = vi.fn(async () => { stored = undefined; });
+  const deleting = writer.remove(page.id, remove);
+  expect(remove).not.toHaveBeenCalled();
+  resume(); await saving; await queuedSave; await deleting;
+  expect(stored).toBeUndefined();
+  writer.schedule({ ...page, title: 'Late effect' });
+  await vi.runAllTimersAsync(); await writer.flush();
+  expect(stored).toBeUndefined();
+  expect(write.mock.calls).toEqual([[page]]);
+  expect(remove).toHaveBeenCalledOnce();
+});
+
+it('allows explicit recreation after deletion without reviving pre-deletion queued writes', async () => {
+  const page = createPage('Original');
+  let resume!: () => void;
+  const gate = new Promise<void>(r => { resume = r; });
+  const write = vi.fn(async (p: typeof page) => { if (p === page) await gate; });
+  const writer = new PagePersistence(write, vi.fn());
+  writer.schedule(page); const saving = writer.flush();
+  const queued = writer.replace({ ...page, title: 'Old queued replacement' });
+  const remove = vi.fn(async () => {}), deleting = writer.remove(page.id, remove);
+  const recreating = writer.replace({ ...page, title: 'Recreated' });
+  resume(); await saving; await queued; await deleting;
+  const recreated = await recreating;
+  expect(write.mock.calls).toEqual([[page], [recreated]]);
+  expect(remove.mock.invocationCallOrder[0]).toBeLessThan(write.mock.invocationCallOrder[1]);
+  writer.schedule({ ...recreated, title: 'New edit', updatedAt: recreated.updatedAt + 1 });
+  await writer.flush();
+  expect(write.mock.calls[2][0].title).toBe('New edit');
+});
+
+it('deletes an unsaved page and propagates deletion failures while blocking stale saves', async () => {
+  const write = vi.fn(async () => {}), writer = new PagePersistence(write, vi.fn());
+  const page = createPage('Pending'), failure = new Error('Delete failed');
+  writer.schedule(page);
+  await expect(writer.remove(page.id, async () => { throw failure; })).rejects.toBe(failure);
+  writer.schedule(page); await writer.flush();
+  expect(write).not.toHaveBeenCalled();
+});
+
 it.each([false, true])('persists explicit demo replacement over a cached edit (already saved: %s)', async saved => {
   vi.useFakeTimers(); vi.setSystemTime(100);
   const demo = { ...createPage('Demo content'), updatedAt: 0 }, edited = { ...demo, title: 'User edit', updatedAt: 200 };
