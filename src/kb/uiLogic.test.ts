@@ -118,9 +118,9 @@ describe('map helpers', () => {
     expect(layoutGraph({ concepts: [], edges: [] }, opts)).toEqual({});
     expect(() => layoutGraph(g, { width: 0, height: 1 })).toThrow();
   });
-  it('uses both dimensions of a wide map and centers a single concept', () => {
+  it('fits without wall clamping and centers a single concept', () => {
     const positions = Object.values(layoutGraph(demoGraph(120), { width: 900, height: 200 }));
-    expect(Math.max(...positions.map(p => p.y)) - Math.min(...positions.map(p => p.y))).toBe(200);
+    expect(positions.every(p => p.x > 0 && p.x < 900 && p.y > 0 && p.y < 200)).toBe(true);
     expect(layoutGraph(demoGraph(1), { width: 900, height: 200 })).toEqual({ 'demo-0': { x: 450, y: 100 } });
   });
 });

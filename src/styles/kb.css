@@ -1,13 +1,13 @@
 .kb-map { display: flex; flex: 1; min-width: 0; min-height: 0; background: var(--bg-elev); }
-.kb-map-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
-.kb-map-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-5) var(--s-5) var(--s-4); }
+.kb-map-main { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; flex: 1; }
+.kb-map-heading { display: flex; align-items: center; padding: var(--s-3); }
 .kb-map-heading small, .kb-detail-head small { font-size: var(--fs-xs); letter-spacing: .1em; color: var(--fg-3); }
-.kb-map-heading h1 { font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.03em; display: flex; gap: var(--s-3); align-items: center; }
-.kb-controls { display: flex; gap: var(--s-3); padding: 0 var(--s-5) var(--s-3); }
+.kb-map-heading h1 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.03em; display: flex; gap: var(--s-2); align-items: center; white-space: nowrap; }
+.kb-controls { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-3) var(--s-3) 0; }
 .kb-search { flex: 1; min-width: 0; position: relative; }
 .kb-search .input-wrap, .kb-search input { width: 100%; }
-.kb-page-filter { width: 180px; text-overflow: ellipsis; }
-.kb-filters { padding: 0 var(--s-5) var(--s-4); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.kb-page-filter { width: 140px; text-overflow: ellipsis; }
+.kb-filters { grid-column: 1 / -1; padding: 0 var(--s-3) var(--s-2); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 .kb-filters .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
 .kb-filters .chip i { width: 18px; border-top: 2px solid currentColor; }
 .kb-filters .kb-kind-mentions i { border-top-style: dashed; }
@@ -16,7 +16,7 @@
 .kb-filters .kb-kind-contains { color: var(--warn); }
 .kb-focus { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); font-size: var(--fs-sm); color: var(--fg-2); }
 .kb-focus > span { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kb-map-frame { position: relative; flex: 1; min-height: 180px; overflow: hidden; border-top: 1px solid var(--line); background: radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 24px 24px; }
+.kb-map-frame { grid-column: 1 / -1; position: relative; min-height: 0; overflow: hidden; border-top: 1px solid var(--line); background: radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 24px 24px; }
 .kb-map-svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .kb-map-svg:active { cursor: grabbing; }
 .kb-edge { stroke: var(--line-strong); stroke-width: 1.5; fill: none; pointer-events: none; }
@@ -36,7 +36,6 @@
 .kb-node.suggested circle:not(.kb-node-hit) { stroke: var(--warn); stroke-dasharray: 4 3; }
 .kb-node text { fill: var(--fg); paint-order: stroke; stroke: var(--bg-elev); stroke-width: 5px; stroke-linejoin: round; pointer-events: none; font-weight: 550; }
 .kb-node text.kb-suggest-label { fill: var(--warn); font-weight: 500; }
-.kb-map-svg[data-overview='true'] .kb-node:not(:hover):not(:focus):not(.focused) text { display: none; }
 .kb-map-caption { position: absolute; bottom: 12px; left: 16px; color: var(--fg-2); font-size: var(--fs-xs); background: var(--bg-elev); padding: 6px 8px; border-radius: var(--r-sm); pointer-events: none; }
 .kb-map-caption span { display: block; color: var(--fg-3); }
 .kb-map-zoom { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; gap: var(--s-2); padding: 4px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); }
@@ -73,6 +72,5 @@
 @media (orientation: portrait) {
   .kb-map { flex-direction: column; }
   .kb-map > .kb-detail { flex: 0 0 42%; width: 100%; border-left: 0; border-top: 1px solid var(--line); box-shadow: var(--shadow-2); padding: var(--s-4) var(--s-5); }
-  .kb-map-heading { padding-top: var(--s-4); }
 }
 @media (max-width: 600px) { .kb-map-heading, .kb-controls, .kb-filters { padding-left: var(--s-3); padding-right: var(--s-3); } .kb-page-filter { width: 120px; } .kb-map-heading h1 { font-size: var(--fs-xl); } .kb-map-heading .btn { font-size: var(--fs-xs); } }
