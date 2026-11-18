@@ -4,6 +4,7 @@ import { pageToMarkdown } from './markdown';
 import { largeDemoPages } from '../sim/kbDemo';
 import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
+import { applyDecisions, emptyDecisions, renameConcept } from '../kb/decisions';
 
 it('keeps original concept labels as aliases when vault filenames are sanitized', () => {
   const page = largeDemoPages(1)[0];
@@ -12,7 +13,21 @@ it('keeps original concept labels as aliases when vault filenames are sanitized'
   const graph = buildGraph([extractPage(page, { glossary: [] })]);
   const files = buildVault([page], graph);
   expect(files.find(f => f.path === 'Concepts/Model- Free.md')!.content).toContain('aliases: ["Model: Free"]');
-  expect(files.find(f => f.path.startsWith('Pages/'))!.content).toContain('[[Model: Free]]');
+  expect(files.find(f => f.path.startsWith('Pages/'))!.content).toContain('[[Model- Free|Model: Free]]');
+});
+
+it('rewrites resolved labels and aliases to existing concept filenames without changing display text or source markdown', () => {
+  const page = largeDemoPages(1)[0];
+  page.blocks = [{ ...page.blocks[0], kind: 'paragraph', text: '[[Model: Free]] [[Gradient Descent|GD]]' }];
+  const raw = buildGraph([extractPage(page, { glossary: [] })]);
+  const graph = applyDecisions(raw, renameConcept(emptyDecisions(), 'Gradient Descent', 'Gradient method'));
+  page.blocks[0].text = '[[Model: Free]] [[Model: Free|Free model]] [[GD]] [[ gd |Keep this text]] [[Gradient Descent]] [[Gradient method]] [[Unknown]] [[Unknown|Unresolved text]]';
+  const before = pageToMarkdown(page), files = buildVault([page], graph), note = files.find(f => f.path.startsWith('Pages/'))!.content;
+  for (const link of ['[[Model- Free|Model: Free]]', '[[Model- Free|Free model]]', '[[Gradient method|GD]]', '[[Gradient method|Keep this text]]', '[[Gradient method|Gradient Descent]]']) expect(note).toContain(link);
+  expect(note).toContain('[[Gradient method]]');
+  expect(note).toContain('[[Unknown]] [[Unknown|Unresolved text]]');
+  for (const target of ['Model- Free', 'Gradient method']) expect(files.some(f => f.path === `Concepts/${target}.md`)).toBe(true);
+  expect(pageToMarkdown(page)).toBe(before);
 });
 
 it('keeps fences, display math, lists and tables intact with standalone source refs', () => {

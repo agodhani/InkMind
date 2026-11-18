@@ -2,6 +2,7 @@ import type { Page } from '../model/page';
 import { sortBlocksForReading } from '../model/page';
 import type { KbGraph } from '../kb/model';
 import { groupLinks } from '../kb/mapView';
+import { termKey } from '../kb/normalize';
 import { pageToMarkdown } from './markdown';
 
 export interface VaultFile { path: string; content: string }
@@ -17,13 +18,22 @@ function names(items: { id: string; label: string }[]): Map<string, string> {
 }
 export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
   const pageNames = names(pages.map(p => ({ id: p.id, label: p.title }))), conceptNames = names(graph.concepts);
+  const targets = new Map<string, string>();
+  for (const c of graph.concepts) for (const label of [c.label, ...c.aliases]) {
+    const key = termKey(label);
+    if (key && !targets.has(key)) targets.set(key, conceptNames.get(c.id)!);
+  }
+  const rewriteLinks = (markdown: string) => markdown.replace(/(?<!!)\[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/g, (link, target: string, display: string | undefined) => {
+    const name = targets.get(termKey(target));
+    return name && name !== target ? `[[${name}|${display ?? target}]]` : link;
+  });
   const refs = new Map<string, Map<string, string>>();
   const files: VaultFile[] = pages.map(page => {
     const blocks = sortBlocksForReading(page.blocks), ids = new Map(blocks.map((b, i) => [b.id, `block-${i + 1}`]));
     refs.set(page.id, ids);
     const header = pageToMarkdown(page, []);
     const body = blocks.map(b => {
-      const markdown = pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim();
+      const markdown = rewriteLinks(pageToMarkdown(page, [b]).slice(header.trimEnd().length).trim());
       const structured = b.kind === 'diagram' || b.kind === 'math' || /\n|^(?:[-*+] |\d+\. |\|)/.test(markdown);
       return markdown + `${structured ? '\n\n' : ' '}^${ids.get(b.id)}`;
     }).join('\n\n');
