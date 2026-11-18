@@ -1,5 +1,60 @@
 # Transcription eval
 
+## Knowledge-base eval
+
+```sh
+npm run eval:kb
+npm run eval:kb -- --extractor deterministic --run kb-baseline
+npm run eval:kb -- --replay kb-baseline --run kb-replay
+```
+
+The offline KB evaluator reads `eval/kb/notebooks/*.json`. Each notebook contains `name`,
+`description`, `glossary`, ordered `steps` (`{op:"put",page:{id,title,blocks}}` or
+`{op:"delete",pageId}`), and `expected` with concepts, directed typed edges and optional
+`mustNotMerge` label pairs. Expected concepts have `label`, optional `aliases`, and provenance
+`[{pageId,blockId}]`; expected edges have `from`, `to`, `kind` and provenance. Edge endpoints
+name expected labels or aliases. Answer keys are independent, read-only references, not generated
+from the system. Blocks may omit bbox/confidence/strokeIds; the loader supplies stacked rows,
+confidence 1 and empty ink. Page timestamps are 0 and strokes empty.
+
+Tables contribute column-header concepts only; row labels are attributes even when the top-left
+cell is empty. Concept labels are selected from declared term forms rather than written surface
+variants (for example, glossary `advantage` written as `Advantages` is labelled `advantage`).
+
+Each notebook runs in a fresh memory store. After all steps, every surviving page is re-synced
+and the graph must be deep-equal. A future extractor implements the raw/parse `Extractor`
+interface in `src/kb/extractor.ts`. Every extraction call (including re-syncs) saves raw JSON
+under `eval/kb/results/<run>/raw/<notebook>/<step>-<pageId>.json`. Replay reads those exact
+files, parses them through the extractor and never falls back to live extraction. A missing file
+or mismatched page ID is an error; source and output runs must differ. Raw directories are ignored
+by git; synthetic-only `summary.md` and `summary.json` remain committable.
+
+The table and `kb-total` line report:
+
+- Concept and edge precision/recall: expected items matched and predicted items matching an
+  expected item. Concept matching compares labels/aliases using an independent scorer key
+  (lowercase, whitespace/hyphen folding, outer punctuation trimming), not extraction normalisation.
+  Edges require matching kind and directed endpoints; labels are not scored.
+- Duplicates: extra predictions per expected concept, and their share of all predicted concepts.
+- False merges: predictions matching multiple expected concepts, plus unresolved-by-that-count
+  `mustNotMerge` violations (not double-counted).
+- Provenance: for each matched expected concept/edge, the best prediction must have exactly the
+  expected page/block set, with every cited stroke belonging to the cited block. Missing items
+  lower recall; they are not matched provenance pairs. Empty precision/recall denominators score 1.
+- Idempotency: number of notebooks whose final re-sync is deep-equal.
+
+All missing concepts/edges, extras, duplicates, false merges and provenance mismatches are printed
+below the table and saved in both summaries. A non-perfect score is not an evaluator error.
+
+`npm run check` runs geometry then KB evals, cleans their `check-gate` outputs, and compares
+`eval/check-baseline.json` sections `geometry` and `kb`. It fails on falling concept/edge P/R,
+provenance ratio, notebook count or idempotent count, or rising duplicate/false-merge counts.
+A legacy geometry-only baseline is readable but fails with an update hint until a KB baseline is
+added. Use `npm run check -- --update-baseline` only for intentional score changes. See
+[KB architecture](../docs/KB.md) for extraction and persistence semantics.
+
+## Transcription datasets
+
 Scores the app's real transcriber + prompt against human-written references.
 
 ```bash

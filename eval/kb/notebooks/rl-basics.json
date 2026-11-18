@@ -1,0 +1,467 @@
+{
+ "name": "rl-basics",
+ "description": "RL basics: heading hierarchy, plain-text mentions of concepts defined elsewhere (policy inside policy gradient must not count), glossary terms with plural/hyphen variants, a tree, policy vs policy gradient and value function vs Q-function near-misses.",
+ "glossary": [
+  "REINFORCE",
+  "value function",
+  "Q-function"
+ ],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "RL basics",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Reinforcement learning",
+      "strokeIds": [
+       "s148",
+       "s149"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "heading",
+      "level": 2,
+      "text": "Policy",
+      "strokeIds": [
+       "s150",
+       "s151"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "paragraph",
+      "text": "A policy maps states to actions; it can be stochastic.",
+      "strokeIds": [
+       "s152",
+       "s153"
+      ]
+     },
+     {
+      "id": "b4",
+      "kind": "heading",
+      "level": 2,
+      "text": "Policy gradient",
+      "strokeIds": [
+       "s154",
+       "s155"
+      ]
+     },
+     {
+      "id": "b5",
+      "kind": "paragraph",
+      "text": "Ascend the gradient of expected return w.r.t. the policy parameters. REINFORCE is the simplest estimator.",
+      "strokeIds": [
+       "s156",
+       "s157"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "Value-based methods",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Value functions",
+      "strokeIds": [
+       "s158",
+       "s159"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "The value function V(s) scores states; the Q-function Q(s,a) scores state-action pairs. Unlike a policy gradient method, we act greedily on Q.",
+      "strokeIds": [
+       "s160",
+       "s161"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "diagram",
+      "text": "RL method families",
+      "strokeIds": [
+       "s133",
+       "s134",
+       "s135",
+       "s136",
+       "s137",
+       "s138",
+       "s139",
+       "s140",
+       "s141",
+       "s142",
+       "s143",
+       "s144",
+       "s145",
+       "s146",
+       "s147"
+      ],
+      "figure": {
+       "kind": "tree",
+       "nodes": [
+        {
+         "id": "r",
+         "label": "RL methods",
+         "strokeIds": [
+          "s133",
+          "s134"
+         ]
+        },
+        {
+         "id": "v",
+         "label": "value-based",
+         "strokeIds": [
+          "s135",
+          "s136"
+         ],
+         "parent": "r"
+        },
+        {
+         "id": "p",
+         "label": "policy-based",
+         "strokeIds": [
+          "s137",
+          "s138"
+         ],
+         "parent": "r"
+        },
+        {
+         "id": "ac",
+         "label": "actor-critic",
+         "strokeIds": [
+          "s139",
+          "s140"
+         ],
+         "parent": "r"
+        },
+        {
+         "id": "re",
+         "label": "REINFORCE",
+         "strokeIds": [
+          "s141",
+          "s142"
+         ],
+         "parent": "p"
+        }
+       ],
+       "edges": [
+        {
+         "from": "r",
+         "to": "v",
+         "strokeIds": [
+          "s143"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "r",
+         "to": "p",
+         "strokeIds": [
+          "s144"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "r",
+         "to": "ac",
+         "strokeIds": [
+          "s145"
+         ],
+         "kind": "line"
+        },
+        {
+         "from": "p",
+         "to": "re",
+         "strokeIds": [
+          "s146"
+         ],
+         "kind": "line"
+        }
+       ],
+       "shapes": [],
+       "labels": [
+        "RL methods",
+        "value-based",
+        "policy-based",
+        "actor-critic",
+        "REINFORCE"
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Reinforcement learning",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     }
+    ]
+   },
+   {
+    "label": "Policy",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b5"
+     }
+    ]
+   },
+   {
+    "label": "Policy gradient",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "REINFORCE",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b5"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "value function",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ],
+    "aliases": [
+     "Value functions"
+    ]
+   },
+   {
+    "label": "Q-function",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "RL methods",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "value-based",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "policy-based",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "actor-critic",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "Reinforcement learning",
+    "to": "Policy",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "Reinforcement learning",
+    "to": "Policy gradient",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "Policy gradient",
+    "to": "Policy",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b5"
+     }
+    ]
+   },
+   {
+    "from": "Policy gradient",
+    "to": "REINFORCE",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b5"
+     }
+    ]
+   },
+   {
+    "from": "value function",
+    "to": "Q-function",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "value function",
+    "to": "Policy gradient",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "value function",
+    "to": "RL methods",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RL methods",
+    "to": "value-based",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RL methods",
+    "to": "policy-based",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RL methods",
+    "to": "actor-critic",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "policy-based",
+    "to": "REINFORCE",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": [
+   [
+    "Policy",
+    "Policy gradient"
+   ],
+   [
+    "value function",
+    "Q-function"
+   ],
+   [
+    "policy-based",
+    "Policy"
+   ],
+   [
+    "value-based",
+    "value function"
+   ]
+  ]
+ }
+}

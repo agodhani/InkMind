@@ -28,3 +28,6 @@ dist-ssr
 .env.*
 !.env.example
 .tmp/
+
+# Replayed extractor output (summaries remain committable)
+eval/kb/results/*/raw/

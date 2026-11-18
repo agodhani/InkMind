@@ -1,0 +1,615 @@
+{
+ "name": "rlhf-rlvr",
+ "description": "RLHF and RLVR: Venn set labels merging with parenthetical-acronym headings, a pipeline whose stage is also a glossary term, a footnote definition, RLHF vs RLVR near-miss.",
+ "glossary": [
+  "reward model",
+  "PPO"
+ ],
+ "steps": [
+  {
+   "op": "put",
+   "page": {
+    "id": "p1",
+    "title": "RLHF",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Reinforcement Learning from Human Feedback (RLHF)",
+      "strokeIds": [
+       "s101",
+       "s102"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "diagram",
+      "text": "RLHF pipeline",
+      "strokeIds": [
+       "s78",
+       "s79",
+       "s80",
+       "s81",
+       "s82",
+       "s83",
+       "s84",
+       "s85",
+       "s86",
+       "s87",
+       "s88",
+       "s89"
+      ],
+      "figure": {
+       "kind": "flowchart",
+       "nodes": [
+        {
+         "id": "a",
+         "label": "pretrained LM",
+         "strokeIds": [
+          "s78",
+          "s79"
+         ]
+        },
+        {
+         "id": "b",
+         "label": "supervised fine-tuning",
+         "strokeIds": [
+          "s80",
+          "s81"
+         ]
+        },
+        {
+         "id": "c",
+         "label": "reward model",
+         "strokeIds": [
+          "s82",
+          "s83"
+         ]
+        },
+        {
+         "id": "d",
+         "label": "RL fine-tuning",
+         "strokeIds": [
+          "s84",
+          "s85"
+         ]
+        }
+       ],
+       "edges": [
+        {
+         "from": "a",
+         "to": "b",
+         "strokeIds": [
+          "s86"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "b",
+         "to": "c",
+         "strokeIds": [
+          "s87"
+         ],
+         "kind": "arrow"
+        },
+        {
+         "from": "c",
+         "to": "d",
+         "strokeIds": [
+          "s88"
+         ],
+         "kind": "arrow"
+        }
+       ],
+       "sequence": [
+        "pretrained LM",
+        "supervised fine-tuning",
+        "reward model",
+        "RL fine-tuning"
+       ],
+       "shapes": [],
+       "labels": [
+        "pretrained LM",
+        "supervised fine-tuning",
+        "reward model",
+        "RL fine-tuning"
+       ]
+      }
+     },
+     {
+      "id": "b3",
+      "kind": "paragraph",
+      "text": "Humans rank pairs of answers; the reward model learns those preferences and [[PPO]] optimises against it.",
+      "strokeIds": [
+       "s103",
+       "s104"
+      ]
+     },
+     {
+      "id": "b4",
+      "kind": "footnote_def",
+      "text": "Reward hacking: the policy exploits flaws in the reward model.",
+      "strokeIds": [
+       "s105",
+       "s106"
+      ],
+      "marker": "*"
+     }
+    ]
+   }
+  },
+  {
+   "op": "put",
+   "page": {
+    "id": "p2",
+    "title": "RLVR",
+    "blocks": [
+     {
+      "id": "b1",
+      "kind": "heading",
+      "level": 1,
+      "text": "Reinforcement Learning with Verifiable Rewards (RLVR)",
+      "strokeIds": [
+       "s107",
+       "s108"
+      ]
+     },
+     {
+      "id": "b2",
+      "kind": "paragraph",
+      "text": "Swaps the learned reward model for a programmatic [[verifier]], e.g. unit tests or exact-match answers.",
+      "strokeIds": [
+       "s109",
+       "s110"
+      ]
+     },
+     {
+      "id": "b3",
+      "kind": "diagram",
+      "text": "RLHF vs RLVR",
+      "strokeIds": [
+       "s90",
+       "s91",
+       "s92",
+       "s93",
+       "s94",
+       "s95",
+       "s96",
+       "s97",
+       "s98",
+       "s99",
+       "s100"
+      ],
+      "figure": {
+       "kind": "other",
+       "nodes": [
+        {
+         "id": "s1",
+         "label": "RLHF",
+         "strokeIds": [
+          "s90",
+          "s91"
+         ],
+         "shape": "circle"
+        },
+        {
+         "id": "s2",
+         "label": "RLVR",
+         "strokeIds": [
+          "s92",
+          "s93"
+         ],
+         "shape": "circle"
+        },
+        {
+         "id": "m1",
+         "label": "human preferences",
+         "strokeIds": [
+          "s94",
+          "s95"
+         ],
+         "parent": "s1",
+         "parents": [
+          "s1"
+         ]
+        },
+        {
+         "id": "m2",
+         "label": "unit tests",
+         "strokeIds": [
+          "s96",
+          "s97"
+         ],
+         "parent": "s2",
+         "parents": [
+          "s2"
+         ]
+        },
+        {
+         "id": "m3",
+         "label": "policy optimization",
+         "strokeIds": [
+          "s98",
+          "s99"
+         ],
+         "parent": "s1",
+         "parents": [
+          "s1",
+          "s2"
+         ]
+        }
+       ],
+       "shapes": [],
+       "edges": [],
+       "labels": [
+        "RLHF",
+        "RLVR",
+        "human preferences",
+        "unit tests",
+        "policy optimization"
+       ]
+      }
+     },
+     {
+      "id": "b4",
+      "kind": "heading",
+      "level": 2,
+      "text": "Verifier",
+      "strokeIds": [
+       "s111",
+       "s112"
+      ]
+     },
+     {
+      "id": "b5",
+      "kind": "paragraph",
+      "text": "Returns 1 if the answer checks out, else 0.",
+      "strokeIds": [
+       "s113",
+       "s114"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "expected": {
+  "concepts": [
+   {
+    "label": "Reinforcement Learning from Human Feedback",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ],
+    "aliases": [
+     "RLHF"
+    ]
+   },
+   {
+    "label": "Reinforcement Learning with Verifiable Rewards",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b1"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ],
+    "aliases": [
+     "RLVR"
+    ]
+   },
+   {
+    "label": "pretrained LM",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "supervised fine-tuning",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "RL fine-tuning",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "reward model",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "label": "PPO",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "verifier",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "label": "human preferences",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "unit tests",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     },
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "policy optimization",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "label": "Reward hacking",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "pretrained LM",
+    "to": "supervised fine-tuning",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "supervised fine-tuning",
+    "to": "reward model",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "reward model",
+    "to": "RL fine-tuning",
+    "kind": "follows",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "RLHF",
+    "to": "reward model",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     },
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "RLHF",
+    "to": "PPO",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLHF",
+    "to": "Reward hacking",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p1",
+      "blockId": "b4"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "reward model",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "verifier",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "unit tests",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b2"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "RLHF",
+    "kind": "mentions",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLHF",
+    "to": "human preferences",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLHF",
+    "to": "policy optimization",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "unit tests",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "policy optimization",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b3"
+     }
+    ]
+   },
+   {
+    "from": "RLVR",
+    "to": "verifier",
+    "kind": "contains",
+    "provenance": [
+     {
+      "pageId": "p2",
+      "blockId": "b4"
+     }
+    ]
+   }
+  ],
+  "mustNotMerge": [
+   [
+    "RLHF",
+    "RLVR"
+   ],
+   [
+    "reward model",
+    "Reward hacking"
+   ],
+   [
+    "supervised fine-tuning",
+    "RL fine-tuning"
+   ]
+  ]
+ },
+ "notes": [
+  "'Reward hacking:' is defined in a footnote in plain text (term-colon-definition), no link or glossary entry."
+ ]
+}
