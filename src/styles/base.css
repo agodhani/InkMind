@@ -17,7 +17,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h1, h2, h3, h4, p { margin: 0; }
 a { color: var(--accent); }
-a.wikilink { text-decoration: none; border-bottom: 1px dotted var(--accent); }
+a.wikilink { cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--accent); }
 small { font-size: var(--fs-sm); color: var(--fg-3); }
 code, kbd, pre { font-family: var(--font-mono); }
 
