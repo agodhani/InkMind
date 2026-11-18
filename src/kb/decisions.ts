@@ -65,7 +65,13 @@ export function mergeConcept(d: KbDecisions, from: string, into: string): KbDeci
 }
 export function deleteConcept(d: KbDecisions, key: string): KbDecisions {
   key = termKey(key);
-  const keys = new Set([key, ...d.renames.filter(r => r.key === key || termKey(r.label) === key).map(r => r.key)]);
+  const keys = new Set([key]);
+  let size: number;
+  do {
+    size = keys.size;
+    for (const r of d.renames) if (keys.has(r.key) || keys.has(termKey(r.label))) { keys.add(r.key); keys.add(termKey(r.label)); }
+    for (const m of d.merges) if (keys.has(m.from) || keys.has(m.into)) { keys.add(m.from); keys.add(m.into); }
+  } while (keys.size !== size);
   return { ...d, deletes: union([...d.deletes, ...keys]), renames: d.renames.filter(r => !keys.has(r.key)), merges: d.merges.filter(m => !keys.has(m.from) && !keys.has(m.into)) };
 }
 export function rejectSuggestion(d: KbDecisions, pageId: string, blockId: string, key: string): KbDecisions {
