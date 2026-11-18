@@ -58,8 +58,10 @@ describe('link suggestions', () => {
     expect(suggestLinks(p, graph, emptyDecisions())).toEqual([]);
     p.blocks[0].text = 'no matches'; expect(suggestLinks(p, graph, emptyDecisions())).toEqual([]);
     expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('no matches');
-    p.blocks[0].text = 'Alphas'; expect(acceptSuggestion(p.blocks[0], { ...suggestions[0], surface: 'Alphas' })).toBe('[[Alpha]]');
-    p.blocks[0].text = 'Firstborn First'; expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('Firstborn [[Alpha|First]]');
+    p.blocks[0].kind = 'paragraph';
+    p.blocks[0].text = 'Alphas'; expect(acceptSuggestion(p.blocks[0], suggestLinks(p, graph, emptyDecisions())[0])).toBe('[[Alpha]]');
+    p.blocks[0].text = 'Firstborn First'; expect(acceptSuggestion(p.blocks[0], suggestions[0])).toBe('Firstborn First');
+    expect(acceptSuggestion(p.blocks[0], suggestLinks(p, graph, emptyDecisions())[0])).toBe('Firstborn [[Alpha|First]]');
   });
 });
 describe('proposals', () => {
