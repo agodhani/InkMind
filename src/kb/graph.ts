@@ -65,9 +65,8 @@ export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): K
     for (const { value: c, surface } of scanTerms(span.text, matches, headingKeys)) {
       if (found.has(c.id)) continue;
       found.add(c.id);
-      if (page.terms.some(t => t.prov.blockId === span.blockId && byKey.get(termKey(t.term)) === c)) continue;
       const prov: Provenance = { pageId: page.pageId, blockId: span.blockId, extractor: 'det:mention', surface, strokeIds: [] };
-      c.provenance.push(prov);
+      if (!page.terms.some(t => t.prov.blockId === span.blockId && byKey.get(termKey(t.term)) === c)) c.provenance.push(prov);
       if (span.section) relations.push({ from: span.section, to: c.label, kind: 'mentions', prov });
     }
   }
