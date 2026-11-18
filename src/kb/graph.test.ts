@@ -20,10 +20,20 @@ describe('graph merge', () => {
     expect(graph.edges).toHaveLength(1);
     expect(graph.edges[0].provenance.map(p => p.pageId)).toEqual(['a', 'b']);
   });
-  it('selects frequent surfaces before heading preference and earliest block', () => {
+  it('selects frequent declared terms before heading preference and earliest block', () => {
     const a = extract(page('a', [{ kind: 'heading', text: 'Policy' }, { text: '[[Policies]]' }, { text: '[[Policies]]' }]));
     expect(buildGraph([a]).concepts[0].label).toBe('Policies');
     expect(buildGraph([extract(page('a', [{ text: '[[Policies]]' }, { kind: 'heading', text: 'Policy' }]))]).concepts[0].label).toBe('Policy');
+  });
+  it('labels glossary concepts with declared terms, preserving written surfaces and different-key aliases', () => {
+    const a = extractPage(page('a', [{ text: 'Advantages and PPO.' }]), { glossary: ['advantage', 'Proximal Policy Optimization (PPO)'] });
+    const b = extractPage(page('b', [{ text: 'Advantages.' }]), { glossary: ['advantage'] });
+    const graph = buildGraph([a, b]);
+    expect(graph).toEqual(buildGraph([b, a]));
+    const advantage = graph.concepts.find(c => c.label === 'advantage')!;
+    expect(advantage.aliases).toEqual([]);
+    expect(advantage.provenance.map(p => p.surface)).toEqual(['Advantages', 'Advantages']);
+    expect(graph.concepts.find(c => c.label === 'Proximal Policy Optimization')?.aliases).toEqual(['PPO']);
   });
   it('keeps near misses distinct and never creates concepts from mention-only terms', () => {
     const a = extract(page('a', ['policy', 'policy gradient', 'RLHF', 'RLVR', 'Q function', 'value function'].map(text => ({ kind: 'heading', text }))));

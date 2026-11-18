@@ -62,9 +62,10 @@ describe('page extraction', () => {
     expect(out.terms.map(t => t.term)).toEqual(['Client', 'Server', 'Request', 'Response']);
     expect(out.relations.map(r => [r.from, r.to])).toEqual([['Request', 'Response'], ['Response', 'Request']]);
   });
-  it('extracts table headers and two-way row headers only', () => {
-    expect(extractFigure({ kind: 'table', cells: [['', 'Reward', 'Policy'], ['Learning', '42', 'value']] }).terms.map(t => t.term)).toEqual(['Reward', 'Policy', 'Learning']);
+  it('extracts column headers only, treating row labels as attributes even with an empty top-left cell', () => {
+    expect(extractFigure({ kind: 'table', cells: [['', 'Reward', 'Policy'], ['Learning', '42', 'value']] }).terms.map(t => t.term)).toEqual(['Reward', 'Policy']);
     expect(extractFigure({ kind: 'table', cells: [['Metric', 'Reward'], ['Learning', '42']] }).terms.map(t => t.term)).toEqual(['Metric', 'Reward']);
+    expect(extractFigure({ kind: 'table', cells: [] }).terms).toEqual([]);
   });
   it.each(['plot', 'sketch', 'cube', 'shape'] as const)('ignores %s structure', kind => {
     expect(extractFigure({ kind, labels: ['Policy'], nodes: [{ id: 'a', label: 'Reward' }] }).terms).toEqual([]);

@@ -10,17 +10,17 @@
   "kb": {
     "notebooks": 6,
     "expectedConcepts": 54,
-    "predictedConcepts": 54,
-    "conceptHits": 51,
-    "conceptCorrect": 51,
-    "expectedEdges": 60,
-    "predictedEdges": 59,
-    "edgeHits": 55,
-    "edgeCorrect": 55,
+    "predictedConcepts": 52,
+    "conceptHits": 52,
+    "conceptCorrect": 52,
+    "expectedEdges": 61,
+    "predictedEdges": 58,
+    "edgeHits": 58,
+    "edgeCorrect": 58,
     "duplicates": 0,
     "falseMerges": 0,
-    "provenanceOk": 103,
-    "provenanceTotal": 106,
+    "provenanceOk": 109,
+    "provenanceTotal": 110,
     "idempotent": 6
   }
 }

@@ -17,6 +17,10 @@ name expected labels or aliases. Answer keys are independent, read-only referenc
 from the system. Blocks may omit bbox/confidence/strokeIds; the loader supplies stacked rows,
 confidence 1 and empty ink. Page timestamps are 0 and strokes empty.
 
+Tables contribute column-header concepts only; row labels are attributes even when the top-left
+cell is empty. Concept labels are selected from declared term forms rather than written surface
+variants (for example, glossary `advantage` written as `Advantages` is labelled `advantage`).
+
 Each notebook runs in a fresh memory store. After all steps, every surviving page is re-synced
 and the graph must be deep-equal. A future extractor implements the raw/parse `Extractor`
 interface in `src/kb/extractor.ts`. Every extraction call (including re-syncs) saves raw JSON

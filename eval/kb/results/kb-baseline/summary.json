@@ -49,25 +49,20 @@
       "counts": {
         "notebooks": 1,
         "expectedConcepts": 6,
-        "predictedConcepts": 8,
+        "predictedConcepts": 6,
         "conceptHits": 6,
         "conceptCorrect": 6,
-        "expectedEdges": 9,
-        "predictedEdges": 11,
-        "edgeHits": 9,
-        "edgeCorrect": 9,
+        "expectedEdges": 10,
+        "predictedEdges": 10,
+        "edgeHits": 10,
+        "edgeCorrect": 10,
         "duplicates": 0,
         "falseMerges": 0,
-        "provenanceOk": 15,
-        "provenanceTotal": 15,
+        "provenanceOk": 16,
+        "provenanceTotal": 16,
         "idempotent": 1
       },
-      "details": [
-        "Extra concept: guarantee (c_guarantee)",
-        "Extra concept: opponent (c_opponent)",
-        "Extra edge: Adversarial search —mentions→ opponent",
-        "Extra edge: Minimax —mentions→ Expectimax"
-      ]
+      "details": []
     },
     {
       "name": "ppo",
@@ -75,28 +70,21 @@
         "notebooks": 1,
         "expectedConcepts": 11,
         "predictedConcepts": 10,
-        "conceptHits": 9,
-        "conceptCorrect": 9,
+        "conceptHits": 10,
+        "conceptCorrect": 10,
         "expectedEdges": 12,
         "predictedEdges": 11,
-        "edgeHits": 9,
-        "edgeCorrect": 9,
+        "edgeHits": 11,
+        "edgeCorrect": 11,
         "duplicates": 0,
         "falseMerges": 0,
-        "provenanceOk": 17,
-        "provenanceTotal": 18,
+        "provenanceOk": 21,
+        "provenanceTotal": 21,
         "idempotent": 1
       },
       "details": [
-        "Provenance mismatch: concept Proximal Policy Optimization; expected [\"p1/b1\",\"p1/b2\",\"p2/b4\"]; got [\"p1/b1\",\"p1/b2\",\"p1/b4\",\"p2/b4\"]",
         "Missing concept: KL penalty",
-        "Missing concept: advantage",
-        "Extra concept: Advantages (c_advantage)",
-        "Missing edge: Proximal Policy Optimization —mentions→ KL penalty",
-        "Missing edge: Proximal Policy Optimization —mentions→ advantage",
-        "Missing edge: Advantage function —mentions→ advantage",
-        "Extra edge: Advantage function —mentions→ Advantages",
-        "Extra edge: PPO —mentions→ Advantages"
+        "Missing edge: Proximal Policy Optimization —mentions→ KL penalty"
       ]
     },
     {
@@ -133,12 +121,11 @@
         "edgeCorrect": 13,
         "duplicates": 0,
         "falseMerges": 0,
-        "provenanceOk": 23,
+        "provenanceOk": 24,
         "provenanceTotal": 24,
         "idempotent": 1
       },
       "details": [
-        "Provenance mismatch: concept Reinforcement Learning from Human Feedback; expected [\"p1/b1\",\"p2/b3\"]; got [\"p1/b1\",\"p1/b2\",\"p2/b3\"]",
         "Missing concept: Reward hacking",
         "Missing edge: RLHF —mentions→ Reward hacking"
       ]
@@ -147,17 +134,17 @@
   "total": {
     "notebooks": 6,
     "expectedConcepts": 54,
-    "predictedConcepts": 54,
-    "conceptHits": 51,
-    "conceptCorrect": 51,
-    "expectedEdges": 60,
-    "predictedEdges": 59,
-    "edgeHits": 55,
-    "edgeCorrect": 55,
+    "predictedConcepts": 52,
+    "conceptHits": 52,
+    "conceptCorrect": 52,
+    "expectedEdges": 61,
+    "predictedEdges": 58,
+    "edgeHits": 58,
+    "edgeCorrect": 58,
     "duplicates": 0,
     "falseMerges": 0,
-    "provenanceOk": 103,
-    "provenanceTotal": 106,
+    "provenanceOk": 109,
+    "provenanceTotal": 110,
     "idempotent": 6
   }
 }

@@ -33,11 +33,11 @@ export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): K
     group.push(t); groups.set(r, group);
   }
   const clusters = [...groups.values()].map(group => {
-    const defining = group.filter(t => t.defines), surfaces = [...new Set(defining.map(t => t.prov.surface))];
-    const count = (s: string) => defining.filter(t => t.prov.surface === s).length;
-    const heading = (s: string) => defining.some(t => t.prov.surface === s && t.prov.extractor === 'det:heading') ? 1 : 0;
-    surfaces.sort((a, b) => count(b) - count(a) || heading(b) - heading(a) || defining.findIndex(t => t.prov.surface === a) - defining.findIndex(t => t.prov.surface === b));
-    const label = surfaces[0];
+    const defining = group.filter(t => t.defines), forms = [...new Set(defining.map(t => t.term))];
+    const count = (s: string) => defining.filter(t => t.term === s).length;
+    const heading = (s: string) => defining.some(t => t.term === s && t.prov.extractor === 'det:heading') ? 1 : 0;
+    forms.sort((a, b) => count(b) - count(a) || heading(b) - heading(a) || defining.findIndex(t => t.term === a) - defining.findIndex(t => t.term === b));
+    const label = forms[0];
     const keys = new Set([...parents.keys()].filter(k => root(k) === root(termKey(group[0].term))));
     const aliases: string[] = [], seen = new Set([termKey(label)]);
     for (const s of defining.flatMap(t => [t.term, t.prov.surface, ...(t.aliases ?? [])]).sort(compare)) {

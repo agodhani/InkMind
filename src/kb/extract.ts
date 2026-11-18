@@ -71,7 +71,6 @@ export function extractPage(page: Page, { glossary }: { glossary: string[] }): P
     };
     if (fig.kind === 'table') {
       fig.cells?.[0]?.filter(Boolean).forEach(nodeTerm);
-      if (fig.cells?.[0]?.[0] === '') fig.cells.slice(1).forEach(row => { if (row[0]) nodeTerm(row[0]); });
       continue;
     }
     fig.nodes?.forEach(n => nodeTerm(n.id));

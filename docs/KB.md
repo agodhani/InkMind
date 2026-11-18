@@ -18,7 +18,8 @@ saved responses through the same merge and scoring paths.
   mind-map non-tree edges retain arrow/line semantics. Venn sets contain their members, including
   shared members in each overlapping set.
 - Sequences define steps with consecutive `follows` edges. Lifeline actors define concepts, not
-  actor-to-actor edges. Tables define column headers, plus row headers when the top-left cell is empty.
+  actor-to-actor edges. Tables define column-header concepts only; row labels are attributes,
+  including when the top-left cell is empty.
 - Plot/sketch/cube/shape structure produces nothing; caption links/glossary still apply.
 - Known concepts and aliases can be mentioned in other text. Mentions never create concepts.
 
@@ -41,8 +42,10 @@ near-misses such as policy/policy gradient, RLHF/RLVR and Q function/value funct
 Empty, numeric, one-character, generic shape/control labels, hint IDs and labels over eight words
 are not concepts.
 
-Graph construction sorts pages, clusters defining keys, selects the most frequent defining surface
-(heading preference, then earliest page/block on ties), and unions provenance and edge labels.
+Graph construction sorts pages, clusters defining keys, selects the most frequent declared term
+form (heading preference, then earliest page/block on ties), and unions provenance and edge labels.
+Written surfaces stay in provenance; key-equal spelling/plural variants do not replace the declared
+label. Written forms with different keys remain aliases.
 Concept IDs reuse compatible previous IDs or use deterministic label-key slugs; edges are keyed by
 source/kind/target. Output collections are sorted for deterministic, deep-equal re-syncs.
 
