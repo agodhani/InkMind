@@ -5,6 +5,16 @@ import { largeDemoPages } from '../sim/kbDemo';
 import { buildGraph } from '../kb/graph';
 import { extractPage } from '../kb/extract';
 
+it('keeps original concept labels as aliases when vault filenames are sanitized', () => {
+  const page = largeDemoPages(1)[0];
+  page.blocks[0].text = '[[Model: Free]]';
+  page.blocks[0].kind = 'paragraph';
+  const graph = buildGraph([extractPage(page, { glossary: [] })]);
+  const files = buildVault([page], graph);
+  expect(files.find(f => f.path === 'Concepts/Model- Free.md')!.content).toContain('aliases: ["Model: Free"]');
+  expect(files.find(f => f.path.startsWith('Pages/'))!.content).toContain('[[Model: Free]]');
+});
+
 it('keeps fences, display math, lists and tables intact with standalone source refs', () => {
   const page = largeDemoPages(1)[0];
   const texts = ['```mermaid\ngraph TD\nA --> B\n```', '$$\nx = y\n$$', '- Alpha\n- Beta', '| A | B |\n| --- | --- |\n| 1 | 2 |', 'Following paragraph'];

@@ -30,7 +30,8 @@ export function buildVault(pages: Page[], graph: KbGraph): VaultFile[] {
     return { path: `Pages/${pageNames.get(page.id)}.md`, content: `${header}\n${body}\n` };
   });
   for (const c of graph.concepts) {
-    const lines = ['---', `aliases: ${JSON.stringify(c.aliases)}`, '---', '', `# ${c.label}`, ''];
+    const aliases = [...new Set([...c.aliases, ...(conceptNames.get(c.id) !== c.label ? [c.label] : [])])];
+    const lines = ['---', `aliases: ${JSON.stringify(aliases)}`, '---', '', `# ${c.label}`, ''];
     for (const [kind, links] of Object.entries(groupLinks(graph, c.id))) {
       if (!links.outgoing.length && !links.incoming.length) continue;
       lines.push(`## ${kind}`, '');
