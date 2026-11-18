@@ -13,20 +13,34 @@ function provenance(items: Provenance[]): Provenance[] {
 }
 
 export function buildGraph(extractions: PageExtraction[], previous?: KbGraph): KbGraph {
-  const known = extractions.flatMap(p => p.terms.filter(t => t.defines).flatMap(t => [t.term, ...(t.aliases ?? [])]))
-    .map(termKey).filter(key => key.length >= 2).map(key => ({ key, value: key }));
-  const pages = [...extractions].sort((a, b) => compare(a.pageId, b.pageId)).map(page => {
-    const matched = new Map(page.texts.map(span => {
-      const heading = page.terms.find(t => t.prov.blockId === span.blockId && t.prov.extractor === 'det:heading');
-      const headingKeys = heading ? new Set([heading.term, ...(heading.aliases ?? [])].map(termKey)) : undefined;
-      return [span.blockId, new Set(scanTerms(span.text, known, headingKeys).map(m => m.value))] as const;
-    }));
-    const terms = page.terms.filter(t => t.prov.extractor !== 'det:glossary' || !matched.has(t.prov.blockId)
-      || [t.term, ...(t.aliases ?? [])].some(s => matched.get(t.prov.blockId)!.has(termKey(s))));
-    const relations = page.relations.filter(r => r.prov.extractor !== 'det:glossary'
-      || terms.some(t => t.prov.extractor === 'det:glossary' && t.prov.blockId === r.prov.blockId && termKey(t.term) === termKey(r.to)));
-    return { ...page, terms, relations };
-  });
+  const source = [...extractions].sort((a, b) => compare(a.pageId, b.pageId));
+  let pages = source;
+  const visited = new Set<string>();
+  while (true) {
+    const state = JSON.stringify(pages.map((p, i) => p.terms.map(t => source[i].terms.indexOf(t))));
+    if (visited.has(state)) throw new Error('Cyclic glossary shadowing prevents convergence');
+    visited.add(state);
+    const known = pages.flatMap(p => p.terms.filter(t => t.defines).flatMap(t => [t.term, ...(t.aliases ?? [])]))
+      .map(termKey).filter(key => key.length >= 2).map(key => ({ key, value: key }));
+    const next = source.map(page => {
+      const terms = page.terms.filter(t => {
+        if (t.prov.extractor !== 'det:glossary') return true;
+        const span = page.texts.find(s => s.blockId === t.prov.blockId);
+        if (!span) return true;
+        const heading = page.terms.find(t => t.prov.blockId === span.blockId && t.prov.extractor === 'det:heading');
+        const headingKeys = heading ? new Set([heading.term, ...(heading.aliases ?? [])].map(termKey)) : undefined;
+        const keys = [t.term, ...(t.aliases ?? [])].map(termKey);
+        const candidates = [...known, ...keys.map(key => ({ key, value: key }))];
+        return scanTerms(span.text, candidates, headingKeys).some(m => keys.includes(m.value));
+      });
+      const relations = page.relations.filter(r => r.prov.extractor !== 'det:glossary'
+        || terms.some(t => t.prov.extractor === 'det:glossary' && t.prov.blockId === r.prov.blockId && termKey(t.term) === termKey(r.to)));
+      return { ...page, terms, relations };
+    });
+    const stable = next.every((p, i) => p.terms.length === pages[i].terms.length && p.terms.every((t, j) => t === pages[i].terms[j]));
+    pages = next;
+    if (stable) break;
+  }
   const terms = pages.flatMap(p => p.terms), parents = new Map<string, string>();
   const root = (key: string): string => {
     const parent = parents.get(key);

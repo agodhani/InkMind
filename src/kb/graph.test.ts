@@ -8,6 +8,24 @@ const page = (id: string, blocks: Partial<DigitalBlock>[]): Page => ({ id, title
 const extract = (p: Page) => extractPage(p, { glossary: [] });
 
 describe('graph merge', () => {
+  it('does not let removed glossary aliases suppress surviving terms across glossary snapshots', () => {
+    const definitions = extract(page('a', [{ kind: 'heading', text: 'PG algorithm' }]));
+    const shadowed = extractPage(page('b', [{ text: 'PG algorithm works.' }]), { glossary: ['Policy gradient (PG)'] });
+    const policy = extractPage(page('c', [{ kind: 'heading', text: 'Methods' }, { text: 'Policy gradient works.' }]), { glossary: ['policy'] });
+    const inputs = [definitions, shadowed, policy], original = structuredClone(inputs);
+    const graph = buildGraph(inputs);
+    expect(graph.concepts.map(c => c.label).sort()).toEqual(['Methods', 'PG algorithm', 'policy']);
+    expect(graph.concepts.find(c => c.label === 'policy')?.provenance).toEqual([expect.objectContaining({ pageId: 'c', blockId: 'b1', extractor: 'det:glossary' })]);
+    expect(graph.edges.some(e => e.from === 'c_method' && e.to === 'c_policy' && e.kind === 'mentions')).toBe(true);
+    expect(inputs).toEqual(original);
+    for (const order of [[policy, shadowed, definitions], [shadowed, definitions, policy]]) expect(buildGraph(order)).toEqual(graph);
+    expect(buildGraph(inputs, graph)).toEqual(graph);
+  });
+  it('rejects cyclic glossary shadowing instead of looping forever', () => {
+    const a = extractPage(page('a', [{ text: 'PG algorithm works.' }]), { glossary: ['Policy gradient (PG)'] });
+    const b = extractPage(page('b', [{ text: 'Policy gradient works.' }]), { glossary: ['PG algorithm (policy)'] });
+    for (const inputs of [[a, b], [b, a]]) expect(() => buildGraph(inputs)).toThrow('Cyclic glossary shadowing');
+  });
   it.each([['Policy gradient works.', false], ['Policy gradient works with a policy.', true]] as const)('suppresses glossary matches shadowed by cross-page concepts in %s', (text, standalone) => {
     const definitions = extract(page('a', [{ kind: 'heading', text: 'Policy gradient' }]));
     const scanned = extractPage(page('b', [{ kind: 'heading', text: 'Methods' }, { text }]), { glossary: ['policy'] });
