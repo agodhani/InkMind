@@ -1,0 +1,37 @@
+{
+  "name": "project-passed",
+  "pathCase": "backprop-minimax-to-rlhf-rlvr",
+  "projectsPassed": [
+    "rlhf-rlvr-toy"
+  ],
+  "prefs": {
+    "formats": [
+      "video"
+    ]
+  },
+  "checks": [
+    {
+      "type": "stepsDone",
+      "ids": [
+        "bradley-terry",
+        "reward-model",
+        "grpo",
+        "rlvr",
+        "rlhf"
+      ],
+      "reasonIncludes": "passed the project"
+    },
+    {
+      "type": "pathTopExcludes",
+      "ids": [
+        "deepseek-r1",
+        "deepseekmath",
+        "trl-grpo"
+      ]
+    },
+    {
+      "type": "projectNotRanked",
+      "id": "rlhf-rlvr-toy"
+    }
+  ]
+}

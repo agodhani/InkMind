@@ -1,6 +1,6 @@
 /**
  * The project's own gate, run locally instead of a hosted CI: lint, unit tests, build, then the
- * offline geometry and KB evals, compared with eval/check-baseline.json.
+ * offline geometry, KB, path and resource evals, compared with eval/check-baseline.json.
  *
  *   npm run check                      # everything; exits non-zero on the first failure
  *   npm run check -- --update-baseline # accept current scores as the new floor
@@ -12,6 +12,8 @@ import { ratio } from '../src/kb/score';
 import type { KbCounts } from '../src/kb/score';
 import { emptyPathCounts } from '../src/path/score';
 import type { PathCounts } from '../src/path/score';
+import { emptyResourcesCounts } from './eval_resources';
+import type { ResourcesCounts } from './eval_resources';
 
 const BASELINE = 'eval/check-baseline.json';
 const RUN = 'check-gate';
@@ -94,6 +96,33 @@ export function pathRegressions(now: PathCounts, base: PathCounts): string[] {
   return worse;
 }
 
+export function parseResourcesTotal(out: string): ResourcesCounts {
+  const line = out.split('\n').filter(l => l.startsWith('resources-total ')).pop();
+  if (!line) throw new Error('Resources eval printed no resources-total line');
+  const value = JSON.parse(line.slice('resources-total '.length)) as ResourcesCounts;
+  if (!value || Object.keys(emptyResourcesCounts()).some(k => {
+    if (k === 'failing') return false;
+    const count = value[k as Exclude<keyof ResourcesCounts, 'failing'>];
+    return !Number.isInteger(count) || count < 0;
+  })) throw new Error('Invalid resources-total counts');
+  if (!Array.isArray(value.failing) || value.failing.some(id => typeof id !== 'string' || !/^[\w-]+#[1-9]\d*$/.test(id))
+    || new Set(value.failing).size !== value.failing.length) throw new Error('Invalid resources-total failing checks');
+  return value;
+}
+
+export function resourcesRegressions(now: ResourcesCounts, base: Omit<ResourcesCounts, 'failing'> & { failing?: string[] }): string[] {
+  const worse: string[] = [];
+  if (!Array.isArray(base.failing)) worse.push('missing resources failing baseline; run: npm run check -- --update-baseline');
+  else for (const id of now.failing) if (!base.failing.includes(id)) worse.push(`new failing check ${id}`);
+  for (const key of ['catalogErrors', 'projectErrors'] as const) if (now[key] > 0) worse.push(`${key} ${now[key]}`);
+  for (const [n, d] of [['checksOk', 'checks'], ['pathConceptsCovered', 'pathConcepts']] as const) {
+    if (ratio(now[n], now[d]) < ratio(base[n], base[d])) worse.push(`${n} ${base[n]}/${base[d]} → ${now[n]}/${now[d]}`);
+  }
+  for (const key of ['cases', 'catalogResources'] as const) if (now[key] < base[key]) worse.push(`${key} ${base[key]} → ${now[key]}`);
+  if (now.deterministic !== now.cases) worse.push(`deterministic ${now.deterministic}/${now.cases} must be complete`);
+  return worse;
+}
+
 function cleanup() {
   rmSync(join('eval/shapes-suite', `${RUN}.md`), { force: true });
   for (const d of readdirSync('eval', { withFileTypes: true })) if (d.isDirectory()) rmSync(join('eval', d.name, 'results', RUN), { recursive: true, force: true });
@@ -104,12 +133,14 @@ function main() {
   step('lint', 'npm', ['run', '-s', 'lint']);
   step('unit tests', 'npm', ['test', '--', '--run']);
   step('build', 'npm', ['run', '-s', 'build']);
-  let now: Scores, kb: KbCounts, path: PathCounts;
+  let now: Scores, kb: KbCounts, path: PathCounts, resources: ResourcesCounts;
   try {
     now = parseTotal(step('geometry eval (synthetic shape suite, no model)', 'npm', ['run', '-s', 'eval:shapes', '--', '--provider', 'geometry', '--run', RUN]));
     kb = parseKbTotal(step('KB eval (deterministic, no model)', 'npm', ['run', '-s', 'eval:kb', '--', '--run', RUN]));
     path = parsePathTotal(step('path eval (answer keys, no model)', 'npm', ['run', '-s', 'eval:path', '--', '--run', RUN]));
     process.stdout.write(`path-total ${JSON.stringify(path)}\n`);
+    resources = parseResourcesTotal(step('resources eval (answer keys, no model)', 'npm', ['run', '-s', 'eval:resources', '--', '--run', RUN]));
+    process.stdout.write(`resources-total ${JSON.stringify(resources)}\n`);
   } finally { cleanup(); }
   if (!update && !existsSync(BASELINE)) {
     process.stdout.write(`\n✗ ${BASELINE} is missing; restore it, or create one with: npm run check -- --update-baseline\n`);
@@ -117,11 +148,12 @@ function main() {
   }
   if (update) {
     if (path.orderingViolations) throw new Error('Cannot baseline path ordering violations');
-    writeFileSync(BASELINE, JSON.stringify({ geometry: now, kb, path }, null, 2) + '\n');
-    process.stdout.write(`baseline written: ${JSON.stringify({ geometry: now, kb, path })}\n`);
+    if (resources.catalogErrors || resources.projectErrors || resources.deterministic !== resources.cases) throw new Error('Cannot baseline resource validation errors or incomplete determinism');
+    writeFileSync(BASELINE, JSON.stringify({ geometry: now, kb, path, resources }, null, 2) + '\n');
+    process.stdout.write(`baseline written: ${JSON.stringify({ geometry: now, kb, path, resources })}\n`);
     return;
   }
-  const saved = JSON.parse(readFileSync(BASELINE, 'utf8')) as Scores | { geometry: Scores; kb?: KbCounts; path?: PathCounts };
+  const saved = JSON.parse(readFileSync(BASELINE, 'utf8')) as Scores | { geometry: Scores; kb?: KbCounts; path?: PathCounts; resources?: ResourcesCounts };
   const base = 'geometry' in saved ? saved.geometry : saved;
   const kbBase = 'geometry' in saved ? saved.kb : undefined;
   if (!kbBase) {
@@ -134,17 +166,27 @@ function main() {
     process.exit(1);
   }
   const worse: string[] = [];
+  const resourcesBase = 'geometry' in saved ? saved.resources : undefined;
+  if (!resourcesBase) {
+    process.stdout.write(`\n✗ ${BASELINE} has no resources baseline; run: npm run check -- --update-baseline\n`);
+    process.exit(1);
+  }
+  if (!Array.isArray(resourcesBase.failing)) {
+    process.stdout.write(`\n✗ ${BASELINE} has no resources failing baseline; run: npm run check -- --update-baseline\n`);
+    process.exit(1);
+  }
   if (now.pages < base.pages) worse.push(`pages ${base.pages} → ${now.pages}`);
   if (now.figuresFound / now.figures < base.figuresFound / base.figures) worse.push(`figures found ${base.figuresFound}/${base.figures} → ${now.figuresFound}/${now.figures}`);
   if (now.leakedStrokes * base.figureStrokes > base.leakedStrokes * now.figureStrokes) worse.push(`text leak ${base.leakedStrokes}/${base.figureStrokes} → ${now.leakedStrokes}/${now.figureStrokes} strokes`);
   if (now.figureCountOk / now.pages < base.figureCountOk / base.pages) worse.push(`figure count ok ${base.figureCountOk}/${base.pages} → ${now.figureCountOk}/${now.pages}`);
   worse.push(...kbRegressions(kb, kbBase).map(s => `KB ${s}`));
   worse.push(...pathRegressions(path, pathBase).map(s => `path ${s}`));
+  worse.push(...resourcesRegressions(resources, resourcesBase).map(s => `resources ${s}`));
   if (worse.length) {
     process.stdout.write(`\n✗ eval regressed vs ${BASELINE}:\n  ${worse.join('\n  ')}\n  (intended? npm run check -- --update-baseline)\n`);
     process.exit(1);
   }
-  process.stdout.write(`\n✓ all checks passed · geometry: figures ${now.figuresFound}/${now.figures}, leak ${now.leakedStrokes}/${now.figureStrokes} strokes, count ok ${now.figureCountOk}/${now.pages} · KB: concepts P ${kb.conceptCorrect}/${kb.predictedConcepts} R ${kb.conceptHits}/${kb.expectedConcepts}, edges P ${kb.edgeCorrect}/${kb.predictedEdges} R ${kb.edgeHits}/${kb.expectedEdges}, duplicates ${kb.duplicates}, false merges ${kb.falseMerges}, provenance ${kb.provenanceOk}/${kb.provenanceTotal}, idempotent ${kb.idempotent}/${kb.notebooks}\n`);
+  process.stdout.write(`\n✓ all checks passed · geometry: figures ${now.figuresFound}/${now.figures}, leak ${now.leakedStrokes}/${now.figureStrokes} strokes, count ok ${now.figureCountOk}/${now.pages} · KB: concepts P ${kb.conceptCorrect}/${kb.predictedConcepts} R ${kb.conceptHits}/${kb.expectedConcepts}, edges P ${kb.edgeCorrect}/${kb.predictedEdges} R ${kb.edgeHits}/${kb.expectedEdges}, duplicates ${kb.duplicates}, false merges ${kb.falseMerges}, provenance ${kb.provenanceOk}/${kb.provenanceTotal}, idempotent ${kb.idempotent}/${kb.notebooks} · resources: catalog ${resources.catalogResources}, checks ${resources.checksOk}/${resources.checks}, path coverage ${resources.pathConceptsCovered}/${resources.pathConcepts}, errors ${resources.catalogErrors}/${resources.projectErrors}, deterministic ${resources.deterministic}/${resources.cases}\n`);
 }
 
 if (process.argv[1]?.endsWith('check.ts')) main();

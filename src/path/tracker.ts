@@ -28,7 +28,7 @@ export function searchConcepts(map: SubjectMap, query: string) {
 
 export interface NoteSource { pageId: string; blockId: string; surface: string }
 export function noteSources(evidence: Evidence[]): NoteSource[] {
-  const references = evidence.flatMap(e => e.kind === 'note' ? e.provenance : [{ pageId: e.pageId, blockId: e.blockId, surface: e.surface }]);
+  const references = evidence.flatMap(e => e.kind === 'note' ? e.provenance : e.kind === 'mention' ? [{ pageId: e.pageId, blockId: e.blockId, surface: e.surface }] : []);
   return [...new Map(references.map(s => [JSON.stringify([s.pageId, s.blockId]), s])).values()];
 }
 

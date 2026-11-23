@@ -24,21 +24,26 @@ export function planPath(map: SubjectMap, goals: string[], match: ConceptMatch[]
     const id = available[0].id; order.push(id); remaining.delete(id);
   }
   const known = new Set(match.filter(m => m.state === 'known').map(m => m.conceptId));
+  const projectOnly = (id: string) => matches.get(id)?.basis === 'project' && !matches.get(id)?.declared;
   const assumed = new Map<string, string>();
   function assume(id: string, source: string) {
     for (const p of byId.get(id)!.prerequisites) if (!assumed.has(p)) { assumed.set(p, source); assume(p, source); }
   }
-  order.filter(id => known.has(id)).forEach(id => assume(id, id));
+  order.filter(id => known.has(id) && !projectOnly(id)).forEach(id => assume(id, id));
   const skipped = map.concepts.filter(c => known.has(c.id) || assumed.has(c.id)).map(c => {
     const m = matches.get(c.id);
     const note = m?.evidence.find(e => e.kind === 'note');
+    const project = m?.evidence.find(e => e.kind === 'project');
+    const source = matches.get(assumed.get(c.id)!);
+    const sourceProject = source?.basis === 'project' ? source.evidence.find(e => e.kind === 'project') : undefined;
     return { conceptId: c.id, status: known.has(c.id) ? 'known' as const : 'assumed' as const,
-      reason: known.has(c.id) ? note ? `your notes cover it${note.provenance.length ? ` (page ${note.provenance[0].pageId})` : ''}` : 'you said you already know it'
+      reason: known.has(c.id) ? note ? `your notes cover it${note.provenance.length ? ` (page ${note.provenance[0].pageId})` : ''}` : project ? `you passed the project ${project.projectId}` : 'you said you already know it'
+        : sourceProject ? `assumed: you passed the project ${sourceProject.projectId} covering ${byId.get(assumed.get(c.id)!)!.label}, which builds on it`
         : `assumed: you ${matches.get(assumed.get(c.id)!)?.basis === 'declared' ? 'said you know' : 'wrote about'} ${byId.get(assumed.get(c.id)!)!.label}, which builds on it` };
   });
   const skip = new Map(skipped.map(s => [s.conceptId, s]));
   const wanted = new Set<string>();
-  function visit(id: string) { if (skip.has(id) || wanted.has(id)) return; wanted.add(id); byId.get(id)!.prerequisites.forEach(visit); }
+  function visit(id: string) { if ((skip.has(id) && !projectOnly(id)) || wanted.has(id)) return; wanted.add(id); byId.get(id)!.prerequisites.forEach(visit); }
   goalIds.forEach(visit);
   const previousIds = previous?.steps.map(s => s.conceptId) ?? [];
   const ids = order.filter(id => wanted.has(id) || (previousIds.includes(id) && skip.has(id)));

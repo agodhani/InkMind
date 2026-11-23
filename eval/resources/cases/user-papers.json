@@ -1,0 +1,44 @@
+{
+  "name": "user-papers",
+  "pathCase": "backprop-minimax-to-rlhf-rlvr",
+  "prefs": {
+    "formats": [
+      "paper"
+    ]
+  },
+  "checks": [
+    {
+      "type": "pathTopIncludesAny",
+      "k": 3,
+      "ids": [
+        "instructgpt"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "ppo",
+      "k": 2,
+      "ids": [
+        "ppo-paper"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "grpo",
+      "k": 2,
+      "ids": [
+        "deepseekmath"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "rlhf",
+      "k": 2,
+      "ids": [
+        "instructgpt",
+        "summarization-feedback",
+        "human-preferences-paper"
+      ]
+    }
+  ]
+}

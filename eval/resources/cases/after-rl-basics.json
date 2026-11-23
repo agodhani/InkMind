@@ -1,0 +1,29 @@
+{
+  "name": "after-rl-basics",
+  "pathCase": "backprop-minimax-to-rlhf-rlvr",
+  "replan": true,
+  "prefs": {
+    "formats": [
+      "video"
+    ]
+  },
+  "checks": [
+    {
+      "type": "pathTopExcludes",
+      "ids": [
+        "rl-intro",
+        "rl-algorithms"
+      ]
+    },
+    {
+      "type": "pathTopIncludesAny",
+      "k": 10,
+      "ids": [
+        "gae-paper",
+        "ppo-guide",
+        "hf-ppo",
+        "policy-gradient-algorithms"
+      ]
+    }
+  ]
+}

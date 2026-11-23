@@ -1,0 +1,14 @@
+{
+  "id": "rlhf-rlvr-toy",
+  "title": "RLHF and RLVR toy laboratory",
+  "mapId": "ml",
+  "stage": "alignment",
+  "concepts": ["policy-gradient", "reinforce", "baseline", "advantage-function", "kl-divergence", "kl-penalty", "human-preferences", "bradley-terry", "reward-model", "rl-finetuning", "reward-hacking", "rlhf", "verifiable-rewards", "grpo", "rlvr", "ppo"],
+  "minutes": 300,
+  "level": "intermediate",
+  "dir": "projects/rlhf-rlvr-toy",
+  "files": ["README.md", "starter/__init__.py", "starter/core.py", "starter/lab.py", "tests/__init__.py", "tests/test_lab.py"],
+  "solutionFiles": ["solution/__init__.py", "solution/core.py"],
+  "run": "python -m unittest",
+  "requirements": ["python>=3.10", "numpy"]
+}

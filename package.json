@@ -14,6 +14,8 @@
     "eval:shapes": "tsx scripts/eval_shapes.ts",
     "eval:kb": "tsx scripts/eval_kb.ts",
     "eval:path": "tsx scripts/eval_path.ts",
+    "eval:resources": "tsx scripts/eval_resources.ts",
+    "links:check": "tsx scripts/check_links.ts",
     "check": "tsx scripts/check.ts",
     "prepare": "git config core.hooksPath .githooks || true"
   },
