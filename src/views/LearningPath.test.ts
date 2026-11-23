@@ -62,7 +62,7 @@ function setup(materials?: PathMaterialsProvider) {
 
 it('searches goals by alias, preserves provenance warnings, and renders stage and step material slots', async () => {
   const stage = vi.fn(() => ({ project: { href: 'https://example.com/starter', title: 'Starter project' } }));
-  const step = vi.fn(() => ({ resources: [{ href: 'https://example.com/read', title: 'Primer' }] }));
+  const step = vi.fn(() => ({ resources: [{ href: 'https://example.com/read', title: 'Primer', format: 'video', minutes: 90, reason: 'covers 3 of your next steps' }] }));
   const t = setup({ forStep: step, forStage: stage });
   try {
     await t.render({ open: true });
@@ -77,6 +77,7 @@ it('searches goals by alias, preserves provenance warnings, and renders stage an
     expect(t.host.querySelectorAll('.path-warning')).toHaveLength(2);
     expect(t.host.querySelector('a[href="https://example.com/starter"]')?.textContent).toBe('Starter project');
     expect(t.host.querySelector('a[href="https://example.com/read"]')?.textContent).toBe('Primer');
+    expect(t.host.textContent).toContain('video · 1.5 h — covers 3 of your next steps');
     expect(t.host.textContent).toContain('No resources listed yet.');
     expect(t.host.textContent).toContain('No project listed yet.');
     expect(step).toHaveBeenCalledWith(map.id, 'alignment');

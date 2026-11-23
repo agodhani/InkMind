@@ -1,4 +1,4 @@
-export interface PathMaterialLink { title: string; href: string }
+export interface PathMaterialLink { title: string; href: string; reason?: string; format?: string; minutes?: number }
 export interface PathMaterials { resources?: readonly PathMaterialLink[]; project?: PathMaterialLink }
 
 export interface PathMaterialsProvider {

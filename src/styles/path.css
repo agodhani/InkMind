@@ -110,6 +110,8 @@ details[open] > summary .path-summary-label > .icon { transform: none; }
   border: 1px dashed var(--line-strong); padding: var(--s-2); border-radius: var(--r-sm); color: var(--fg-2); font-size: var(--fs-sm);
 }
 .path-materials .btn { text-decoration: none; text-align: start; }
+.path-materials li { display: grid; justify-items: start; gap: 2px; }
+.path-material-note { color: var(--fg-2); font-size: var(--fs-xs, 12px); }
 .path-network { display: grid; gap: var(--s-3); }
 .path-network-pick { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-2); }
 .path-network-pick label { display: grid; gap: var(--s-1); width: min(100%, 320px); }
