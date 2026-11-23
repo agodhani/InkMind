@@ -57,9 +57,20 @@ with `forStep(mapId, conceptId)` and `forStage(mapId, stageId)`. Both return an
 optional bundle of resource links and one project link. Until a catalog
 is wired in, the two slots show an explicit empty state.
 
+`createRankedMaterials(map, plan, catalog, projects, prefs)` in
+`src/path/rankedMaterials.ts` builds an assignable provider without UI dependencies.
+Step resources are the top three per-step recommendations; stage resources are
+the first three path recommendations covering any remaining step in that stage,
+in path-ranking order. Projects use the first ranked match (exercising the step
+or attached to the stage). Done/unknown steps and other maps return no materials.
+Its richer return type also exposes `reason`, `format`, `minutes` and `free`
+on every link; projects are free code links. This adapter is not yet wired into
+the UI.
+
 In `?sim=1`, **Load RLHF + RLVR demo** adds deterministic copies of the
 backpropagation and minimax notebooks, selects both goals and opens Path.
 Existing demo copies aren't overwritten. The path does not call a model.
+
 ## Projects and evidence
 
 Each `StarterProject` declares `id`, `title`, `mapId`, area-id `stage`,
