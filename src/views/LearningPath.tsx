@@ -24,10 +24,11 @@ function duration(minutes: number) {
 }
 
 function MaterialLink({ link }: { link: PathMaterialLink }) {
-  const meta = [link.format, link.minutes ? duration(link.minutes) : ''].filter(Boolean).join(' · ');
+  // Ranked reasons already end with format and time; only fall back to them when there is no reason.
+  const note = link.reason ?? [link.format, link.minutes ? duration(link.minutes) : ''].filter(Boolean).join(' · ');
   return <>
     <a className="btn" href={link.href} target="_blank" rel="noreferrer">{link.title}</a>
-    {(meta || link.reason) && <span className="path-material-note">{[meta, link.reason].filter(Boolean).join(' — ')}</span>}
+    {note && <span className="path-material-note">{note}</span>}
   </>;
 }
 

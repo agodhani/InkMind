@@ -97,9 +97,11 @@ export default function App() {
     setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
   });
 
-  // Load pages + corrections once.
+  // Load pages + corrections once; StrictMode reruns the effect, which would create two starter pages.
+  const loadStarted = useRef(false);
   useEffect(() => {
-    if (!isIndexedDbAvailable()) return;
+    if (!isIndexedDbAvailable() || loadStarted.current) return;
+    loadStarted.current = true;
     void (async () => {
       const [list, corr] = await Promise.all([db.listPages(), db.listCorrections()]);
       setCorrections(corr);
