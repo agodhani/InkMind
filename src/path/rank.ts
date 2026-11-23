@@ -8,7 +8,7 @@ export interface ResourcePreferences { formats?: Format[]; maxMinutes?: number; 
 export interface Recommendation { resourceId: string; score: number; covers: string[]; reason: string }
 export interface ProjectRecommendation { projectId: string; stage: string; covers: string[]; reason: string }
 const compareIds = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-const duration = (minutes: number) => minutes >= 60 ? `${Number((minutes / 60).toFixed(1))} h` : `${minutes} min`;
+export const duration = (minutes: number) => minutes >= 60 ? `${Number((minutes / 60).toFixed(1))} h` : `${minutes} min`;
 
 export function rankResources(map: SubjectMap, plan: PathPlan, catalog: ResourceCatalog, prefs: ResourcePreferences = {}): { path: Recommendation[]; steps: Record<string, Recommendation[]> } {
   const remaining = plan.steps.filter(s => s.status !== 'done');
