@@ -1,3 +1,31 @@
+# Resources and ranking
+
+`npm run eval:resources -- --run resources-baseline` runs offline, without model
+or network calls. JSON answer keys in `eval/resources/cases` reference a path
+case's notebooks, declarations and goals, optionally its replan additions and
+passed starter projects. Checks cover ranking positions/exclusions, coverage,
+time preferences, reason text, projects and completed steps. Each typed check
+counts once; failures are recorded with details, never auto-corrected.
+
+The runner writes `eval/resources/results/<run>/summary.md` and `summary.json`,
+including every check, rankings, validation errors, uncovered map concepts and
+`resources-total` counts. Determinism compares repeat runs and shuffled notes.
+The user's 41-step coverage total counts concepts with at least one free resource,
+independent of format preferences.
+
+The local check gate runs this after path eval. Catalog/project errors always
+fail, including baseline updates. Check-success and free-coverage rates, case
+count and catalog size cannot fall; determinism must equal the case count.
+Existing domain-key failures remain visible in the baseline rather than changing
+the answer keys or scoring to hide them.
+
+`npm run links:check` is a separate **online** command, never part of
+`npm run check`. It fetches catalog URLs with a browser User-Agent, follows
+redirects, limits concurrency and time, and writes
+`eval/resources/link-check.json` with status, final URL, observed title/content
+type and date. Dead/non-2xx links cause a nonzero exit. Curation additionally
+requires inspecting matching content: a 200 alone is not verification.
+
 # Learning path
 
 Run `npm run eval:path` (optional `-- --run name`) offline. Cases in

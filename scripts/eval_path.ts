@@ -22,7 +22,7 @@ async function readNotebook(name: string): Promise<Notebook> {
   if (!/^[\w-]+$/.test(name)) throw new Error(`Invalid notebook: ${name}`);
   return JSON.parse(await readFile(join('eval/kb/notebooks', `${name}.json`), 'utf8'));
 }
-async function build(c: Case, additions?: Additions) {
+export async function build(c: Case, additions?: Additions) {
   const notebooks = await Promise.all([...(c.notebooks ?? []), ...(additions?.notebooks ?? [])].map(readNotebook));
   const glossary = [...new Set([...(c.glossary ?? []), ...notebooks.flatMap(n => n.glossary)])];
   const graph: KbGraph = { concepts: [], edges: [] }, extractions: PageExtraction[] = [];
@@ -42,7 +42,7 @@ async function build(c: Case, additions?: Additions) {
   graph.concepts.push(...(c.graphPatch?.concepts ?? []));
   return { graph, extractions };
 }
-function shuffled(notes: { graph: KbGraph; extractions: PageExtraction[] }) {
+export function shuffled(notes: { graph: KbGraph; extractions: PageExtraction[] }) {
   const n = structuredClone(notes);
   n.graph.concepts.reverse(); n.graph.edges.reverse(); n.graph.proposals?.reverse();
   n.graph.concepts.forEach(c => { c.aliases.reverse(); c.provenance.reverse(); });

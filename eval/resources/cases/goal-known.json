@@ -1,0 +1,10 @@
+{
+  "name": "goal-known",
+  "pathCase": "goal-already-known",
+  "prefs": {},
+  "checks": [
+    {
+      "type": "emptyRanking"
+    }
+  ]
+}

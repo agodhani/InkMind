@@ -42,5 +42,16 @@
     "doneHits": 25,
     "reasonsOk": 230,
     "reasonsTotal": 230
+  },
+  "resources": {
+    "catalogResources": 39,
+    "catalogErrors": 0,
+    "projectErrors": 0,
+    "pathConcepts": 41,
+    "pathConceptsCovered": 41,
+    "cases": 6,
+    "checks": 28,
+    "checksOk": 26,
+    "deterministic": 6
   }
 }

@@ -32,8 +32,12 @@ export function planPath(map: SubjectMap, goals: string[], match: ConceptMatch[]
   const skipped = map.concepts.filter(c => known.has(c.id) || assumed.has(c.id)).map(c => {
     const m = matches.get(c.id);
     const note = m?.evidence.find(e => e.kind === 'note');
+    const project = m?.evidence.find(e => e.kind === 'project');
+    const source = matches.get(assumed.get(c.id)!);
+    const sourceProject = source?.basis === 'project' ? source.evidence.find(e => e.kind === 'project') : undefined;
     return { conceptId: c.id, status: known.has(c.id) ? 'known' as const : 'assumed' as const,
-      reason: known.has(c.id) ? note ? `your notes cover it${note.provenance.length ? ` (page ${note.provenance[0].pageId})` : ''}` : 'you said you already know it'
+      reason: known.has(c.id) ? note ? `your notes cover it${note.provenance.length ? ` (page ${note.provenance[0].pageId})` : ''}` : project ? `you passed the project ${project.projectId}` : 'you said you already know it'
+        : sourceProject ? `assumed: you passed the project ${sourceProject.projectId} covering ${byId.get(assumed.get(c.id)!)!.label}, which builds on it`
         : `assumed: you ${matches.get(assumed.get(c.id)!)?.basis === 'declared' ? 'said you know' : 'wrote about'} ${byId.get(assumed.get(c.id)!)!.label}, which builds on it` };
   });
   const skip = new Map(skipped.map(s => [s.conceptId, s]));

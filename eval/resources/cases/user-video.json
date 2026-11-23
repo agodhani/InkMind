@@ -1,0 +1,137 @@
+{
+  "name": "user-video",
+  "pathCase": "backprop-minimax-to-rlhf-rlvr",
+  "prefs": {
+    "formats": [
+      "video"
+    ]
+  },
+  "checks": [
+    {
+      "type": "pathTopIncludesAny",
+      "k": 5,
+      "ids": [
+        "build-gpt"
+      ]
+    },
+    {
+      "type": "pathTopIncludesAny",
+      "k": 10,
+      "ids": [
+        "rl-intro",
+        "silver-rl-course"
+      ]
+    },
+    {
+      "type": "pathTopIncludesAny",
+      "k": 10,
+      "ids": [
+        "illustrating-rlhf",
+        "instructgpt",
+        "human-preferences-paper"
+      ]
+    },
+    {
+      "type": "pathTopIncludesAny",
+      "k": 10,
+      "ids": [
+        "deepseekmath",
+        "deepseek-r1",
+        "tulu-3",
+        "trl-grpo"
+      ]
+    },
+    {
+      "type": "pathTopIncludesAny",
+      "k": 10,
+      "ids": [
+        "ppo-guide",
+        "hf-ppo",
+        "ppo-paper",
+        "policy-gradient-algorithms"
+      ]
+    },
+    {
+      "type": "pathTopExcludes",
+      "k": 10,
+      "ids": [
+        "zero-to-hero",
+        "makemore-mlp",
+        "micrograd",
+        "backpropagation-visual",
+        "gradient-descent-visual",
+        "trpo-paper",
+        "trpo-guide"
+      ]
+    },
+    {
+      "type": "pathCoverageAtLeast",
+      "k": 10,
+      "steps": 38
+    },
+    {
+      "type": "stepTop1",
+      "step": "tokenization",
+      "id": "build-tokenizer"
+    },
+    {
+      "type": "stepTop1",
+      "step": "gae",
+      "id": "gae-paper"
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "ppo",
+      "k": 2,
+      "ids": [
+        "ppo-guide",
+        "hf-ppo",
+        "ppo-paper"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "rlvr",
+      "k": 2,
+      "ids": [
+        "tulu-3",
+        "deepseek-r1"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "bradley-terry",
+      "k": 2,
+      "ids": [
+        "instructgpt"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "attention",
+      "k": 2,
+      "ids": [
+        "attention-visual",
+        "build-gpt"
+      ]
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "reward-model",
+      "k": 2,
+      "ids": [
+        "illustrating-rlhf",
+        "instructgpt"
+      ]
+    },
+    {
+      "type": "pathReasonsMatch",
+      "pattern": "^covers \\d+ of your \\d+ remaining steps"
+    },
+    {
+      "type": "projectRanked",
+      "id": "rlhf-rlvr-toy",
+      "coveredCount": 16
+    }
+  ]
+}

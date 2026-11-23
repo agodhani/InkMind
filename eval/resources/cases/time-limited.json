@@ -1,0 +1,24 @@
+{
+  "name": "time-limited",
+  "pathCase": "backprop-minimax-to-rlhf-rlvr",
+  "prefs": {
+    "maxMinutes": 60
+  },
+  "checks": [
+    {
+      "type": "pathTopMaxMinutes",
+      "k": 3,
+      "minutes": 60,
+      "atLeast": 2
+    },
+    {
+      "type": "stepTopIncludesAny",
+      "step": "rlhf",
+      "k": 1,
+      "ids": [
+        "illustrating-rlhf",
+        "intro-llms"
+      ]
+    }
+  ]
+}

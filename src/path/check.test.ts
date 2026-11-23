@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parsePathTotal, pathRegressions } from '../../scripts/check';
+import { parsePathTotal, pathRegressions, parseResourcesTotal, resourcesRegressions } from '../../scripts/check';
+import { emptyResourcesCounts } from '../../scripts/eval_resources';
 import { emptyPathCounts } from './score';
 
 const base = { ...emptyPathCounts(), cases: 9, expectedSteps: 10, predictedSteps: 10, stepHits: 8, knownExpected: 5, knownHits: 4,
@@ -27,5 +28,37 @@ describe('path regression gate', () => {
     expect(pathRegressions(now, base).some(message => message.includes(`${success} ${now[success]}/${now[expected]} must be complete`))).toBe(true);
     expect(pathRegressions(now, now).some(message => message.includes('must be complete'))).toBe(true);
     expect(pathRegressions({ ...now, [success]: now[expected] }, base)).toEqual([]);
+  });
+});
+
+const resourcesBase = { catalogResources: 39, catalogErrors: 0, projectErrors: 0, pathConcepts: 41, pathConceptsCovered: 41,
+  cases: 6, checks: 28, checksOk: 26, deterministic: 6 };
+describe('resources regression gate', () => {
+  it('parses counts and the last total line', () => expect(parseResourcesTotal(`ignored\nresources-total {}\nresources-total ${JSON.stringify(resourcesBase)}\n`)).toEqual(resourcesBase));
+  it.each(['', 'resources-total {}', 'resources-total null', 'resources-total not-json', `resources-total ${JSON.stringify({ ...resourcesBase, checks: -1 })}`,
+    `resources-total ${JSON.stringify({ ...resourcesBase, checksOk: 1.5 })}`])('rejects malformed counts', out => expect(() => parseResourcesTotal(out)).toThrow());
+  it('accepts equal, improved, proportional and empty rates', () => {
+    expect(resourcesRegressions(resourcesBase, resourcesBase)).toEqual([]);
+    expect(resourcesRegressions({ ...resourcesBase, checksOk: 28 }, resourcesBase)).toEqual([]);
+    expect(resourcesRegressions({ ...resourcesBase, checks: 56, checksOk: 52 }, resourcesBase)).toEqual([]);
+    expect(resourcesRegressions(emptyResourcesCounts(), emptyResourcesCounts())).toEqual([]);
+  });
+  it.each(['catalogErrors', 'projectErrors'] as const)('rejects %s even against itself for baseline updates', key => {
+    const invalid = { ...resourcesBase, [key]: 1 };
+    expect(resourcesRegressions(invalid, invalid)).toContain(`${key} 1`);
+  });
+  it.each(['cases', 'catalogResources', 'checksOk', 'pathConceptsCovered'] as const)('rejects falling %s', key => {
+    expect(resourcesRegressions({ ...resourcesBase, [key]: resourcesBase[key] - 1 }, resourcesBase).length).toBeGreaterThan(0);
+  });
+  it('rejects falling rates when denominators grow', () => {
+    expect(resourcesRegressions({ ...resourcesBase, checks: 29 }, resourcesBase)[0]).toContain('checksOk');
+    expect(resourcesRegressions({ ...resourcesBase, pathConcepts: 42 }, resourcesBase)[0]).toContain('pathConceptsCovered');
+  });
+  it.each([5, 7])('requires determinism exactly equal to cases, got %s', deterministic => {
+    expect(resourcesRegressions({ ...resourcesBase, deterministic }, resourcesBase)).toContain(`deterministic ${deterministic}/6 must be complete`);
+  });
+  it('does not hide incomplete determinism by growing case counts', () => {
+    const now = { ...resourcesBase, cases: 8, deterministic: 7 };
+    expect(resourcesRegressions(now, now)).toContain('deterministic 7/8 must be complete');
   });
 });
