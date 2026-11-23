@@ -30,16 +30,21 @@ import { isEditableTarget, matchesShortcut, SHORTCUTS } from './ui/shortcuts';
 import { stepBrushSize } from './ui/brush';
 import { Icon } from './ui/icons';
 import { useKnowledgeBase } from './kb/useKnowledgeBase';
-import type { Provenance, PageExtraction } from './kb/model';
+import type { PageExtraction } from './kb/model';
 import { ConceptMap } from './views/ConceptMap';
 import { conceptForLink } from './kb/wikilink';
 import { PageConcepts } from './views/PageConcepts';
 import { buildVault, zipFiles } from './export/vault';
 import { usePagePersistence } from './store/usePagePersistence';
+import { mlMap } from './path/model';
+import { localTrackerStore } from './path/trackerStore';
+import { useLearningPath } from './path/useLearningPath';
+import { LearningPath, WhatNextDrawer } from './views/LearningPath';
 
 // Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
 const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
 const SIM_ENABLED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim');
+const pathStore = localTrackerStore(mlMap.id);
 
 interface HistoryEntry {
   strokes: InkStroke[];
@@ -55,6 +60,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [showConcepts, setShowConcepts] = useState(false);
+  const [showWhatNext, setShowWhatNext] = useState(false);
   const [focusedConcept, setFocusedConcept] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(() => (window.innerWidth > 900 ? 'split' : 'ink'));
   const [tool, setTool] = useState<InkTool>('pen');
@@ -82,8 +88,9 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  const demoWrites = useRef(new Set<string>());
   const persistence = usePagePersistence(next => {
-    kb.pageChanged(next);
+    if (!demoWrites.current.has(next.id)) kb.pageChanged(next);
     setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
   });
 
@@ -138,7 +145,9 @@ export default function App() {
     onBlocks,
   });
   const kb = useKnowledgeBase(pages, loaded, settings, status.state === 'running' || status.state === 'waiting');
-  useEffect(() => { if (page) kb.pageEdited(page.id); }, [page, kb.pageEdited]);
+  const path = useLearningPath(mlMap, kb, kb.ready, pathStore);
+  const { pageEdited } = kb;
+  useEffect(() => { if (page) pageEdited(page.id); }, [page, pageEdited]);
 
   const syncHistoryLen = () => setHistoryLen({ undo: undoStack.current.length, redo: redoStack.current.length });
   const pushHistory = useCallback((p: Page) => {
@@ -294,11 +303,11 @@ export default function App() {
     resetHistory();
     setShowPages(false);
     setHighlightStrokeIds(null);
-    setView(v => v === 'map' ? 'digital' : v);
+    setView(v => v === 'map' || v === 'path' ? 'digital' : v);
   };
 
   const focusConcept = (id: string | null) => { setFocusedConcept(id); setView('map'); setShowConcepts(false); };
-  const jumpToSource = (source: Provenance) => {
+  const jumpToSource = (source: { pageId: string; blockId: string }) => {
     const target = pages.find(p => p.id === source.pageId);
     const block = target?.blocks.find(b => b.id === source.blockId);
     if (!target || !block) return;
@@ -319,6 +328,29 @@ export default function App() {
     const p = await persistence.writer.replace(createPage(`Page ${pages.length + 1}`));
     setPages((l) => [p, ...l]);
     openPage(p);
+  };
+
+  const startPathNotes = async (label: string) => {
+    const p = await persistence.writer.replace(createPage(label));
+    setPages(list => [p, ...list]);
+    openPage(p);
+    setView('ink');
+    setShowWhatNext(false);
+    setToast({ text: `Use “${label}” as a heading to connect these notes to your path.` });
+  };
+
+  const loadPathDemo = async (notebooks: Page[], goals: string[]) => {
+    const additions: Page[] = [];
+    for (const p of notebooks) {
+      if (pages.some(existing => existing.id === p.id)) continue;
+      demoWrites.current.add(p.id);
+      try { additions.push(await persistence.writer.replace(p)); }
+      finally { demoWrites.current.delete(p.id); }
+    }
+    setPages(list => [...list, ...additions]);
+    await kb.seedPages(additions);
+    path.setGoals(goals);
+    setView('path');
   };
 
   const importStrokes = async (file: File) => {
@@ -406,7 +438,7 @@ export default function App() {
       if (matchesShortcut(e, SHORTCUTS.pages)) return fire(() => setShowPages((v) => !v));
       if (matchesShortcut(e, SHORTCUTS.toggleTheme)) return fire(toggleTheme);
       if (matchesShortcut(e, SHORTCUTS.transcribe) && !typing) return fire(transcribeNow);
-      if (typing || showSettings || showPages || showConcepts) return;
+      if (typing || showSettings || showPages || showConcepts || showWhatNext) return;
       if (matchesShortcut(e, SHORTCUTS.pen)) return fire(() => setTool('pen'));
       if (matchesShortcut(e, SHORTCUTS.eraser)) return fire(() => setTool('eraser'));
       if (matchesShortcut(e, SHORTCUTS.pan)) return fire(() => setTool('pan'));
@@ -419,7 +451,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showTips, showSettings, showPages, showConcepts, selectedBlockId, toggleTheme, transcribeNow]);
+  }, [showTips, showSettings, showPages, showConcepts, showWhatNext, selectedBlockId, toggleTheme, transcribeNow]);
 
   const closeTips = () => {
     dismissOnboarding();
@@ -519,13 +551,14 @@ export default function App() {
         conceptCount={kb.graph.concepts.filter(c => c.provenance.some(p => p.pageId === page?.id)).length}
         onOpenPages={() => setShowPages(true)}
         onOpenSettings={() => setShowSettings(true)}
+        onWhatNext={() => setShowWhatNext(true)}
         onShowTips={() => setShowTips(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
         compact={compact}
       />
 
-      {transcriber.name === 'mock' && (
+      {view !== 'path' && transcriber.name === 'mock' && (
         <div className="banner" role="note">
           <Icon name="info" size={18} />
           <span className="banner-text">
@@ -538,7 +571,8 @@ export default function App() {
       )}
 
       <main className="workspace">
-        {view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} review={kb.review} onSource={jumpToSource} /> : !page ? (
+        {view === 'path' ? <LearningPath map={mlMap} tracker={path} pages={pages} onSource={jumpToSource} onStartNotes={label => void startPathNotes(label)} /> :
+          view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} review={kb.review} onSource={jumpToSource} /> : !page ? (
           <div className="workspace-empty">
             <div className="card empty">
               <div className="empty-art">
@@ -588,11 +622,12 @@ export default function App() {
 
       {SIM_ENABLED && page && (
         <Suspense fallback={null}>
-          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} onLoadKbDemo={loadDemo} />
+          <SimulatorPanel page={page} viewport={viewport} onViewportChange={setViewport} onInjectStrokes={onSimInject} onSetBlocks={onSimSetBlocks} onClearPage={onSimClear} onTranscribeNow={transcribeNow} onBeforeDraw={() => setTool('pen')} transcriptionState={status.state} onLoadKbDemo={loadDemo} onLoadPathDemo={loadPathDemo} />
         </Suspense>
       )}
 
       <PagesDrawer open={showPages} pages={pages} currentId={page?.id ?? null} onClose={() => setShowPages(false)} onOpen={openPage} onNew={() => void newPage()} onImport={(f) => void importStrokes(f)} onRename={renamePage} onDelete={(p) => void deletePage(p)} />
+      <WhatNextDrawer open={showWhatNext} onClose={() => setShowWhatNext(false)} onPath={() => { setShowWhatNext(false); setView('path'); }} tracker={path} onStartNotes={label => void startPathNotes(label)} />
 
       {showConcepts && page && <PageConcepts key={page.id} page={page} pages={pages} graph={kb.graph} decisions={kb.decisions} decide={kb.decide} review={kb.review} onMap={focusConcept} onSource={jumpToSource} onAccept={(block, text) => onEditBlock(block, text, false)} onClose={() => setShowConcepts(false)} />}
       {(kb.error || persistence.error) && <div className="kb-error" role="alert">{persistence.error ? `Page save: ${persistence.error}` : `Knowledge base: ${kb.error}`}</div>}

@@ -15,12 +15,13 @@ import { alignStrokes, replayStrokes } from './replay';
 import { suiteMarkdown, suitePlan, type SuiteResult } from './suite';
 import { expectedBlocks } from './expectedBlocks';
 import { SuiteResults } from './SuiteResults';
-import { largeDemoPages, loadKbDemo } from './kbDemo';
+import { largeDemoPages, loadKbDemo, loadLearningPathDemo } from './kbDemo';
 import type { KbDemo } from './kbDemo';
 
 export interface SimulatorPanelProps {
   page: Page;
   onLoadKbDemo?: (demo: KbDemo) => Promise<void>;
+  onLoadPathDemo?: (pages: Page[], goals: string[]) => Promise<void>;
   viewport: Viewport;
   onViewportChange: (v: Viewport) => void;
   onInjectStrokes: (strokes: InkStroke[]) => void;
@@ -68,7 +69,7 @@ function scoreScene(drawn: Drawn, pageStrokes: InkStroke[], blocks: DigitalBlock
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onSetBlocks, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle', onLoadKbDemo }: SimulatorPanelProps) {
+export default function SimulatorPanel({ page, viewport, onViewportChange, onInjectStrokes, onSetBlocks, onClearPage, onTranscribeNow, onBeforeDraw, transcriptionState = 'idle', onLoadKbDemo, onLoadPathDemo }: SimulatorPanelProps) {
   const [kind, setKind] = useState<SceneKind>('flowchart-complex');
   const [seed, setSeed] = useState(1);
   const [messiness, setMessiness] = useState<Messiness>('normal');
@@ -333,6 +334,12 @@ export default function SimulatorPanel({ page, viewport, onViewportChange, onInj
         <button onClick={() => fitView()} disabled={running}>Fit view</button>
         </fieldset>
         {onLoadKbDemo && <fieldset><legend>Knowledge base</legend><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo(loadKbDemo()).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load KB demo notebooks</button><button disabled={running} onClick={() => { setRunning(true); void onLoadKbDemo({ pages: largeDemoPages(), glossary: [], extractions: [] }).catch(e => setError((e as Error).message)).finally(() => { setRunning(false); setCollapsed(true); }); }}>Load large KB demo (120 concepts)</button></fieldset>}
+        {onLoadPathDemo && <fieldset><legend>Learning path</legend><button disabled={running} onClick={() => {
+          setError(null);
+          setRunning(true);
+          const { pages, goals } = loadLearningPathDemo();
+          void onLoadPathDemo(pages, goals).then(() => setCollapsed(true)).catch(e => setError((e as Error).message)).finally(() => setRunning(false));
+        }}>Load RLHF + RLVR demo</button></fieldset>}
         <fieldset><legend>Suite</legend>
         <label title="Replay N relation-bearing scenes back-to-back (normal, then messy), transcribe each and summarise">
           Suite
