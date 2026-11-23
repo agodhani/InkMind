@@ -2,7 +2,7 @@ import type { PathMaterialLink, PathMaterialsProvider } from './materials';
 import type { SubjectMap } from './model';
 import type { PathPlan } from './plan';
 import type { StarterProject } from './projects';
-import { rankProjects, rankResources } from './rank';
+import { duration, rankProjects, rankResources } from './rank';
 import type { Recommendation, ProjectRecommendation, ResourcePreferences } from './rank';
 import type { Resource, ResourceCatalog } from './resources';
 
@@ -37,7 +37,7 @@ export function createRankedMaterials(map: SubjectMap, plan: PathPlan, catalog: 
     const item = projectById.get(recommendation.projectId)!;
     // This public repository URL resolves once the project is merged to main.
     return { title: item.title, href: `https://github.com/agodhani/InkMind/tree/main/${item.dir}`,
-      reason: recommendation.reason, format: 'code', minutes: item.minutes, free: true };
+      reason: `${recommendation.reason}; code, ${duration(item.minutes)}`, format: 'code', minutes: item.minutes, free: true };
   }
   return {
     forStep(mapId, conceptId) {

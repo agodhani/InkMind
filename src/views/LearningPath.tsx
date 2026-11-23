@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import type { Page } from '../model/page';
-import type { PathMaterials, PathMaterialsProvider } from '../path/materials';
+import type { PathMaterialLink, PathMaterials, PathMaterialsProvider } from '../path/materials';
 import type { SubjectMap } from '../path/model';
 import type { PathPlan, PathStep } from '../path/plan';
 import { noteSources, pathReason, searchConcepts, type NoteSource } from '../path/tracker';
@@ -19,10 +19,23 @@ function Unverified({ plan }: { plan: PathPlan }) {
   return <p className="path-warning"><Icon name="alert" /> <span><strong>Unverified subject map.</strong> Check its prerequisites before relying on this plan.</span></p>;
 }
 
+function duration(minutes: number) {
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 6) / 10} h`;
+}
+
+function MaterialLink({ link }: { link: PathMaterialLink }) {
+  // Ranked reasons already end with format and time; only fall back to them when there is no reason.
+  const note = link.reason ?? [link.format, link.minutes ? duration(link.minutes) : ''].filter(Boolean).join(' · ');
+  return <>
+    <a className="btn" href={link.href} target="_blank" rel="noreferrer">{link.title}</a>
+    {note && <span className="path-material-note">{note}</span>}
+  </>;
+}
+
 function LearningMaterials({ materials }: { materials?: PathMaterials }) {
   return <div className="path-materials">
-    <div><strong>Resources</strong>{materials?.resources?.length ? <ul>{materials.resources.map(link => <li key={link.href}><a className="btn" href={link.href} target="_blank" rel="noreferrer">{link.title}</a></li>)}</ul> : <p>No resources listed yet.</p>}</div>
-    <div><strong>Project</strong>{materials?.project ? <a className="btn" href={materials.project.href} target="_blank" rel="noreferrer">{materials.project.title}</a> : <p>No project listed yet.</p>}</div>
+    <div><strong>Resources</strong>{materials?.resources?.length ? <ul>{materials.resources.map(link => <li key={link.href}><MaterialLink link={link} /></li>)}</ul> : <p>No resources listed yet.</p>}</div>
+    <div><strong>Project</strong>{materials?.project ? <MaterialLink link={materials.project} /> : <p>No project listed yet.</p>}</div>
   </div>;
 }
 

@@ -40,6 +40,9 @@ import { mlMap } from './path/model';
 import { localTrackerStore } from './path/trackerStore';
 import { useLearningPath } from './path/useLearningPath';
 import { LearningPath, WhatNextDrawer } from './views/LearningPath';
+import { createRankedMaterials } from './path/rankedMaterials';
+import { mlCatalog } from './path/resources';
+import { starterProjects } from './path/projects';
 
 // Dev-only drawing simulator (src/sim), mounted when the URL has ?sim=1; lazy so it stays out of the main bundle.
 const SimulatorPanel = lazy(() => import('./sim/SimulatorPanel'));
@@ -94,9 +97,11 @@ export default function App() {
     setPages(list => list.map(p => p.id === next.id ? next : p).sort((a, b) => b.updatedAt - a.updatedAt));
   });
 
-  // Load pages + corrections once.
+  // Load pages + corrections once; StrictMode reruns the effect, which would create two starter pages.
+  const loadStarted = useRef(false);
   useEffect(() => {
-    if (!isIndexedDbAvailable()) return;
+    if (!isIndexedDbAvailable() || loadStarted.current) return;
+    loadStarted.current = true;
     void (async () => {
       const [list, corr] = await Promise.all([db.listPages(), db.listCorrections()]);
       setCorrections(corr);
@@ -146,6 +151,7 @@ export default function App() {
   });
   const kb = useKnowledgeBase(pages, loaded, settings, status.state === 'running' || status.state === 'waiting');
   const path = useLearningPath(mlMap, kb, kb.ready, pathStore);
+  const pathMaterials = useMemo(() => createRankedMaterials(mlMap, path.plan, mlCatalog, starterProjects, { freeOnly: true }), [path.plan]);
   const { pageEdited } = kb;
   useEffect(() => { if (page) pageEdited(page.id); }, [page, pageEdited]);
 
@@ -571,7 +577,7 @@ export default function App() {
       )}
 
       <main className="workspace">
-        {view === 'path' ? <LearningPath map={mlMap} tracker={path} pages={pages} onSource={jumpToSource} onStartNotes={label => void startPathNotes(label)} /> :
+        {view === 'path' ? <LearningPath map={mlMap} tracker={path} materials={pathMaterials} pages={pages} onSource={jumpToSource} onStartNotes={label => void startPathNotes(label)} /> :
           view === 'map' ? <ConceptMap graph={kb.graph} pages={pages} focused={focusedConcept} onFocus={setFocusedConcept} decide={kb.decide} review={kb.review} onSource={jumpToSource} /> : !page ? (
           <div className="workspace-empty">
             <div className="card empty">

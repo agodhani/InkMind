@@ -54,7 +54,7 @@ describe('ranked materials adapter', () => {
     const p = plan(), provider = createRankedMaterials(map, p, catalog, projects);
     const project = provider.forStep(map.id, 'a')!.project;
     expect(project).toEqual({ title: 'Large', href: 'https://github.com/agodhani/InkMind/tree/main/projects/large',
-      reason: rankProjects(map, p, projects)[0].reason, format: 'code', minutes: 300, free: true });
+      reason: `${rankProjects(map, p, projects)[0].reason}; code, 5 h`, format: 'code', minutes: 300, free: true });
     expect(provider.forStage(map.id, 'last')!.project).toEqual(project);
     expect(provider.forStage(map.id, 'first')!.project).toBeUndefined();
     expect(provider.forStep(map.id, 'c')!.project).toBeUndefined();
