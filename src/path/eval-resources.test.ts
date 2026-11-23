@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { checkRecommendation } from '../../scripts/eval_resources';
+import { describe, expect, it, vi } from 'vitest';
+import { checkRecommendation, evaluateResources } from '../../scripts/eval_resources';
+import * as resources from './resources';
+import * as projects from './projects';
+import * as projectFiles from './projects.node';
+import * as rankings from './rank';
 import type { ResourceCheck } from '../../scripts/eval_resources';
 import { mlMap } from './model';
 import { matchNotes } from './match';
@@ -11,6 +15,26 @@ import { starterProjects } from './projects';
 const empty = { graph: { concepts: [], edges: [] }, extractions: [] };
 const plan = planPath(mlMap, ['tokenization'], matchNotes(mlMap, empty));
 const ranking = { resources: rankResources(mlMap, plan, mlCatalog), projects: rankProjects(mlMap, plan, starterProjects) };
+describe('resource evaluation validation', () => {
+  it('reports all validation errors before attempting any ranking', async () => {
+    const rank = vi.spyOn(rankings, 'rankResources');
+    const rankProject = vi.spyOn(rankings, 'rankProjects');
+    vi.spyOn(resources, 'validateCatalog').mockReturnValue(['Empty concepts: broken-resource', 'Invalid minutes: broken-resource']);
+    vi.spyOn(projects, 'validateProjects').mockReturnValue(['Unknown stage broken: rlhf-rlvr-toy']);
+    vi.spyOn(projectFiles, 'checkProjectFiles').mockResolvedValue(['Missing file: missing.py']);
+    try {
+      await expect(evaluateResources()).rejects.toThrow([
+        'Resource evaluation validation failed:',
+        'catalog: Empty concepts: broken-resource',
+        'catalog: Invalid minutes: broken-resource',
+        'project: Unknown stage broken: rlhf-rlvr-toy',
+        'project: rlhf-rlvr-toy: Missing file: missing.py',
+      ].join('\n'));
+      expect(rank).not.toHaveBeenCalled();
+      expect(rankProject).not.toHaveBeenCalled();
+    } finally { vi.restoreAllMocks(); }
+  });
+});
 describe('resource answer key checks', () => {
   it.each<ResourceCheck>([
     { type: 'pathTopIncludesAny', k: 1, ids: ['build-tokenizer'] },

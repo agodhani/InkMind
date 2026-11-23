@@ -88,7 +88,12 @@ async function readPathCase(name: string): Promise<Parameters<typeof build>[0]> 
 }
 export async function evaluateResources() {
   const catalogErrors = validateCatalog(mlMap, mlCatalog);
-  const projectErrors = [...validateProjects(mlMap, starterProjects), ...await checkProjectFiles(starterProjects)];
+  const projectErrors = [...validateProjects(mlMap, starterProjects), ...(await Promise.all(starterProjects.map(async project =>
+    (await checkProjectFiles([project])).map(error => `${project.id}: ${error}`)))).flat()];
+  if (catalogErrors.length || projectErrors.length) {
+    throw new Error(['Resource evaluation validation failed:',
+      ...catalogErrors.map(error => `catalog: ${error}`), ...projectErrors.map(error => `project: ${error}`)].join('\n'));
+  }
   const userCase = await readPathCase('backprop-minimax-to-rlhf-rlvr');
   const userPlan = planPath(mlMap, userCase.goals, matchNotes(mlMap, await build(userCase), userCase.declared));
   const freeCatalog = { ...mlCatalog, resources: mlCatalog.resources.filter(r => r.free) };

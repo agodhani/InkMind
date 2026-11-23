@@ -15,8 +15,8 @@ export function validateProjects(map: SubjectMap, projects: StarterProject[]): s
     if (ids.has(p.id)) errors.push(`Duplicate project id: ${p.id}`);
     ids.add(p.id);
     if (p.mapId !== map.id) errors.push(`mapId mismatch: ${p.id}`);
-    if (!map.areas?.some(a => a.id === p.stage)) errors.push(`Unknown stage: ${p.stage}`);
-    for (const id of p.concepts) if (!concepts.has(id)) errors.push(`Unknown concept: ${id}`);
+    if (!map.areas?.some(a => a.id === p.stage)) errors.push(`Unknown stage ${p.stage}: ${p.id}`);
+    for (const id of p.concepts) if (!concepts.has(id)) errors.push(`Unknown concept ${id}: ${p.id}`);
     if (!p.files.length) errors.push(`Empty files: ${p.id}`);
     const safe = (path: string) => !!path && !path.startsWith('/') && !path.includes('\\') && !path.split('/').some(s => s === '..' || s === '.' || !s);
     if (!safe(p.dir)) errors.push(`Invalid project dir: ${p.id}`);
