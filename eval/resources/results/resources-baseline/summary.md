@@ -11,7 +11,7 @@
 
 ## project-passed
 - PASS 1. {"type":"stepsDone","ids":["bradley-terry","reward-model","grpo","rlvr","rlhf"],"reasonIncludes":"passed the project"} — all requested steps done with matching reasons
-- PASS 2. {"type":"pathTopExcludes","ids":["deepseek-r1","deepseekmath","trl-grpo"]} — path top all: (none)
+- PASS 2. {"type":"pathTopExcludes","ids":["deepseek-r1","deepseekmath","trl-grpo"]} — path top all: build-gpt, rl-intro, intro-llms, makemore, gae-paper, build-tokenizer, ppo-guide, probability
 - PASS 3. {"type":"projectNotRanked","id":"rlhf-rlvr-toy"} — rlhf-rlvr-toy: not ranked
 - Deterministic: true
 

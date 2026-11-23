@@ -28,9 +28,11 @@ kept separate from evidence. Note evidence takes precedence over declarations.
 
 ## Planning
 
-`planPath` resolves goals by id or normalized label/alias. Knowing a concept implies
-its transitive prerequisites, with an explicit assumed reason. Traversal from goals
-stops at known/assumed nodes, not partial nodes. Steps are filtered from one Kahn
+`planPath` resolves goals by id or normalized label/alias. Knowing a concept from
+notes or declarations implies its transitive prerequisites, with an explicit
+assumed reason. Project evidence alone marks only the exercised concepts known;
+traversal continues through those concepts to retain unlearned prerequisites.
+Traversal otherwise stops at known/assumed nodes, not partial nodes. Steps are filtered from one Kahn
 topological order of the whole map, with ties broken by area rank then file index.
 Consecutive steps are grouped by area, or canonical-order bands without areas.
 Each step explains what needs it and what the notes show; `next` lists ready steps.

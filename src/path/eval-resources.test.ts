@@ -70,7 +70,10 @@ describe('resource answer key checks', () => {
     expect(checkRecommendation({ type: 'projectNotRanked', id: project.id }, previous, before).passed).toBe(false);
     const after = { resources: rankResources(mlMap, passed, mlCatalog), projects: rankProjects(mlMap, passed, starterProjects) };
     expect(checkRecommendation({ type: 'stepsDone', ids: ['rlvr'], reasonIncludes: 'passed the project' }, passed, after).passed).toBe(true);
-    expect(checkRecommendation({ type: 'emptyRanking' }, passed, after).passed).toBe(true);
+    expect(checkRecommendation({ type: 'emptyRanking' }, passed, after).passed).toBe(false);
+    const known = planPath(mlMap, ['rlvr'], matchNotes(mlMap, empty, ['rlvr']));
+    const knownRanking = { resources: rankResources(mlMap, known, mlCatalog), projects: rankProjects(mlMap, known, starterProjects) };
+    expect(checkRecommendation({ type: 'emptyRanking' }, known, knownRanking).passed).toBe(true);
   });
   it('rejects unknown check types rather than silently passing', () => {
     expect(() => checkRecommendation({ type: 'typo' } as never, plan, ranking)).toThrow('Unknown resource check');

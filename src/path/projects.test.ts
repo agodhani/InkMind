@@ -7,6 +7,10 @@ import { starterProjects, validateProjects } from './projects';
 import { checkProjectFiles } from './projects.node';
 import { matchNotes } from './match';
 import { planPath } from './plan';
+import { build } from '../../scripts/eval_path';
+import userCase from '../../eval/path/cases/backprop-minimax-to-rlhf-rlvr.json';
+import { rankResources } from './rank';
+import { mlCatalog } from './resources';
 
 const empty = { graph: { concepts: [], edges: [] }, extractions: [] };
 const valid = () => ({ ...structuredClone(starterProjects[0]), files: ['README.md'], solutionFiles: ['solution.py'] });
@@ -50,9 +54,10 @@ describe('project evidence', () => {
     const matches = matchNotes(mlMap, empty, [], [result]);
     expect(matches.find(m => m.conceptId === 'ppo')).toMatchObject({ state: 'known', basis: 'project', declared: false, projectPassed: true, evidence: [{ kind: 'project', projectId: result.projectId }] });
     const plan = planPath(mlMap, ['ppo'], matches);
-    expect(plan.steps).toEqual([]);
+    expect(plan.steps.find(s => s.conceptId === 'ppo')?.status).toBe('done');
     expect(plan.skipped.find(s => s.conceptId === 'ppo')?.reason).toBe('you passed the project rlhf-rlvr-toy');
-    expect(plan.skipped.find(s => s.conceptId === 'gae')?.reason).toContain('you passed the project rlhf-rlvr-toy');
+    expect(plan.skipped.find(s => s.conceptId === 'gae')).toBeUndefined();
+    expect(plan.steps.find(s => s.conceptId === 'gae')?.status).toBe('todo');
   });
   it('uses note > project > declared precedence while keeping project evidence', () => {
     expect(matchNotes(mlMap, empty, ['ppo'], [result]).find(m => m.conceptId === 'ppo')).toMatchObject({ basis: 'project', declared: true, projectPassed: true });
@@ -66,7 +71,24 @@ describe('project evidence', () => {
   it('retains project evidence on done replan steps', () => {
     const initial = planPath(mlMap, ['ppo'], matchNotes(mlMap, empty));
     const replanned = planPath(mlMap, ['ppo'], matchNotes(mlMap, empty, [], [result]), initial);
-    expect(replanned.steps.every(s => s.status === 'done')).toBe(true);
+    expect(replanned.steps.find(s => s.conceptId === 'ppo')?.status).toBe('done');
+    expect(replanned.steps.find(s => s.conceptId === 'gae')?.status).toBe('todo');
     expect(replanned.steps.find(s => s.conceptId === 'ppo')?.evidence).toEqual([{ kind: 'project', projectId: result.projectId }]);
+  });
+  it('keeps the user case prerequisites and recommendations after passing the lab', async () => {
+    const notes = await build(userCase), project = starterProjects[0];
+    const initial = planPath(mlMap, userCase.goals, matchNotes(mlMap, notes, userCase.declared));
+    const matches = matchNotes(mlMap, notes, userCase.declared, [{ projectId: project.id, concepts: project.concepts, passed: true }]);
+    for (const plan of [planPath(mlMap, userCase.goals, matches), planPath(mlMap, userCase.goals, matches, initial)]) {
+      for (const id of ['tokenization', 'gae']) expect(plan.steps.find(s => s.conceptId === id)?.status).toBe('todo');
+      expect(project.concepts.every(id => plan.skipped.some(s => s.conceptId === id && s.status === 'known'))).toBe(true);
+      expect(rankResources(mlMap, plan, mlCatalog).path.length).toBeGreaterThan(0);
+    }
+  });
+  it('still assumes prerequisites for independently declared or note-backed project concepts', () => {
+    const notes = { graph: { concepts: [{ id: 'n', label: 'PPO', aliases: [], provenance: [] }], edges: [] }, extractions: [] };
+    for (const matches of [matchNotes(mlMap, empty, ['ppo'], [result]), matchNotes(mlMap, notes, [], [result])]) {
+      expect(planPath(mlMap, ['ppo'], matches).skipped.find(s => s.conceptId === 'gae')?.status).toBe('assumed');
+    }
   });
 });

@@ -1139,7 +1139,7 @@
             ]
           },
           "passed": true,
-          "detail": "path top all: (none)"
+          "detail": "path top all: build-gpt, rl-intro, intro-llms, makemore, gae-paper, build-tokenizer, ppo-guide, probability"
         },
         {
           "check": {
@@ -1153,8 +1153,910 @@
       "deterministic": true,
       "ranking": {
         "resources": {
-          "path": [],
-          "steps": {}
+          "path": [
+            {
+              "resourceId": "build-gpt",
+              "score": 5.25,
+              "covers": [
+                "softmax",
+                "embeddings",
+                "residual",
+                "normalization",
+                "language-model",
+                "attention",
+                "transformer"
+              ],
+              "reason": "covers 7 of your 25 remaining steps (7 new: Softmax, Embeddings, Residual connections, Normalization layers, Language modeling, Attention, Transformers); video, 4 h"
+            },
+            {
+              "resourceId": "rl-intro",
+              "score": 5.0909,
+              "covers": [
+                "rl",
+                "mdp",
+                "policy",
+                "return",
+                "value-function",
+                "q-function",
+                "bellman"
+              ],
+              "reason": "covers 7 of your 25 remaining steps (7 new: Reinforcement learning, Markov decision processes, Policy, Return and discounting, Value functions, Action-value function, Bellman equations); docs, 1.5 h"
+            },
+            {
+              "resourceId": "intro-llms",
+              "score": 3.6,
+              "covers": [
+                "llm",
+                "fine-tuning",
+                "sft"
+              ],
+              "reason": "covers 3 of your 25 remaining steps (3 new: Large language models, Fine-tuning, Supervised fine-tuning); video, 1 h"
+            },
+            {
+              "resourceId": "makemore",
+              "score": 1.8462,
+              "covers": [
+                "log-likelihood",
+                "softmax",
+                "sampling",
+                "language-model"
+              ],
+              "reason": "covers 4 of your 25 remaining steps (2 new: Maximum likelihood estimation, Monte Carlo estimation); video, 2.5 h"
+            },
+            {
+              "resourceId": "gae-paper",
+              "score": 1.5,
+              "covers": [
+                "td-learning",
+                "gae",
+                "actor-critic"
+              ],
+              "reason": "covers 3 of your 25 remaining steps (3 new: Temporal-difference learning, Generalized advantage estimation, Actor-critic); paper, 2 h; assumes Bellman equations, Monte Carlo estimation, Value functions first"
+            },
+            {
+              "resourceId": "build-tokenizer",
+              "score": 0.8571,
+              "covers": [
+                "tokenization"
+              ],
+              "reason": "covers 1 of your 25 remaining steps (1 new: Tokenization); video, 3 h"
+            },
+            {
+              "resourceId": "ppo-guide",
+              "score": 0.6667,
+              "covers": [
+                "importance-sampling"
+              ],
+              "reason": "covers 1 of your 25 remaining steps (1 new: Importance sampling); docs, 2 h"
+            },
+            {
+              "resourceId": "probability",
+              "score": 0.5714,
+              "covers": [
+                "conditional-probability",
+                "sampling"
+              ],
+              "reason": "covers 2 of your 25 remaining steps (1 new: Conditional probability); book, 3 h"
+            }
+          ],
+          "steps": {
+            "conditional-probability": [
+              {
+                "resourceId": "probability",
+                "score": 1.1429,
+                "covers": [
+                  "conditional-probability",
+                  "sampling"
+                ],
+                "reason": "teaches Conditional probability; also covers 1 more of your remaining steps; book, 3 h"
+              }
+            ],
+            "log-likelihood": [
+              {
+                "resourceId": "makemore",
+                "score": 3.6923,
+                "covers": [
+                  "log-likelihood",
+                  "softmax",
+                  "sampling",
+                  "language-model"
+                ],
+                "reason": "teaches Maximum likelihood estimation; also covers 3 more of your remaining steps; video, 2.5 h"
+              },
+              {
+                "resourceId": "rl-policy-gradient",
+                "score": 1.3333,
+                "covers": [
+                  "log-likelihood",
+                  "sampling"
+                ],
+                "reason": "teaches Maximum likelihood estimation; also covers 1 more of your remaining steps; docs, 2 h"
+              },
+              {
+                "resourceId": "maximum-likelihood",
+                "score": 0.5,
+                "covers": [
+                  "log-likelihood"
+                ],
+                "reason": "teaches Maximum likelihood estimation; book, 4 h"
+              }
+            ],
+            "softmax": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Softmax; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "transformers-visual",
+                "score": 3.7895,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "transformer"
+                ],
+                "reason": "teaches Softmax; also covers 2 more of your remaining steps; video, 45 min"
+              },
+              {
+                "resourceId": "makemore",
+                "score": 3.6923,
+                "covers": [
+                  "log-likelihood",
+                  "softmax",
+                  "sampling",
+                  "language-model"
+                ],
+                "reason": "teaches Softmax; also covers 3 more of your remaining steps; video, 2.5 h"
+              }
+            ],
+            "sampling": [
+              {
+                "resourceId": "makemore",
+                "score": 3.6923,
+                "covers": [
+                  "log-likelihood",
+                  "softmax",
+                  "sampling",
+                  "language-model"
+                ],
+                "reason": "teaches Monte Carlo estimation; also covers 3 more of your remaining steps; video, 2.5 h"
+              },
+              {
+                "resourceId": "rl-policy-gradient",
+                "score": 1.3333,
+                "covers": [
+                  "log-likelihood",
+                  "sampling"
+                ],
+                "reason": "teaches Monte Carlo estimation; also covers 1 more of your remaining steps; docs, 2 h"
+              },
+              {
+                "resourceId": "probability",
+                "score": 1.1429,
+                "covers": [
+                  "conditional-probability",
+                  "sampling"
+                ],
+                "reason": "teaches Monte Carlo estimation; also covers 1 more of your remaining steps; book, 3 h"
+              }
+            ],
+            "importance-sampling": [
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Importance sampling; also covers 9 more of your remaining steps; video, 20 h"
+              },
+              {
+                "resourceId": "policy-gradient-algorithms",
+                "score": 0.8571,
+                "covers": [
+                  "importance-sampling",
+                  "actor-critic"
+                ],
+                "reason": "teaches Importance sampling; also covers 1 more of your remaining steps; docs, 3 h; assumes Monte Carlo estimation, Value functions, Temporal-difference learning first"
+              },
+              {
+                "resourceId": "ppo-guide",
+                "score": 0.6667,
+                "covers": [
+                  "importance-sampling"
+                ],
+                "reason": "teaches Importance sampling; docs, 2 h"
+              },
+              {
+                "resourceId": "ppo-paper",
+                "score": 0.5,
+                "covers": [
+                  "importance-sampling"
+                ],
+                "reason": "teaches Importance sampling; paper, 2 h; assumes Monte Carlo estimation first"
+              },
+              {
+                "resourceId": "trpo-paper",
+                "score": 0.5,
+                "covers": [
+                  "importance-sampling"
+                ],
+                "reason": "teaches Importance sampling; paper, 2 h; assumes Monte Carlo estimation first"
+              }
+            ],
+            "embeddings": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Embeddings; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "transformers-visual",
+                "score": 3.7895,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "transformer"
+                ],
+                "reason": "teaches Embeddings; also covers 2 more of your remaining steps; video, 45 min"
+              },
+              {
+                "resourceId": "attention-paper",
+                "score": 2.5,
+                "covers": [
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Embeddings; also covers 4 more of your remaining steps; paper, 2 h; assumes Softmax first"
+              },
+              {
+                "resourceId": "makemore-mlp",
+                "score": 0.9231,
+                "covers": [
+                  "embeddings"
+                ],
+                "reason": "teaches Embeddings; video, 2.5 h"
+              },
+              {
+                "resourceId": "zero-to-hero",
+                "score": 0.3529,
+                "covers": [
+                  "embeddings",
+                  "normalization",
+                  "language-model"
+                ],
+                "reason": "teaches Embeddings; also covers 2 more of your remaining steps; course, 30 h"
+              }
+            ],
+            "residual": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Residual connections; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "attention-paper",
+                "score": 2.5,
+                "covers": [
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Residual connections; also covers 4 more of your remaining steps; paper, 2 h; assumes Softmax first"
+              }
+            ],
+            "normalization": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Normalization layers; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "attention-paper",
+                "score": 2.5,
+                "covers": [
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Normalization layers; also covers 4 more of your remaining steps; paper, 2 h; assumes Softmax first"
+              },
+              {
+                "resourceId": "makemore-normalization",
+                "score": 0.9231,
+                "covers": [
+                  "normalization"
+                ],
+                "reason": "teaches Normalization layers; video, 2.5 h"
+              },
+              {
+                "resourceId": "zero-to-hero",
+                "score": 0.3529,
+                "covers": [
+                  "embeddings",
+                  "normalization",
+                  "language-model"
+                ],
+                "reason": "teaches Normalization layers; also covers 2 more of your remaining steps; course, 30 h"
+              }
+            ],
+            "rl": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Reinforcement learning; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Reinforcement learning; also covers 9 more of your remaining steps; video, 20 h"
+              },
+              {
+                "resourceId": "rl-algorithms",
+                "score": 1.6842,
+                "covers": [
+                  "rl",
+                  "policy"
+                ],
+                "reason": "teaches Reinforcement learning; also covers 1 more of your remaining steps; docs, 45 min"
+              }
+            ],
+            "mdp": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Markov decision processes; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Markov decision processes; also covers 9 more of your remaining steps; video, 20 h"
+              }
+            ],
+            "policy": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Policy; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Policy; also covers 9 more of your remaining steps; video, 20 h"
+              },
+              {
+                "resourceId": "rl-algorithms",
+                "score": 1.6842,
+                "covers": [
+                  "rl",
+                  "policy"
+                ],
+                "reason": "teaches Policy; also covers 1 more of your remaining steps; docs, 45 min"
+              }
+            ],
+            "return": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Return and discounting; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Return and discounting; also covers 9 more of your remaining steps; video, 20 h"
+              }
+            ],
+            "value-function": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Value functions; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Value functions; also covers 9 more of your remaining steps; video, 20 h"
+              }
+            ],
+            "q-function": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Action-value function; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Action-value function; also covers 9 more of your remaining steps; video, 20 h"
+              }
+            ],
+            "bellman": [
+              {
+                "resourceId": "rl-intro",
+                "score": 5.0909,
+                "covers": [
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman"
+                ],
+                "reason": "teaches Bellman equations; also covers 6 more of your remaining steps; docs, 1.5 h"
+              },
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Bellman equations; also covers 9 more of your remaining steps; video, 20 h"
+              }
+            ],
+            "td-learning": [
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Temporal-difference learning; also covers 9 more of your remaining steps; video, 20 h"
+              },
+              {
+                "resourceId": "gae-paper",
+                "score": 1.5,
+                "covers": [
+                  "td-learning",
+                  "gae",
+                  "actor-critic"
+                ],
+                "reason": "teaches Temporal-difference learning; also covers 2 more of your remaining steps; paper, 2 h; assumes Bellman equations, Monte Carlo estimation, Value functions first"
+              },
+              {
+                "resourceId": "td-learning-guide",
+                "score": 0.8,
+                "covers": [
+                  "td-learning"
+                ],
+                "reason": "teaches Temporal-difference learning; course, 1 h"
+              }
+            ],
+            "gae": [
+              {
+                "resourceId": "gae-paper",
+                "score": 1.5,
+                "covers": [
+                  "td-learning",
+                  "gae",
+                  "actor-critic"
+                ],
+                "reason": "teaches Generalized advantage estimation; also covers 2 more of your remaining steps; paper, 2 h; assumes Bellman equations, Monte Carlo estimation, Value functions first"
+              }
+            ],
+            "actor-critic": [
+              {
+                "resourceId": "silver-rl-course",
+                "score": 2.5,
+                "covers": [
+                  "importance-sampling",
+                  "rl",
+                  "mdp",
+                  "policy",
+                  "return",
+                  "value-function",
+                  "q-function",
+                  "bellman",
+                  "td-learning",
+                  "actor-critic"
+                ],
+                "reason": "teaches Actor-critic; also covers 9 more of your remaining steps; video, 20 h"
+              },
+              {
+                "resourceId": "gae-paper",
+                "score": 1.5,
+                "covers": [
+                  "td-learning",
+                  "gae",
+                  "actor-critic"
+                ],
+                "reason": "teaches Actor-critic; also covers 2 more of your remaining steps; paper, 2 h; assumes Bellman equations, Monte Carlo estimation, Value functions first"
+              },
+              {
+                "resourceId": "policy-gradient-algorithms",
+                "score": 0.8571,
+                "covers": [
+                  "importance-sampling",
+                  "actor-critic"
+                ],
+                "reason": "teaches Actor-critic; also covers 1 more of your remaining steps; docs, 3 h; assumes Monte Carlo estimation, Value functions, Temporal-difference learning first"
+              },
+              {
+                "resourceId": "vpg",
+                "score": 0.7273,
+                "covers": [
+                  "actor-critic"
+                ],
+                "reason": "teaches Actor-critic; docs, 1.5 h"
+              }
+            ],
+            "tokenization": [
+              {
+                "resourceId": "build-tokenizer",
+                "score": 0.8571,
+                "covers": [
+                  "tokenization"
+                ],
+                "reason": "teaches Tokenization; video, 3 h"
+              }
+            ],
+            "language-model": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Language modeling; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "makemore",
+                "score": 3.6923,
+                "covers": [
+                  "log-likelihood",
+                  "softmax",
+                  "sampling",
+                  "language-model"
+                ],
+                "reason": "teaches Language modeling; also covers 3 more of your remaining steps; video, 2.5 h"
+              },
+              {
+                "resourceId": "zero-to-hero",
+                "score": 0.3529,
+                "covers": [
+                  "embeddings",
+                  "normalization",
+                  "language-model"
+                ],
+                "reason": "teaches Language modeling; also covers 2 more of your remaining steps; course, 30 h"
+              }
+            ],
+            "attention": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Attention; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "attention-paper",
+                "score": 2.5,
+                "covers": [
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Attention; also covers 4 more of your remaining steps; paper, 2 h; assumes Softmax first"
+              },
+              {
+                "resourceId": "attention-visual",
+                "score": 1.2632,
+                "covers": [
+                  "attention"
+                ],
+                "reason": "teaches Attention; video, 45 min"
+              }
+            ],
+            "transformer": [
+              {
+                "resourceId": "build-gpt",
+                "score": 5.25,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "language-model",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Transformers; also covers 6 more of your remaining steps; video, 4 h"
+              },
+              {
+                "resourceId": "transformers-visual",
+                "score": 3.7895,
+                "covers": [
+                  "softmax",
+                  "embeddings",
+                  "transformer"
+                ],
+                "reason": "teaches Transformers; also covers 2 more of your remaining steps; video, 45 min"
+              },
+              {
+                "resourceId": "attention-paper",
+                "score": 2.5,
+                "covers": [
+                  "embeddings",
+                  "residual",
+                  "normalization",
+                  "attention",
+                  "transformer"
+                ],
+                "reason": "teaches Transformers; also covers 4 more of your remaining steps; paper, 2 h; assumes Softmax first"
+              }
+            ],
+            "llm": [
+              {
+                "resourceId": "intro-llms",
+                "score": 3.6,
+                "covers": [
+                  "llm",
+                  "fine-tuning",
+                  "sft"
+                ],
+                "reason": "teaches Large language models; also covers 2 more of your remaining steps; video, 1 h"
+              }
+            ],
+            "fine-tuning": [
+              {
+                "resourceId": "intro-llms",
+                "score": 3.6,
+                "covers": [
+                  "llm",
+                  "fine-tuning",
+                  "sft"
+                ],
+                "reason": "teaches Fine-tuning; also covers 2 more of your remaining steps; video, 1 h"
+              }
+            ],
+            "sft": [
+              {
+                "resourceId": "intro-llms",
+                "score": 3.6,
+                "covers": [
+                  "llm",
+                  "fine-tuning",
+                  "sft"
+                ],
+                "reason": "teaches Supervised fine-tuning; also covers 2 more of your remaining steps; video, 1 h"
+              },
+              {
+                "resourceId": "illustrating-rlhf",
+                "score": 0.8,
+                "covers": [
+                  "sft"
+                ],
+                "reason": "teaches Supervised fine-tuning; docs, 1 h"
+              },
+              {
+                "resourceId": "instructgpt",
+                "score": 0.5,
+                "covers": [
+                  "sft"
+                ],
+                "reason": "teaches Supervised fine-tuning; paper, 2 h; assumes Fine-tuning, Language modeling first"
+              },
+              {
+                "resourceId": "tulu-3",
+                "score": 0.5,
+                "covers": [
+                  "sft"
+                ],
+                "reason": "teaches Supervised fine-tuning; paper, 2 h; assumes Fine-tuning, Language modeling first"
+              }
+            ]
+          }
         },
         "projects": []
       }
