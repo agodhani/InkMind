@@ -9,7 +9,10 @@ counts once; failures are recorded with details, never auto-corrected.
 
 The runner writes `eval/resources/results/<run>/summary.md` and `summary.json`,
 including every check, rankings, validation errors, uncovered map concepts and
-`resources-total` counts. Determinism compares repeat runs and shuffled notes.
+`resources-total` counts and a stable `failing` list (`case-name#check-number`,
+one-based). The gate rejects any newly failing identity, even if the overall
+pass rate is unchanged; older baselines need `npm run check -- --update-baseline`.
+Determinism compares repeat runs and shuffled notes.
 The user's 41-step coverage total counts concepts with at least one free resource,
 independent of format preferences.
 

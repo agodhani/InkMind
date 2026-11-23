@@ -65,4 +65,4 @@
 - dqn
 - peft
 
-resources-total {"catalogResources":39,"catalogErrors":0,"projectErrors":0,"pathConcepts":41,"pathConceptsCovered":41,"cases":6,"checks":28,"checksOk":26,"deterministic":6}
+resources-total {"catalogResources":39,"catalogErrors":0,"projectErrors":0,"pathConcepts":41,"pathConceptsCovered":41,"cases":6,"checks":28,"checksOk":26,"deterministic":6,"failing":["user-papers#2","user-papers#3"]}

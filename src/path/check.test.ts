@@ -32,7 +32,7 @@ describe('path regression gate', () => {
 });
 
 const resourcesBase = { catalogResources: 39, catalogErrors: 0, projectErrors: 0, pathConcepts: 41, pathConceptsCovered: 41,
-  cases: 6, checks: 28, checksOk: 26, deterministic: 6 };
+  cases: 6, checks: 28, checksOk: 26, deterministic: 6, failing: ['user-papers#2', 'user-papers#3'] };
 describe('resources regression gate', () => {
   it('parses counts and the last total line', () => expect(parseResourcesTotal(`ignored\nresources-total {}\nresources-total ${JSON.stringify(resourcesBase)}\n`)).toEqual(resourcesBase));
   it.each(['', 'resources-total {}', 'resources-total null', 'resources-total not-json', `resources-total ${JSON.stringify({ ...resourcesBase, checks: -1 })}`,
@@ -60,5 +60,20 @@ describe('resources regression gate', () => {
   it('does not hide incomplete determinism by growing case counts', () => {
     const now = { ...resourcesBase, cases: 8, deterministic: 7 };
     expect(resourcesRegressions(now, now)).toContain('deterministic 7/8 must be complete');
+  });
+  it('rejects a new failing check even when aggregate counts do not change', () => {
+    expect(resourcesRegressions({ ...resourcesBase, failing: ['user-papers#2', 'user-video#1'] }, resourcesBase))
+      .toEqual(['new failing check user-video#1']);
+  });
+  it('accepts fixing old failures and reordering the same failures', () => {
+    expect(resourcesRegressions({ ...resourcesBase, checksOk: 27, failing: ['user-papers#3'] }, resourcesBase)).toEqual([]);
+    expect(resourcesRegressions({ ...resourcesBase, failing: [...resourcesBase.failing].reverse() }, resourcesBase)).toEqual([]);
+  });
+  it('requires an explicit baseline update when failure identities are missing', () => {
+    const legacy = { ...resourcesBase, failing: undefined };
+    expect(resourcesRegressions(resourcesBase, legacy)).toContain('missing resources failing baseline; run: npm run check -- --update-baseline');
+  });
+  it.each([undefined, null, 'user-papers#2', [1], [''], ['user-papers#0'], ['user-papers#2', 'user-papers#2']])('rejects malformed failure identities %j', failing => {
+    expect(() => parseResourcesTotal(`resources-total ${JSON.stringify({ ...resourcesBase, failing })}`)).toThrow('Invalid resources-total failing checks');
   });
 });

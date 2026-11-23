@@ -100,12 +100,20 @@ export function parseResourcesTotal(out: string): ResourcesCounts {
   const line = out.split('\n').filter(l => l.startsWith('resources-total ')).pop();
   if (!line) throw new Error('Resources eval printed no resources-total line');
   const value = JSON.parse(line.slice('resources-total '.length)) as ResourcesCounts;
-  if (!value || Object.keys(emptyResourcesCounts()).some(k => !Number.isInteger(value[k as keyof ResourcesCounts]) || value[k as keyof ResourcesCounts] < 0)) throw new Error('Invalid resources-total counts');
+  if (!value || Object.keys(emptyResourcesCounts()).some(k => {
+    if (k === 'failing') return false;
+    const count = value[k as Exclude<keyof ResourcesCounts, 'failing'>];
+    return !Number.isInteger(count) || count < 0;
+  })) throw new Error('Invalid resources-total counts');
+  if (!Array.isArray(value.failing) || value.failing.some(id => typeof id !== 'string' || !/^[\w-]+#[1-9]\d*$/.test(id))
+    || new Set(value.failing).size !== value.failing.length) throw new Error('Invalid resources-total failing checks');
   return value;
 }
 
-export function resourcesRegressions(now: ResourcesCounts, base: ResourcesCounts): string[] {
+export function resourcesRegressions(now: ResourcesCounts, base: Omit<ResourcesCounts, 'failing'> & { failing?: string[] }): string[] {
   const worse: string[] = [];
+  if (!Array.isArray(base.failing)) worse.push('missing resources failing baseline; run: npm run check -- --update-baseline');
+  else for (const id of now.failing) if (!base.failing.includes(id)) worse.push(`new failing check ${id}`);
   for (const key of ['catalogErrors', 'projectErrors'] as const) if (now[key] > 0) worse.push(`${key} ${now[key]}`);
   for (const [n, d] of [['checksOk', 'checks'], ['pathConceptsCovered', 'pathConcepts']] as const) {
     if (ratio(now[n], now[d]) < ratio(base[n], base[d])) worse.push(`${n} ${base[n]}/${base[d]} → ${now[n]}/${now[d]}`);
@@ -161,6 +169,10 @@ function main() {
   const resourcesBase = 'geometry' in saved ? saved.resources : undefined;
   if (!resourcesBase) {
     process.stdout.write(`\n✗ ${BASELINE} has no resources baseline; run: npm run check -- --update-baseline\n`);
+    process.exit(1);
+  }
+  if (!Array.isArray(resourcesBase.failing)) {
+    process.stdout.write(`\n✗ ${BASELINE} has no resources failing baseline; run: npm run check -- --update-baseline\n`);
     process.exit(1);
   }
   if (now.pages < base.pages) worse.push(`pages ${base.pages} → ${now.pages}`);

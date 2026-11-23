@@ -14,7 +14,7 @@ import type { ResourcePreferences } from '../src/path/rank';
 
 export function emptyResourcesCounts() {
   return { catalogResources: 0, catalogErrors: 0, projectErrors: 0, pathConcepts: 0, pathConceptsCovered: 0,
-    cases: 0, checks: 0, checksOk: 0, deterministic: 0 };
+    cases: 0, checks: 0, checksOk: 0, deterministic: 0, failing: [] as string[] };
 }
 export type ResourcesCounts = ReturnType<typeof emptyResourcesCounts>;
 export type ResourceCheck =
@@ -122,6 +122,7 @@ export async function evaluateResources() {
     const ranking = rank(plan);
     const deterministic = isDeepStrictEqual(ranking, rank(makePlan())) && isDeepStrictEqual(ranking, rank(makePlan(true)));
     const checks = c.checks.map(check => ({ check, ...checkRecommendation(check, plan, ranking) }));
+    total.failing.push(...checks.flatMap((check, i) => check.passed ? [] : [`${c.name}#${i + 1}`]));
     results.push({ name: c.name, checks, deterministic, ranking });
     total.cases++; total.checks += checks.length; total.checksOk += checks.filter(check => check.passed).length; total.deterministic += Number(deterministic);
   }
