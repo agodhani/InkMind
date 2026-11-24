@@ -36,6 +36,7 @@ import { conceptForLink } from './kb/wikilink';
 import { PageConcepts } from './views/PageConcepts';
 import { buildVault, zipFiles } from './export/vault';
 import { usePagePersistence } from './store/usePagePersistence';
+import { withEditedText } from './model/blockEdit';
 import { mlMap } from './path/model';
 import { localTrackerStore } from './path/trackerStore';
 import { useLearningPath } from './path/useLearningPath';
@@ -153,7 +154,12 @@ export default function App() {
   const path = useLearningPath(mlMap, kb, kb.ready, pathStore);
   const pathMaterials = useMemo(() => createRankedMaterials(mlMap, path.plan, mlCatalog, starterProjects, { freeOnly: true }), [path.plan]);
   const { pageEdited } = kb;
-  useEffect(() => { if (page) pageEdited(page.id); }, [page, pageEdited]);
+  // Only an edit cancels a page's pending model extraction; opening the page must not.
+  const lastPage = useRef<Page | null>(null);
+  useEffect(() => {
+    if (page && lastPage.current?.id === page.id && lastPage.current !== page) pageEdited(page.id);
+    lastPage.current = page;
+  }, [page, pageEdited]);
 
   const syncHistoryLen = () => setHistoryLen({ undo: undoStack.current.length, redo: redoStack.current.length });
   const pushHistory = useCallback((p: Page) => {
@@ -277,7 +283,7 @@ export default function App() {
     (block: DigitalBlock, newText: string, handwritingCorrection = true) => {
       if (!page || block.text === newText) return;
       if (handwritingCorrection) recordCorrection(block, block.text, newText);
-      updatePage(page.id, (p) => ({ ...p, blocks: p.blocks.map((b) => (b.id === block.id ? { ...b, text: newText, userEdited: true, confidence: 1 } : b)) }));
+      updatePage(page.id, (p) => ({ ...p, blocks: p.blocks.map((b) => (b.id === block.id ? withEditedText(b, newText) : b)) }));
     },
     [page, updatePage, recordCorrection],
   );
@@ -321,11 +327,13 @@ export default function App() {
     setSelectedBlockId(block.id); setHighlightStrokeIds(block.strokeIds);
   };
   const loadDemo = async (demo: { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }) => {
-    setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
     const replacements: Page[] = [];
     for (const p of demo.pages) replacements.push(await persistence.writer.replace(p, page));
     setPages(prev => [...prev.filter(p => !replacements.some(d => d.id === p.id)), ...replacements]);
     await kb.seedExtractions(replacements, demo.extractions);
+    // Last: a glossary change re-indexes every page in state. Earlier it ran without the demo pages (dropping their
+    // model extraction) or superseded the saved extractions being seeded.
+    setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
     if (replacements[0]) { openPage(replacements[0]); setView('digital'); }
     setToast({ text: `Loaded ${demo.pages.length} KB demo pages.` });
   };

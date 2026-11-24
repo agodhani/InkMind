@@ -408,6 +408,13 @@ describe('protectEditedBlocks', () => {
 });
 
 describe('mergeBlocks', () => {
+  it('keeps a user-made heading when the reread calls it a paragraph again', () => {
+    const box = { left: 0, top: 0, right: 100, bottom: 20 };
+    const edited = block('h', ['a'], box, { kind: 'heading', level: 2, text: 'Markov decision process', userEdited: true });
+    const merged = mergeBlocks([edited], ['h'], [block('n', ['a', 'b'], box, { text: 'Markor decison' })]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ id: 'h', kind: 'heading', level: 2, text: 'Markov decision process' });
+  });
   const editedFigure: FigureInfo = {
     kind: 'flowchart', shapes: ['rectangle'], labels: ['Start', 'Work', 'custom label'],
     nodes: [{ id: 'n1', label: 'Start', shape: 'rectangle', group: 1, strokeIds: ['old-start'] }, { id: 'n2', label: 'Work', shape: 'rectangle', group: 2, strokeIds: ['old-work'] }, { id: 'gone', label: 'Removed' }],

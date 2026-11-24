@@ -50,4 +50,4 @@ it('fits the graph on load and resize, and restores that fit after zooming', asy
       expect(transform()).toBe(fitted);
     }
   } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
-});
+}, 30000); // five 191-node layouts: ~1s alone, over the 5s default on a loaded machine
