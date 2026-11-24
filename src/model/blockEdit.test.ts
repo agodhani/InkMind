@@ -9,6 +9,7 @@ it('turns a paragraph edited to "# Title" into a heading and leaves other edits 
   expect(withEditedText(block('unknown'), '# A')).toMatchObject({ kind: 'heading', level: 1, text: 'A' });
   expect(withEditedText(block('paragraph'), 'C# is a language')).toMatchObject({ kind: 'paragraph', text: 'C# is a language' });
   expect(withEditedText(block('paragraph'), '#### too deep')).toMatchObject({ kind: 'paragraph' });
+  expect(withEditedText(block('paragraph'), '#\nbody text')).toMatchObject({ kind: 'paragraph' });
   expect(withEditedText(block('list'), '# not a heading')).toMatchObject({ kind: 'list', text: '# not a heading' });
   expect(withEditedText(block('heading'), 'Renamed')).toMatchObject({ kind: 'heading', text: 'Renamed' });
 });

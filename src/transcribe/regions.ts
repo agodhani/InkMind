@@ -825,6 +825,8 @@ function preserveEditedFigure(edited: FigureInfo, incoming: FigureInfo, retained
 function preserveEditedBlock(edited: DigitalBlock, fresh: DigitalBlock): DigitalBlock {
   return {
     ...fresh, id: edited.id, text: edited.text, userEdited: true,
+    // A heading the user made by correcting plain text stays one when the reread calls it plain text again.
+    ...(edited.kind === 'heading' && (fresh.kind === 'paragraph' || fresh.kind === 'unknown') ? { kind: edited.kind, level: edited.level } : {}),
     ...(edited.figure ? { figure: fresh.figure ? preserveEditedFigure(edited.figure, fresh.figure, new Set(fresh.strokeIds)) : edited.figure } : {}),
   };
 }
