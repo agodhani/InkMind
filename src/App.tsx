@@ -321,9 +321,10 @@ export default function App() {
     setSelectedBlockId(block.id); setHighlightStrokeIds(block.strokeIds);
   };
   const loadDemo = async (demo: { pages: Page[]; glossary: string[]; extractions: PageExtraction[] }) => {
-    setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
     const replacements: Page[] = [];
     for (const p of demo.pages) replacements.push(await persistence.writer.replace(p, page));
+    // Same render as the pages: a glossary change re-indexes, and re-indexing a page list without them drops their model extraction.
+    setSettings(s => ({ ...s, glossary: [...new Set([...s.glossary, ...demo.glossary])] }));
     setPages(prev => [...prev.filter(p => !replacements.some(d => d.id === p.id)), ...replacements]);
     await kb.seedExtractions(replacements, demo.extractions);
     if (replacements[0]) { openPage(replacements[0]); setView('digital'); }
